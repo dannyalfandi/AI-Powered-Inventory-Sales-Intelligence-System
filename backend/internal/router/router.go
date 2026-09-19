@@ -1,0 +1,49 @@
+// Package router wires handlers to routes.
+package router
+
+import (
+	"github.com/gin-gonic/gin"
+
+	"github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/backend/internal/handler"
+)
+
+// Handlers groups every HTTP handler the router needs. Add new resources here.
+type Handlers struct {
+	Health    *handler.HealthHandler
+	Product   *handler.ProductHandler
+	Category  *handler.CategoryHandler
+	Inventory *handler.InventoryHandler
+}
+
+func New(h Handlers) *gin.Engine {
+	r := gin.New()
+	r.Use(gin.Logger(), gin.Recovery())
+
+	r.GET("/health", h.Health.Check)
+
+	v1 := r.Group("/api/v1")
+	{
+		products := v1.Group("/products")
+		products.POST("", h.Product.Create)
+		products.GET("", h.Product.List)
+		products.GET("/:id", h.Product.GetByID)
+		products.PATCH("/:id", h.Product.Update)
+		products.DELETE("/:id", h.Product.Delete)
+
+		categories := v1.Group("/categories")
+		categories.POST("", h.Category.Create)
+		categories.GET("", h.Category.List)
+		categories.GET("/:id", h.Category.GetByID)
+		categories.PATCH("/:id", h.Category.Update)
+		categories.DELETE("/:id", h.Category.Delete)
+
+		inventory := v1.Group("/inventory")
+		inventory.GET("/low-stock", h.Inventory.ListLowStock) // static segment wins over :product_id
+		inventory.GET("/:product_id", h.Inventory.Get)
+		inventory.PATCH("/:product_id", h.Inventory.Update)
+		inventory.GET("/:product_id/movements", h.Inventory.ListMovements)
+		inventory.POST("/:product_id/movements", h.Inventory.CreateMovement)
+	}
+
+	return r
+}
