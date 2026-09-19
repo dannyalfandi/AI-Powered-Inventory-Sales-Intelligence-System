@@ -13,6 +13,8 @@ abstract final class ApiConstants {
   static const productsPath = '/api/v1/products';
   static const categoriesPath = '/api/v1/categories';
   static const inventoryPath = '/api/v1/inventory';
+  static const customersPath = '/api/v1/customers';
+  static const salesOrdersPath = '/api/v1/sales-orders';
 
   /// Mirrors backend service.MaxPageSize.
   static const maxPageSize = 100;
