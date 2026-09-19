@@ -1,0 +1,70 @@
+import 'package:dio/dio.dart';
+
+import '../../../../core/constants/api_constants.dart';
+import '../../../../core/network/page_meta_model.dart';
+import '../models/sales_order_model.dart';
+
+/// Talks to the Go backend `/api/v1/sales-orders` endpoints. Throws
+/// [DioException] or parsing errors; the repository converts both into `Failure`.
+abstract interface class SalesOrderRemoteDataSource {
+  /// [status] is the backend string (e.g. `PENDING`); null = any.
+  Future<(List<SalesOrderModel>, PageMetaModel)> fetchOrders({
+    required int page,
+    required int pageSize,
+    String? status,
+    int? customerId,
+  });
+
+  Future<SalesOrderModel> fetchOrder(int id);
+
+  Future<SalesOrderModel> createOrder(CreateSalesOrderRequest body);
+
+  Future<SalesOrderModel> updateStatus(int id, UpdateOrderStatusRequest body);
+}
+
+class SalesOrderRemoteDataSourceImpl implements SalesOrderRemoteDataSource {
+  const SalesOrderRemoteDataSourceImpl(this._dio);
+
+  final Dio _dio;
+
+  static const _path = ApiConstants.salesOrdersPath;
+
+  @override
+  Future<(List<SalesOrderModel>, PageMetaModel)> fetchOrders({
+    required int page,
+    required int pageSize,
+    String? status,
+    int? customerId,
+  }) async {
+    final res = await _dio.get<Map<String, dynamic>>(
+      _path,
+      queryParameters: {
+        'page': page,
+        'page_size': pageSize,
+        'status': ?status,
+        'customer_id': ?customerId,
+      },
+    );
+    final body = res.data!;
+    final items = (body['data'] as List<dynamic>)
+        .map((e) => SalesOrderModel.fromJson(e as Map<String, dynamic>))
+        .toList();
+    return (items, PageMetaModel.fromJson(body['meta'] as Map<String, dynamic>));
+  }
+
+  @override
+  Future<SalesOrderModel> fetchOrder(int id) async =>
+      _unwrap(await _dio.get<Map<String, dynamic>>('$_path/$id'));
+
+  @override
+  Future<SalesOrderModel> createOrder(CreateSalesOrderRequest body) async =>
+      _unwrap(await _dio.post<Map<String, dynamic>>(_path, data: body.toJson()));
+
+  @override
+  Future<SalesOrderModel> updateStatus(int id, UpdateOrderStatusRequest body) async =>
+      _unwrap(await _dio.patch<Map<String, dynamic>>('$_path/$id/status', data: body.toJson()));
+
+  /// Unwraps the `{"data": {...}}` envelope.
+  SalesOrderModel _unwrap(Response<Map<String, dynamic>> res) =>
+      SalesOrderModel.fromJson(res.data!['data'] as Map<String, dynamic>);
+}

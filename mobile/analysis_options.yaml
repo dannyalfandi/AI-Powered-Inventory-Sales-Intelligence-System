@@ -1,0 +1,25 @@
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    - build/**
+    - android/**
+    - ios/**
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"
+  errors:
+    # freezed + json_serializable annotate factory params with @JsonKey.
+    invalid_annotation_target: ignore
+
+# riverpod_lint 3.x runs as an analysis_server_plugin (no custom_lint needed);
+# `dart analyze` / `flutter analyze` report its lints.
+plugins:
+  riverpod_lint: ^3.1.9
+
+linter:
+  rules:
+    prefer_single_quotes: true
+    always_declare_return_types: true
+    avoid_print: true
+    prefer_final_locals: true
+    require_trailing_commas: true
