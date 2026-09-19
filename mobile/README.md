@@ -60,9 +60,30 @@ lib/
                  lowStockListProvider
       screens/   ProductStockScreen (product detail: info, stock, movement history), LowStockScreen
       widgets/   StockSummaryCard, MovementTile, MovementFormSheet (IN / OUT / ADJUSTMENT)
+  features/customer/
+    domain/      Customer, CustomerInput, CustomerPatch, CustomerRules; usecases Get/GetById/Create/Update/DeleteCustomer
+    data/        CustomerModel + request models, CustomerRemoteDataSource, CustomerRepositoryImpl
+    presentation/
+      providers/ customer_providers.dart (DI), customerListProvider, customerSearchQueryProvider,
+                 customerFormProvider, customerSearchProvider(query) (for pickers)
+      screens/   CustomerListScreen, CustomerFormScreen
+      widgets/   pickCustomer() — searchable customer picker
+  features/sales_order/
+    domain/      SalesOrder, SalesOrderItem, OrderCustomer, OrderStatus (+ state machine: next / canMoveTo),
+                 SalesOrderInput, OrderLineInput, OrderRules; usecases GetSalesOrders, GetSalesOrderById,
+                 CreateSalesOrder, ChangeOrderStatus
+    data/        SalesOrderModel (+ OrderCustomerModel, SalesOrderItemModel), request models, OrderStatusCodec,
+                 SalesOrderRemoteDataSource, SalesOrderRepositoryImpl
+    presentation/
+      providers/ sales_order_providers.dart (DI), salesOrderFiltersProvider, salesOrderListProvider,
+                 salesOrderDetailProvider(id) (+ changeStatus), orderFormProvider, statusChangeErrorLines()
+      screens/   SalesOrderListScreen, SalesOrderDetailScreen, SalesOrderFormScreen
+      widgets/   OrderStatusBadge (+ label / icon / action text per status)
+  features/product/presentation/widgets/product_picker.dart   pickProduct() — searchable, disables products already added
   shared/
     widgets/state_views.dart    LoadingView / ErrorView / EmptyView
     widgets/paged_list.dart     PagedListFooter, RefreshableView, listenNearEnd()
+    widgets/search_picker_sheet.dart  showSearchPicker<T>() — bottom sheet with search, used by both pickers
     theme/app_theme.dart
 ```
 
@@ -76,6 +97,13 @@ Screens and routes:
 | `/products/new`, `/products/:id/edit` | Product form with a category dropdown ("Tanpa Kategori" + all categories) |
 | `/products/:id` | Product detail: category, current stock, low-stock status, "Catat pergerakan" and movement history |
 | `/categories/new`, `/categories/:id/edit` | Category form |
+| `/customers` (tab) | Customers: search by name, email or phone, infinite scroll, swipe delete |
+| `/customers/new`, `/customers/:id/edit` | Customer form |
+| `/sales-orders` (tab) | Orders: filter by status (chips) and customer (picker), infinite scroll, colored status badge |
+| `/sales-orders/new` | Order form: customer picker, product picker, quantities, running total |
+| `/sales-orders/:id` | Order detail: status + timeline, customer, items with snapshot prices, total, action buttons |
+
+Bottom navigation (5 tabs): Produk · Kategori · Pelanggan · Pesanan · Stok Menipis.
 
 Behaviour worth knowing:
 - **Category delete**: the backend returns 409 while products still use the category. The row stays and a dialog explains which products block it ("masih dipakai oleh N produk…").
@@ -83,6 +111,26 @@ Behaviour worth knowing:
 - **Movements**: IN adds stock, OUT subtracts, ADJUSTMENT sets the stock (stock count).
   An OUT larger than the stock gets a backend 422 on `quantity` ("insufficient stock: X available, Y requested"), shown under the quantity field. The app does no local stock check, because the stock on screen can be stale.
 - **Product category** (PATCH): the form sends only changed fields. "Tanpa Kategori" sends `category_id: 0`, which removes the category.
+- **Customer delete**: 409 while the customer has orders that are not cancelled (including SHIPPED). A dialog shows the count; nothing is deleted.
+  Not optimistic, like category deletes.
+- **Order status**: the buttons come from `OrderStatus.next`, which mirrors the backend state machine:
+
+  | Status | Buttons |
+  |---|---|
+  | PENDING | Konfirmasi, Batalkan |
+  | CONFIRMED | Kirim, Batalkan |
+  | SHIPPED / CANCELLED | none |
+
+  - Every transition asks for confirmation first. The dialog says what happens to stock: deducted on confirm, returned when cancelling a confirmed order, unchanged otherwise.
+  - While a request runs, **all** action buttons are disabled and the tapped one shows a spinner, so a double tap can't send a second request.
+  - If confirm fails on stock, a dialog lists every problem item by name ("Teh Melati (TEH-1): stok tersedia 3, dibutuhkan 5.") and states that no stock changed.
+    A 422 on `status` (the order was changed on another device) reloads the order.
+  - After a stock-changing transition, the stock screens (product stock, movement history, low stock) are refreshed.
+- **Order form**: products already in the order are disabled in the picker ("sudah ditambahkan").
+  Quantity must be 1–1,000,000, and the customer and at least one product are required.
+  These rules mirror the backend, and local and backend (422) errors appear under the same line/field.
+  The running total uses current product prices. The backend snapshots prices when the order is created, and the order detail shows those snapshots.
+  Items can't be edited after creation; cancel the order and create a new one.
 
 Dependency direction: `presentation → domain ← data`. `domain` imports nothing from Flutter, Dio or Riverpod.
 
@@ -169,7 +217,17 @@ flutter analyze              # lints incl. riverpod_lint
   - category list/form: 409 dialog, duplicate name
   - `MovementFormSheet`: local rules, insufficient-stock 422 under the field, success
   - `LowStockScreen`: data/empty/error/load more
-- `test/contract/backend_json_contract_test.dart`: parses JSON copied from real backend responses (embedded/omitted `category`, `{"movement","inventory"}`, zero-time inventory, low-stock items)
+- `test/contract/backend_json_contract_test.dart`: parses JSON copied from real backend responses:
+  - embedded/omitted `category`
+  - `{"movement","inventory"}`
+  - zero-time inventory and low-stock items
+  - customers with/without email
+  - orders with nested `customer` + `items`, and list orders without `items`
+  - the 422/409 error shapes
+- `test/features/sales_order/`:
+  - the 4×4 state machine and `OrderRules`
+  - usecases and providers (filters, `changeStatus` refreshes, per-item error lines, form state)
+  - widget tests: detail buttons per status, confirm dialog, disabled while in flight, short-stock dialog; form duplicate product / quantity 0 / 422 per line / running total; list badges and filter
 - `test/core/`: backend error envelope → `Failure`, pagination helpers
 
 ## Error handling
@@ -181,6 +239,8 @@ The backend returns `{"error": {"code", "message", "details"}}`. `ApiErrorInterc
 | 422 `validation_failed` + `details[]` | `ValidationFailure.messages` (`{field: message}`), shown under the form fields |
 | 409 `conflict` (duplicate SKU / category name) | `ServerFailure(isConflict)`, shown on the SKU / name field |
 | 409 `conflict` on category delete (still used) | dialog from `categoryDeleteErrorMessage()` |
+| 409 `conflict` on customer delete (active orders) / duplicate email | dialog from `customerDeleteErrorMessage()` / error on the email field |
+| 422 `items[i].quantity` on order confirm (short stock) | dialog with one line per item from `statusChangeErrorLines()` |
 | 404 / 400 / 500 | `ServerFailure(statusCode, code, message)` |
 | timeout / no connection | `NetworkFailure` |
 

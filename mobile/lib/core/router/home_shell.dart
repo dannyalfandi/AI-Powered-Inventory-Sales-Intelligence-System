@@ -3,15 +3,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/inventory/presentation/providers/low_stock_list_provider.dart';
+import '../../features/sales_order/presentation/providers/sales_order_list_provider.dart';
 
-/// Main screen with bottom navigation: Produk, Kategori, Stok Menipis. Each
-/// tab keeps its own navigation stack and scroll position.
+/// Main screen with bottom navigation: Produk, Kategori, Pelanggan, Pesanan,
+/// Stok Menipis. Each tab keeps its own navigation stack and scroll position.
 class HomeShell extends ConsumerWidget {
   const HomeShell({super.key, required this.shell});
 
   final StatefulNavigationShell shell;
 
-  static const lowStockBranch = 2;
+  // Branch order must match the StatefulShellRoute in app_router.dart.
+  static const salesOrdersBranch = 3;
+  static const lowStockBranch = 4;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -19,9 +22,12 @@ class HomeShell extends ConsumerWidget {
       body: shell,
       bottomNavigationBar: NavigationBar(
         selectedIndex: shell.currentIndex,
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         onDestinationSelected: (index) {
-          // Stock changes elsewhere (movements, new products) — show fresh data.
+          // Data changed elsewhere (stock movements, status changes on the
+          // order detail) — show fresh data when the tab is opened.
           if (index == lowStockBranch) ref.invalidate(lowStockListProvider);
+          if (index == salesOrdersBranch && index != shell.currentIndex) ref.invalidate(salesOrderListProvider);
           shell.goBranch(index, initialLocation: index == shell.currentIndex);
         },
         destinations: const [
@@ -34,6 +40,16 @@ class HomeShell extends ConsumerWidget {
             icon: Icon(Icons.label_outline),
             selectedIcon: Icon(Icons.label),
             label: 'Kategori',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.people_outline),
+            selectedIcon: Icon(Icons.people),
+            label: 'Pelanggan',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.receipt_long_outlined),
+            selectedIcon: Icon(Icons.receipt_long),
+            label: 'Pesanan',
           ),
           NavigationDestination(
             icon: Icon(Icons.warning_amber_outlined),

@@ -95,7 +95,7 @@ final class CategoryListProvider
   CategoryList create() => CategoryList();
 }
 
-String _$categoryListHash() => r'e6ffbb64fb74b51ff29d959849ee048065d9d045';
+String _$categoryListHash() => r'38be10a56a0604289e62fcea986754cf15210310';
 
 abstract class _$CategoryList extends $AsyncNotifier<PagedState<Category>> {
   FutureOr<PagedState<Category>> build();

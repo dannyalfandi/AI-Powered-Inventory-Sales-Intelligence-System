@@ -53,7 +53,7 @@ final class ProductInventoryProvider
   }
 }
 
-String _$productInventoryHash() => r'336cba77a6bb1d17d5815c2abd522f654a6bfbaf';
+String _$productInventoryHash() => r'03aeca526cb83a83ae1eb69291c92450fe49afaf';
 
 /// Current stock of one product (GET /api/v1/inventory/:product_id).
 

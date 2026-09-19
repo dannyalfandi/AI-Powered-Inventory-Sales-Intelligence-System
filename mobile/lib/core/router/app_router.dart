@@ -3,10 +3,15 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../features/category/presentation/screens/category_form_screen.dart';
 import '../../features/category/presentation/screens/category_list_screen.dart';
+import '../../features/customer/presentation/screens/customer_form_screen.dart';
+import '../../features/customer/presentation/screens/customer_list_screen.dart';
 import '../../features/inventory/presentation/screens/low_stock_screen.dart';
 import '../../features/inventory/presentation/screens/product_stock_screen.dart';
 import '../../features/product/presentation/screens/product_form_screen.dart';
 import '../../features/product/presentation/screens/product_list_screen.dart';
+import '../../features/sales_order/presentation/screens/sales_order_detail_screen.dart';
+import '../../features/sales_order/presentation/screens/sales_order_form_screen.dart';
+import '../../features/sales_order/presentation/screens/sales_order_list_screen.dart';
 import 'home_shell.dart';
 
 part 'app_router.g.dart';
@@ -21,6 +26,12 @@ abstract final class AppRoutes {
   static const categoryCreate = 'category-create';
   static const categoryEdit = 'category-edit';
   static const lowStock = 'low-stock';
+  static const customers = 'customers';
+  static const customerCreate = 'customer-create';
+  static const customerEdit = 'customer-edit';
+  static const salesOrders = 'sales-orders';
+  static const salesOrderCreate = 'sales-order-create';
+  static const salesOrderDetail = 'sales-order-detail';
 }
 
 /// Parses a positive integer path parameter, or returns null.
@@ -53,6 +64,24 @@ GoRouter appRouter(Ref ref) {
                 path: '/categories',
                 name: AppRoutes.categories,
                 builder: (context, state) => const CategoryListScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/customers',
+                name: AppRoutes.customers,
+                builder: (context, state) => const CustomerListScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/sales-orders',
+                name: AppRoutes.salesOrders,
+                builder: (context, state) => const SalesOrderListScreen(),
               ),
             ],
           ),
@@ -98,6 +127,29 @@ GoRouter appRouter(Ref ref) {
         name: AppRoutes.categoryEdit,
         redirect: (context, state) => _positiveId(state) == null ? '/categories' : null,
         builder: (context, state) => CategoryFormScreen(categoryId: _positiveId(state)!),
+      ),
+      GoRoute(
+        path: '/customers/new',
+        name: AppRoutes.customerCreate,
+        builder: (context, state) => const CustomerFormScreen(),
+      ),
+      GoRoute(
+        path: '/customers/:id/edit',
+        name: AppRoutes.customerEdit,
+        redirect: (context, state) => _positiveId(state) == null ? '/customers' : null,
+        builder: (context, state) => CustomerFormScreen(customerId: _positiveId(state)!),
+      ),
+      // `sales-orders/new` must come before `sales-orders/:id`.
+      GoRoute(
+        path: '/sales-orders/new',
+        name: AppRoutes.salesOrderCreate,
+        builder: (context, state) => const SalesOrderFormScreen(),
+      ),
+      GoRoute(
+        path: '/sales-orders/:id',
+        name: AppRoutes.salesOrderDetail,
+        redirect: (context, state) => _positiveId(state) == null ? '/sales-orders' : null,
+        builder: (context, state) => SalesOrderDetailScreen(orderId: _positiveId(state)!),
       ),
     ],
   );
