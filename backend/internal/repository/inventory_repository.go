@@ -59,18 +59,12 @@ func (r *inventoryRepository) Mutate(ctx context.Context, productID uint, defaul
 			return ErrNotFound
 		}
 
-		seed := model.Inventory{ProductID: productID, LowStockThreshold: defaultThreshold}
-		if err := tx.Omit(clause.Associations).
-			Clauses(clause.OnConflict{DoNothing: true}).
-			Create(&seed).Error; err != nil {
-			return fmt.Errorf("create inventory row: %w", err)
+		locked, err := lockInventoryRow(tx, productID, defaultThreshold)
+		if err != nil {
+			return err
 		}
-		if err := tx.Clauses(clause.Locking{Strength: clause.LockingStrengthUpdate}).
-			First(&inv, "product_id = ?", productID).Error; err != nil {
-			return fmt.Errorf("lock inventory row: %w", err)
-		}
+		inv = *locked
 
-		var err error
 		if mv, err = fn(&inv); err != nil {
 			return err
 		}
@@ -138,4 +132,23 @@ func (r *inventoryRepository) ListLowStock(ctx context.Context, defaultThreshold
 		return nil, 0, fmt.Errorf("list low-stock products: %w", err)
 	}
 	return items, total, nil
+}
+
+// lockInventoryRow returns the product's inventory row locked with
+// SELECT ... FOR UPDATE until tx ends, creating it first (quantity 0,
+// defaultThreshold) if the product has none. Shared by stock movements and
+// sales order status changes so both serialize on the same row.
+func lockInventoryRow(tx *gorm.DB, productID uint, defaultThreshold int64) (*model.Inventory, error) {
+	seed := model.Inventory{ProductID: productID, LowStockThreshold: defaultThreshold}
+	if err := tx.Omit(clause.Associations).
+		Clauses(clause.OnConflict{DoNothing: true}).
+		Create(&seed).Error; err != nil {
+		return nil, fmt.Errorf("create inventory row of product %d: %w", productID, err)
+	}
+	var inv model.Inventory
+	if err := tx.Clauses(clause.Locking{Strength: clause.LockingStrengthUpdate}).
+		First(&inv, "product_id = ?", productID).Error; err != nil {
+		return nil, fmt.Errorf("lock inventory row of product %d: %w", productID, err)
+	}
+	return &inv, nil
 }

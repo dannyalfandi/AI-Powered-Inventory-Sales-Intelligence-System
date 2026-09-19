@@ -104,9 +104,128 @@ req GET /inventory/$PB;                                             check "inven
 req GET "/inventory/low-stock?page_size=100"
 ! grep -q "\"product_id\":$PB," <<<"$body" && { pass=$((pass+1)); echo "PASS  deleted product not in low-stock"; } || { fail=$((fail+1)); echo "FAIL  $body"; }
 
+echo "== Customer"
+req POST /customers "{\"name\":\" E2E Budi $RUN \",\"email\":\" Budi.$RUN@Example.COM \",\"phone\":\"+62 812-0000-$((RUN % 10000))\"}"
+check "create customer (trimmed, email lowercased)" 201 "\"email\":\"budi.$RUN@example.com\""
+CUST=$(jid)
+req POST /customers "{\"name\":\"Other\",\"email\":\"BUDI.$RUN@example.com\"}"; check "duplicate email (case-insensitive)" 409
+req POST /customers '{"name":"X","email":"nope","phone":"call me"}';         check "invalid email + phone" 422 '"field":"phone"'
+req POST /customers "{\"name\":\"E2E NoMail $RUN\"}";                         check "email optional (null)" 201 '"email":null'
+CUST2=$(jid)
+req POST /customers "{\"name\":\"E2E NoMail2 $RUN\"}";                        check "second customer without email (NULLs don't collide)" 201
+CUST3=$(jid)
+req GET "/customers?search=budi.$RUN@example";                                check "search by email" 200 '"total":1'
+req PATCH /customers/$CUST '{"address":"Jl. Merdeka 1"}';                     check "patch address" 200 '"address":"Jl. Merdeka 1"'
+
+echo "== Sales orders: setup (P1 stock 10, P2 stock 5)"
+req POST /products "{\"sku\":\"E2E-SO1-$RUN\",\"name\":\"E2E Kopi SO\",\"price\":45000}"; P1=$(jid)
+req POST /products "{\"sku\":\"E2E-SO2-$RUN\",\"name\":\"E2E Teh SO\",\"price\":10000}";  P2=$(jid)
+req POST /inventory/$P1/movements '{"type":"IN","quantity":10}'; check "stock P1 = 10" 201
+req POST /inventory/$P2/movements '{"type":"IN","quantity":5}';  check "stock P2 = 5" 201
+stock() { req GET /inventory/$1; grep -o '"quantity":[0-9]*' <<<"$body" | head -1 | cut -d: -f2; }
+expect() { # label actual expected
+  [ "$2" = "$3" ] && { pass=$((pass+1)); echo "PASS  $1 ($2)"; } || { fail=$((fail+1)); echo "FAIL  $1: got '$2', want '$3'"; }
+}
+status_of() { req GET /sales-orders/$1; grep -o '"status":"[A-Z]*"' <<<"$body" | head -1 | cut -d'"' -f4; }
+
+echo "== Sales orders: create (PENDING, price snapshot, no stock change)"
+req POST /sales-orders "{\"customer_id\":$CUST,\"notes\":\"kirim sore\",\"items\":[{\"product_id\":$P1,\"quantity\":3},{\"product_id\":$P2,\"quantity\":2}]}"
+check "create order A" 201 '"status":"PENDING","total_amount":155000'
+OA=$(jid)
+grep -qE '"order_number":"SO-[0-9]{8}-[0-9]{4,}"' <<<"$body" && { pass=$((pass+1)); echo "PASS  order number format"; } || { fail=$((fail+1)); echo "FAIL  order number: $body"; }
+expect "PENDING does not touch stock P1" "$(stock $P1)" 10
+req POST /sales-orders "{\"customer_id\":$CUST,\"items\":[{\"product_id\":$P1,\"quantity\":1},{\"product_id\":$P1,\"quantity\":2}]}"; check "duplicate product in items" 422 '"field":"items\[1\].product_id"'
+req POST /sales-orders "{\"customer_id\":999999,\"items\":[{\"product_id\":$P1,\"quantity\":1}]}";                          check "unknown customer" 422 '"field":"customer_id"'
+req POST /sales-orders "{\"customer_id\":$CUST,\"items\":[{\"product_id\":999999,\"quantity\":1}]}";                          check "unknown product" 422 '"field":"items\[0\].product_id"'
+req POST /sales-orders "{\"customer_id\":$CUST,\"items\":[]}";                                                                check "empty items" 422 '"field":"items"'
+req PATCH /products/$P1 '{"price":99000}';                                        check "raise P1 price after ordering" 200
+req GET /sales-orders/$OA;                                                        check "order keeps snapshot price + total" 200 '"unit_price":45000'
+grep -q '"total_amount":155000' <<<"$body" && grep -q '"customer":{"id":'"$CUST" <<<"$body" \
+  && { pass=$((pass+1)); echo "PASS  detail has total, customer and items"; } || { fail=$((fail+1)); echo "FAIL  detail: $body"; }
+
+echo "== Sales orders: state machine"
+req PATCH /sales-orders/$OA/status '{"status":"SHIPPED"}';   check "PENDING -> SHIPPED rejected" 422 'allowed: CONFIRMED, CANCELLED'
+req PATCH /sales-orders/$OA/status '{"status":"DELIVERED"}'; check "unknown status" 422 '"field":"status"'
+req PATCH /sales-orders/$OA/status '{"status":"confirmed"}'; check "PENDING -> CONFIRMED" 200 '"status":"CONFIRMED"'
+expect "CONFIRMED deducted P1 (10-3)" "$(stock $P1)" 7
+expect "CONFIRMED deducted P2 (5-2)"  "$(stock $P2)" 3
+req GET "/inventory/$P1/movements?page_size=1";              check "OUT movement linked to order" 200 "\"type\":\"OUT\",\"quantity\":3,\"quantity_before\":10,\"quantity_after\":7,\"reason\":\"sales order SO-"
+grep -q "\"sales_order_id\":$OA" <<<"$body" && { pass=$((pass+1)); echo "PASS  movement.sales_order_id"; } || { fail=$((fail+1)); echo "FAIL  $body"; }
+req PATCH /sales-orders/$OA/status '{"status":"CONFIRMED"}'; check "CONFIRMED -> CONFIRMED rejected (no double deduction)" 422
+expect "stock unchanged by rejected re-confirm" "$(stock $P1)" 7
+
+echo "== Sales orders: CONFIRMED -> CANCELLED returns stock"
+req POST /sales-orders "{\"customer_id\":$CUST2,\"items\":[{\"product_id\":$P1,\"quantity\":4}]}"; OB=$(jid)
+req PATCH /sales-orders/$OB/status '{"status":"CONFIRMED"}'; check "confirm order B" 200
+expect "P1 after B confirmed (7-4)" "$(stock $P1)" 3
+req PATCH /sales-orders/$OB/status '{"status":"CANCELLED"}'; check "cancel confirmed order B" 200 '"status":"CANCELLED"'
+expect "P1 returned after cancel (3+4)" "$(stock $P1)" 7
+req GET "/inventory/$P1/movements?page_size=1";              check "IN movement for the cancel" 200 '"type":"IN","quantity":4,"quantity_before":3,"quantity_after":7'
+req PATCH /sales-orders/$OB/status '{"status":"CONFIRMED"}'; check "CANCELLED is final" 422 "can't change status anymore"
+
+echo "== Sales orders: insufficient stock rolls back every item"
+req POST /sales-orders "{\"customer_id\":$CUST,\"items\":[{\"product_id\":$P1,\"quantity\":2},{\"product_id\":$P2,\"quantity\":10}]}"; OC=$(jid)
+req PATCH /sales-orders/$OC/status '{"status":"CONFIRMED"}'
+check "confirm with P2 short" 422 "\"field\":\"items\[1\].quantity\",\"message\":\"insufficient stock for product $P2 (E2E-SO2-$RUN): 3 available, 10 requested\""
+expect "P1 not deducted (rollback)" "$(stock $P1)" 7
+expect "P2 unchanged"               "$(stock $P2)" 3
+expect "order C still PENDING"      "$(status_of $OC)" PENDING
+
+echo "== Sales orders: SHIPPED"
+req PATCH /sales-orders/$OA/status '{"status":"SHIPPED"}';   check "CONFIRMED -> SHIPPED" 200 '"shipped_at":"'
+expect "SHIPPED does not touch stock" "$(stock $P1)" 7
+req PATCH /sales-orders/$OA/status '{"status":"CANCELLED"}'; check "SHIPPED -> CANCELLED rejected" 422
+
+echo "== Sales orders: list"
+req GET "/sales-orders?customer_id=$CUST&page_size=100";          check "filter by customer" 200 '"total":2'
+req GET "/sales-orders?customer_id=$CUST&status=pending";         check "filter by customer + status" 200 '"total":1'
+req GET "/sales-orders?status=LOST";                              check "bad status filter" 422
+req GET "/sales-orders?customer_id=abc";                          check "bad customer_id filter" 400
+req GET /sales-orders/999999;                                     check "unknown order" 404
+
+echo "== Customer delete rules"
+req DELETE /customers/$CUST;  check "customer with SHIPPED + PENDING orders" 409 'still has 2 sales order(s) that are not cancelled'
+req DELETE /customers/$CUST2; check "customer whose only order is CANCELLED" 204
+req GET /sales-orders/$OB;    check "cancelled order still readable after customer delete" 200 "\"customer\":{\"id\":$CUST2"
+
+echo "== Concurrency: 5 orders x 3 on stock 10, confirmed in parallel -> exactly 3 succeed"
+req POST /products "{\"sku\":\"E2E-SO3-$RUN\",\"name\":\"E2E Race\",\"price\":1000}"; P3=$(jid)
+req POST /inventory/$P3/movements '{"type":"IN","quantity":10}'
+RACE=()
+for i in 1 2 3 4 5; do
+  req POST /sales-orders "{\"customer_id\":$CUST3,\"items\":[{\"product_id\":$P3,\"quantity\":3}]}"; RACE+=("$(jid)")
+done
+for id in "${RACE[@]}"; do
+  curl -s -o /dev/null -w '%{http_code}\n' -X PATCH "$B/sales-orders/$id/status" -H 'Content-Type: application/json' -d '{"status":"CONFIRMED"}' &
+done > "$CODES"; wait
+expect "confirms 200" "$(grep -c '^200$' "$CODES")" 3
+expect "confirms 422" "$(grep -c '^422$' "$CODES")" 2
+expect "stock left (10 - 3x3)" "$(stock $P3)" 1
+
+echo "== Concurrency: same order confirmed 10x in parallel -> deducted once"
+req POST /inventory/$P3/movements '{"type":"IN","quantity":9}'
+req POST /sales-orders "{\"customer_id\":$CUST3,\"items\":[{\"product_id\":$P3,\"quantity\":2}]}"; OD=$(jid)
+for i in $(seq 1 10); do
+  curl -s -o /dev/null -w '%{http_code}\n' -X PATCH "$B/sales-orders/$OD/status" -H 'Content-Type: application/json' -d '{"status":"CONFIRMED"}' &
+done > "$CODES"; wait
+expect "exactly one 200" "$(grep -c '^200$' "$CODES")" 1
+expect "the rest 422"    "$(grep -c '^422$' "$CODES")" 9
+expect "stock (10 - 2)"  "$(stock $P3)" 8
+
+echo "== Concurrency: 20 orders created in parallel get unique numbers"
+for i in $(seq 1 20); do
+  curl -s -X POST "$B/sales-orders" -H 'Content-Type: application/json' \
+    -d "{\"customer_id\":$CUST3,\"items\":[{\"product_id\":$P3,\"quantity\":1}]}" | grep -o '"order_number":"[^"]*"' &
+done > "$CODES"; wait
+expect "20 created" "$(wc -l < "$CODES" | tr -d ' ')" 20
+expect "20 unique numbers" "$(sort -u "$CODES" | wc -l | tr -d ' ')" 20
+for id in "${RACE[@]}" $OC; do
+  curl -s -o /dev/null -X PATCH "$B/sales-orders/$id/status" -H 'Content-Type: application/json' -d '{"status":"CANCELLED"}'
+done
+
 echo "== Cleanup (soft delete; stock_movements are immutable and stay)"
 req DELETE /products/$PA;   check "delete product A" 204
 req DELETE /categories/$CAT; check "category deletable once products are gone" 204
 
-echo; echo "RESULT: $pass passed, $fail failed  (products $PA,$PB categories $CAT,$CAT2)"
+echo; echo "RESULT: $pass passed, $fail failed  (products $PA,$PB,$P1,$P2,$P3 categories $CAT,$CAT2 customers $CUST,$CUST2,$CUST3 orders $OA,$OB,$OC,$OD)"
 [ "$fail" -eq 0 ]

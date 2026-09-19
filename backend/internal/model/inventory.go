@@ -37,9 +37,13 @@ type StockMovement struct {
 	QuantityBefore int64        `gorm:"not null" json:"quantity_before"`
 	QuantityAfter  int64        `gorm:"not null" json:"quantity_after"`
 	Reason         string       `gorm:"type:text" json:"reason"`
-	CreatedAt      time.Time    `gorm:"index" json:"created_at"`
+	// SalesOrderID links movements made by an order status change (OUT on
+	// CONFIRMED, IN on cancel); null for manual movements.
+	SalesOrderID *uint     `gorm:"index" json:"sales_order_id,omitempty"`
+	CreatedAt    time.Time `gorm:"index" json:"created_at"`
 
-	Product *Product `gorm:"constraint:OnUpdate:CASCADE,OnDelete:RESTRICT" json:"-"`
+	Product    *Product    `gorm:"constraint:OnUpdate:CASCADE,OnDelete:RESTRICT" json:"-"`
+	SalesOrder *SalesOrder `gorm:"constraint:OnUpdate:CASCADE,OnDelete:RESTRICT" json:"-"`
 }
 
 // UpdateInventoryInput changes inventory settings (not the quantity, which

@@ -8,6 +8,11 @@ func All() []any {
 		&Category{},
 		&Product{},
 		&Inventory{},
-		&StockMovement{},
+		&Customer{},
+		&SalesOrder{},
+		&SalesOrderItem{},
+		&SalesOrderCounter{},
+		&StockMovement{}, // references sales_orders
+
 	}
 }

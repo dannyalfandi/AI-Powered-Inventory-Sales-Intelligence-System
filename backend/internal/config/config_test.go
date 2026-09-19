@@ -23,6 +23,7 @@ func TestFromLookup(t *testing.T) {
 		"PORT":           "9000",
 
 		"LOW_STOCK_DEFAULT_THRESHOLD": "5",
+		"APP_TIMEZONE":                "Asia/Makassar",
 	}
 
 	with := func(overrides map[string]string) map[string]string {
@@ -55,13 +56,14 @@ func TestFromLookup(t *testing.T) {
 				Redis:       RedisConfig{Addr: "localhost:6379", Password: "secret", DB: 2},
 
 				LowStockDefaultThreshold: 5,
+				Timezone:                 "Asia/Makassar",
 			},
 		},
 		{
 			name: "defaults for optional values",
 			env: with(map[string]string{
 				"PORT": "<unset>", "REDIS_DB": "<unset>", "REDIS_PASSWORD": "<unset>",
-				"LOW_STOCK_DEFAULT_THRESHOLD": "<unset>",
+				"LOW_STOCK_DEFAULT_THRESHOLD": "<unset>", "APP_TIMEZONE": "<unset>",
 			}),
 			want: &Config{
 				Port:        "8080",
@@ -69,6 +71,7 @@ func TestFromLookup(t *testing.T) {
 				Redis:       RedisConfig{Addr: "localhost:6379"},
 
 				LowStockDefaultThreshold: 10,
+				Timezone:                 "Asia/Jakarta",
 			},
 		},
 		{
@@ -90,6 +93,11 @@ func TestFromLookup(t *testing.T) {
 			name:    "negative LOW_STOCK_DEFAULT_THRESHOLD",
 			env:     with(map[string]string{"LOW_STOCK_DEFAULT_THRESHOLD": "-1"}),
 			wantErr: []string{"LOW_STOCK_DEFAULT_THRESHOLD must be a non-negative integer"},
+		},
+		{
+			name:    "unknown APP_TIMEZONE",
+			env:     with(map[string]string{"APP_TIMEZONE": "Mars/Olympus"}),
+			wantErr: []string{"APP_TIMEZONE must be an IANA time zone name"},
 		},
 	}
 

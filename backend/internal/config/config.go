@@ -9,6 +9,10 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
+	// Embeds the IANA time zone database, so APP_TIMEZONE works on hosts
+	// without one (Windows, scratch/distroless containers).
+	_ "time/tzdata"
 
 	"github.com/joho/godotenv"
 )
@@ -19,6 +23,8 @@ type Config struct {
 	Redis       RedisConfig
 	// LowStockDefaultThreshold is the threshold given to new inventory rows.
 	LowStockDefaultThreshold int64
+	// Timezone (IANA name) of business dates, e.g. the date in order numbers.
+	Timezone string
 }
 
 type RedisConfig struct {
@@ -76,6 +82,11 @@ func FromLookup(lookup func(string) (string, bool)) (*Config, error) {
 		problems = append(problems, "LOW_STOCK_DEFAULT_THRESHOLD must be a non-negative integer")
 	}
 	cfg.LowStockDefaultThreshold = threshold
+
+	cfg.Timezone = optional("APP_TIMEZONE", "Asia/Jakarta")
+	if _, err := time.LoadLocation(cfg.Timezone); err != nil {
+		problems = append(problems, "APP_TIMEZONE must be an IANA time zone name, e.g. Asia/Jakarta")
+	}
 
 	if port, err := strconv.Atoi(cfg.Port); err != nil || port < 1 || port > 65535 {
 		problems = append(problems, "PORT must be a number between 1 and 65535")

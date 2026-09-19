@@ -62,14 +62,25 @@ func run() error {
 	categorySvc := service.NewCategoryService(categoryRepo)
 	inventorySvc := service.NewInventoryService(inventoryRepo, productRepo, cfg.LowStockDefaultThreshold)
 
+	loc, err := time.LoadLocation(cfg.Timezone) // validated by config.Load
+	if err != nil {
+		return fmt.Errorf("load time zone: %w", err)
+	}
+	customerRepo := repository.NewCustomerRepository(db)
+	salesOrderRepo := repository.NewSalesOrderRepository(db)
+	customerSvc := service.NewCustomerService(customerRepo)
+	salesOrderSvc := service.NewSalesOrderService(salesOrderRepo, customerRepo, cfg.LowStockDefaultThreshold, loc)
+
 	engine := router.New(router.Handlers{
 		Health: handler.NewHealthHandler(map[string]handler.Pinger{
 			"database": handler.PingFunc(sqlDB.PingContext),
 			"redis":    handler.PingFunc(func(ctx context.Context) error { return rdb.Ping(ctx).Err() }),
 		}),
-		Product:   handler.NewProductHandler(productSvc),
-		Category:  handler.NewCategoryHandler(categorySvc),
-		Inventory: handler.NewInventoryHandler(inventorySvc),
+		Product:    handler.NewProductHandler(productSvc),
+		Category:   handler.NewCategoryHandler(categorySvc),
+		Inventory:  handler.NewInventoryHandler(inventorySvc),
+		Customer:   handler.NewCustomerHandler(customerSvc),
+		SalesOrder: handler.NewSalesOrderHandler(salesOrderSvc),
 	})
 
 	srv := &http.Server{

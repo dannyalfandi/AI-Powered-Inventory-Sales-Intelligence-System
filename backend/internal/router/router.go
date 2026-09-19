@@ -9,10 +9,12 @@ import (
 
 // Handlers groups every HTTP handler the router needs. Add new resources here.
 type Handlers struct {
-	Health    *handler.HealthHandler
-	Product   *handler.ProductHandler
-	Category  *handler.CategoryHandler
-	Inventory *handler.InventoryHandler
+	Health     *handler.HealthHandler
+	Product    *handler.ProductHandler
+	Category   *handler.CategoryHandler
+	Inventory  *handler.InventoryHandler
+	Customer   *handler.CustomerHandler
+	SalesOrder *handler.SalesOrderHandler
 }
 
 func New(h Handlers) *gin.Engine {
@@ -43,6 +45,20 @@ func New(h Handlers) *gin.Engine {
 		inventory.PATCH("/:product_id", h.Inventory.Update)
 		inventory.GET("/:product_id/movements", h.Inventory.ListMovements)
 		inventory.POST("/:product_id/movements", h.Inventory.CreateMovement)
+
+		customers := v1.Group("/customers")
+		customers.POST("", h.Customer.Create)
+		customers.GET("", h.Customer.List)
+		customers.GET("/:id", h.Customer.GetByID)
+		customers.PATCH("/:id", h.Customer.Update)
+		customers.DELETE("/:id", h.Customer.Delete)
+
+		// No endpoint edits items: a wrong order is cancelled and re-created.
+		orders := v1.Group("/sales-orders")
+		orders.POST("", h.SalesOrder.Create)
+		orders.GET("", h.SalesOrder.List)
+		orders.GET("/:id", h.SalesOrder.GetByID)
+		orders.PATCH("/:id/status", h.SalesOrder.UpdateStatus)
 	}
 
 	return r
