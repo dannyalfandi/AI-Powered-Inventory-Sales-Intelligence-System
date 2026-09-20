@@ -5,6 +5,8 @@ import 'package:inventory_intel/core/error/failure_mapper.dart';
 import 'package:inventory_intel/features/category/data/models/category_model.dart';
 import 'package:inventory_intel/features/customer/data/models/customer_model.dart';
 import 'package:inventory_intel/features/dashboard/data/models/dashboard_models.dart';
+import 'package:inventory_intel/features/dashboard/data/models/forecast_models.dart';
+import 'package:inventory_intel/features/dashboard/domain/entities/forecast.dart';
 import 'package:inventory_intel/features/dashboard/domain/entities/dashboard.dart';
 import 'package:inventory_intel/features/inventory/data/models/inventory_model.dart';
 import 'package:inventory_intel/features/inventory/domain/entities/inventory.dart';
@@ -473,5 +475,194 @@ void main() {
 
   test('analytics low-stock alert count', () {
     expect(LowStockAlertCountResponse.fromJson({'count': 11}).count, 11);
+  });
+
+  // --- forecast / insights (Go API + Python ML service) --------------------
+
+  group('analytics forecast', () {
+    test('a product with a forecast: points, method, no error', () {
+      final report = ForecastReportModel.fromJson({
+        'range': {'from': '2026-08-22', 'to': '2026-09-20'},
+        'horizon_days': 2,
+        'forecast_available': true,
+        'products': [
+          {
+            'product_id': 17,
+            'product_name': 'Kopi Arabica',
+            'sku': 'KOPI-001',
+            'forecast': [
+              {'date': '2026-09-21', 'predicted_quantity': 0.43},
+              {'date': '2026-09-22', 'predicted_quantity': 1.5},
+            ],
+            'method': 'moving_average',
+          },
+        ],
+      }).toEntity();
+
+      expect(report.available, isTrue);
+      expect(report.horizonDays, 2);
+      final product = report.products.single;
+      expect(product.productId, 17);
+      expect(product.productName, 'Kopi Arabica');
+      expect(product.sku, 'KOPI-001');
+      expect(product.method, 'moving_average');
+      expect(product.error, isNull);
+      expect(product.hasError, isFalse);
+      expect(product.forecast.first.date, DateTime(2026, 9, 21));
+      expect(product.forecast.first.predictedQuantity, 0.43);
+      expect(product.totalPredicted, closeTo(1.93, 0.001));
+    });
+
+    test('ML service down: available=false and every product carries an error', () {
+      final report = ForecastReportModel.fromJson({
+        'range': {'from': '2026-08-22', 'to': '2026-09-20'},
+        'horizon_days': 2,
+        'forecast_available': false,
+        'products': [
+          {
+            'product_id': 17,
+            'product_name': 'Kopi Arabica',
+            'sku': 'KOPI-001',
+            'error': 'layanan forecasting sedang tidak tersedia',
+          },
+        ],
+      }).toEntity();
+
+      expect(report.available, isFalse);
+      final product = report.products.single;
+      expect(product.hasError, isTrue);
+      expect(product.error, 'layanan forecasting sedang tidak tersedia');
+      expect(product.forecast, isEmpty, reason: 'a failed product has no points at all');
+      expect(product.method, isNull);
+    });
+
+    test('partial failure: available stays true and only one product carries an error', () {
+      final report = ForecastReportModel.fromJson({
+        'range': {'from': '2026-08-22', 'to': '2026-09-20'},
+        'horizon_days': 1,
+        'forecast_available': true,
+        'products': [
+          {
+            'product_id': 17,
+            'product_name': 'Kopi Arabica',
+            'sku': 'KOPI-001',
+            'forecast': [
+              {'date': '2026-09-21', 'predicted_quantity': 2.0},
+            ],
+            'method': 'moving_average',
+          },
+          {
+            'product_id': 22,
+            'product_name': 'Teh Melati',
+            'sku': 'TEH-001',
+            'error': 'forecast gagal dihitung untuk produk ini',
+          },
+        ],
+      }).toEntity();
+
+      expect(report.available, isTrue);
+      expect(report.products.first.hasError, isFalse);
+      expect(report.products.last.hasError, isTrue);
+      expect(report.failedCount, 1);
+    });
+
+    test('no sales in the range: an empty product list, still available', () {
+      final report = ForecastReportModel.fromJson({
+        'range': {'from': '2025-01-01', 'to': '2025-01-10'},
+        'horizon_days': 7,
+        'forecast_available': true,
+        'products': <dynamic>[],
+      }).toEntity();
+
+      expect(report.available, isTrue);
+      expect(report.products, isEmpty);
+    });
+  });
+
+  group('analytics insights', () {
+    test('a product with a trend sentence', () {
+      final report = InsightReportModel.fromJson({
+        'range': {'from': '2026-08-22', 'to': '2026-09-20'},
+        'insights_available': true,
+        'products': [
+          {
+            'product_id': 17,
+            'product_name': 'Kopi Arabica',
+            'sku': 'KOPI-001',
+            'trend': 'increasing',
+            'change_percent': 32.0,
+            'summary': 'Penjualan naik 32,0% dalam 4 minggu terakhir (1848 unit vs 1400 unit periode sebelumnya).',
+          },
+        ],
+      }).toEntity();
+
+      expect(report.available, isTrue);
+      final product = report.products.single;
+      expect(product.trend, TrendDirection.increasing);
+      expect(product.changePercent, 32.0);
+      expect(product.summary, startsWith('Penjualan naik 32,0%'));
+      expect(product.error, isNull);
+    });
+
+    test('a real 0% change is kept, not treated as missing', () {
+      final report = InsightReportModel.fromJson({
+        'range': {'from': '2026-08-22', 'to': '2026-09-20'},
+        'insights_available': true,
+        'products': [
+          {
+            'product_id': 8,
+            'product_name': 'Roti Tawar',
+            'sku': 'ROTI-001',
+            'trend': 'stable',
+            'change_percent': 0,
+            'summary': 'Penjualan relatif stabil dalam 4 minggu terakhir (perubahan 0,0%).',
+          },
+        ],
+      }).toEntity();
+
+      expect(report.products.single.trend, TrendDirection.stable);
+      expect(report.products.single.changePercent, 0);
+    });
+
+    test('ML service down: available=false, per-product error, no trend', () {
+      final report = InsightReportModel.fromJson({
+        'range': {'from': '2026-08-22', 'to': '2026-09-20'},
+        'insights_available': false,
+        'products': [
+          {
+            'product_id': 17,
+            'product_name': 'Kopi Arabica',
+            'sku': 'KOPI-001',
+            'error': 'layanan forecasting sedang tidak tersedia',
+          },
+        ],
+      }).toEntity();
+
+      expect(report.available, isFalse);
+      final product = report.products.single;
+      expect(product.hasError, isTrue);
+      expect(product.trend, isNull);
+      expect(product.changePercent, isNull);
+      expect(product.summary, isNull);
+    });
+
+    test('an empty range returns no products but stays available', () {
+      final report = InsightReportModel.fromJson({
+        'range': {'from': '2025-01-01', 'to': '2025-01-10'},
+        'insights_available': true,
+        'products': <dynamic>[],
+      }).toEntity();
+
+      expect(report.available, isTrue);
+      expect(report.products, isEmpty);
+    });
+
+    test('trend direction maps both ways; unknown is a FormatException', () {
+      expect(TrendDirectionCodec.decode('increasing'), TrendDirection.increasing);
+      expect(TrendDirectionCodec.decode('decreasing'), TrendDirection.decreasing);
+      expect(TrendDirectionCodec.decode('stable'), TrendDirection.stable);
+      expect(TrendDirectionCodec.encode(TrendDirection.decreasing), 'decreasing');
+      expect(() => TrendDirectionCodec.decode('sideways'), throwsFormatException);
+    });
   });
 }

@@ -4,11 +4,14 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/router/app_router.dart';
 import '../../domain/entities/dashboard.dart';
+import '../../domain/entities/forecast.dart';
 import '../providers/dashboard_data_providers.dart';
 import '../providers/dashboard_filter_provider.dart';
 import '../widgets/category_breakdown_chart.dart';
 import '../widgets/dashboard_section.dart';
 import '../widgets/date_range_bar.dart';
+import '../widgets/forecast_section.dart';
+import '../widgets/insights_section.dart';
 import '../widgets/low_stock_card.dart';
 import '../widgets/sales_trend_chart.dart';
 import '../widgets/summary_cards.dart';
@@ -32,6 +35,8 @@ class DashboardScreen extends ConsumerWidget {
     ref.listen(dashboardTopProductsProvider, (_, _) {});
     ref.listen(dashboardCategoryBreakdownProvider, (_, _) {});
     ref.listen(dashboardLowStockCountProvider, (_, _) {});
+    ref.listen(dashboardForecastProvider, (_, _) {});
+    ref.listen(dashboardInsightsProvider, (_, _) {});
 
     return Scaffold(
       appBar: AppBar(
@@ -49,6 +54,8 @@ class DashboardScreen extends ConsumerWidget {
             _SummarySection(),
             _LowStockSection(),
             _SalesTrendSection(),
+            _InsightsSection(),
+            _ForecastSection(),
             _TopProductsSection(),
             _CategorySection(),
           ],
@@ -63,6 +70,8 @@ class DashboardScreen extends ConsumerWidget {
     ref.invalidate(dashboardTopProductsProvider);
     ref.invalidate(dashboardCategoryBreakdownProvider);
     ref.invalidate(dashboardLowStockCountProvider);
+    ref.invalidate(dashboardForecastProvider);
+    ref.invalidate(dashboardInsightsProvider);
   }
 }
 
@@ -167,6 +176,44 @@ class _CategorySection extends ConsumerWidget {
         onRetry: () => ref.invalidate(dashboardCategoryBreakdownProvider),
         placeholderHeight: 180,
         builder: (context, data) => CategoryBreakdownChart(categories: data),
+      ),
+    );
+  }
+}
+
+class _InsightsSection extends ConsumerWidget {
+  const _InsightsSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final insights = ref.watch(dashboardInsightsProvider);
+    return DashboardSection(
+      title: 'Insight Bisnis',
+      child: AsyncSection<InsightReport>(
+        value: insights,
+        onRetry: () => ref.invalidate(dashboardInsightsProvider),
+        placeholderHeight: 160,
+        builder: (context, data) =>
+            InsightsSection(report: data, onRetry: () => ref.invalidate(dashboardInsightsProvider)),
+      ),
+    );
+  }
+}
+
+class _ForecastSection extends ConsumerWidget {
+  const _ForecastSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final forecast = ref.watch(dashboardForecastProvider);
+    return DashboardSection(
+      title: 'Prediksi Permintaan',
+      child: AsyncSection<ForecastReport>(
+        value: forecast,
+        onRetry: () => ref.invalidate(dashboardForecastProvider),
+        placeholderHeight: 160,
+        builder: (context, data) =>
+            ForecastSection(report: data, onRetry: () => ref.invalidate(dashboardForecastProvider)),
       ),
     );
   }

@@ -3,6 +3,8 @@ package repository
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -28,6 +30,11 @@ type AnalyticsRepository interface {
 	SalesTrend(ctx context.Context, r model.AnalyticsRange, g model.TrendGranularity) ([]model.SalesTrendPoint, error)
 	TopProducts(ctx context.Context, r model.AnalyticsRange, limit int) ([]model.TopProduct, error)
 	CategoryBreakdown(ctx context.Context, r model.AnalyticsRange) ([]model.CategoryRevenue, error)
+	// ProductDailySales returns, per product id, one row per day in the
+	// range including days without sales (zeros) — the history shape the ML
+	// service expects. One query covers every product, so forecasting N
+	// products is still a single round trip to Postgres.
+	ProductDailySales(ctx context.Context, r model.AnalyticsRange, productIDs []uint) (map[uint][]model.DailySales, error)
 }
 
 type analyticsRepository struct {
@@ -143,6 +150,77 @@ func (r *analyticsRepository) TopProducts(ctx context.Context, rng model.Analyti
 		return nil, fmt.Errorf("analytics top products: %w", err)
 	}
 	return rows, nil
+}
+
+func (r *analyticsRepository) ProductDailySales(
+	ctx context.Context,
+	rng model.AnalyticsRange,
+	productIDs []uint,
+) (map[uint][]model.DailySales, error) {
+	if len(productIDs) == 0 {
+		return map[uint][]model.DailySales{}, nil
+	}
+
+	// The ids are inlined rather than bound: GORM expands a slice argument
+	// into "(1,2,3)", which Postgres reads as a record inside ARRAY[...].
+	// They come from our own query, and uint cannot carry SQL.
+	ids := make([]string, len(productIDs))
+	for i, id := range productIDs {
+		ids[i] = strconv.FormatUint(uint64(id), 10)
+	}
+	idList := strings.Join(ids, ",")
+
+	// days × products is generated first, then left-joined with the actual
+	// sales, so every product gets a complete, gap-filled series — the same
+	// idea as generate_series in SalesTrend, one dimension wider.
+	query := `
+		WITH sold AS (` + soldOrders + `),
+		days AS (
+			SELECT generate_series(
+				date_trunc('day', ?::timestamptz AT TIME ZONE ?),
+				date_trunc('day', (?::timestamptz - interval '1 microsecond') AT TIME ZONE ?),
+				interval '1 day'
+			)::date AS day
+		),
+		wanted AS (SELECT UNNEST(ARRAY[` + idList + `]::bigint[]) AS product_id),
+		totals AS (
+			SELECT i.product_id,
+			       date_trunc('day', sold.confirmed_at AT TIME ZONE ?)::date AS day,
+			       SUM(i.quantity) AS quantity_sold
+			FROM sales_order_items i
+			JOIN sold ON sold.id = i.sales_order_id
+			WHERE i.product_id IN (` + idList + `)
+			GROUP BY 1, 2
+		)
+		SELECT w.product_id,
+		       d.day                          AS date,
+		       COALESCE(t.quantity_sold, 0)   AS quantity_sold
+		FROM wanted w
+		CROSS JOIN days d
+		LEFT JOIN totals t ON t.product_id = w.product_id AND t.day = d.day
+		ORDER BY w.product_id, d.day`
+
+	tz := r.loc.String()
+	var rows []struct {
+		ProductID    uint
+		Date         time.Time
+		QuantitySold int64
+	}
+	err := r.db.WithContext(ctx).
+		Raw(query, rng.Start, rng.End, rng.Start, tz, rng.End, tz, tz).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("analytics product daily sales: %w", err)
+	}
+
+	history := make(map[uint][]model.DailySales, len(productIDs))
+	for _, row := range rows {
+		history[row.ProductID] = append(history[row.ProductID], model.DailySales{
+			Date:         model.NewDate(row.Date),
+			QuantitySold: row.QuantitySold,
+		})
+	}
+	return history, nil
 }
 
 func (r *analyticsRepository) CategoryBreakdown(ctx context.Context, rng model.AnalyticsRange) ([]model.CategoryRevenue, error) {
