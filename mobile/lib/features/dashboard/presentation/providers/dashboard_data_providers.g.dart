@@ -181,3 +181,92 @@ final class DashboardLowStockCountProvider extends $FunctionalProvider<AsyncValu
 }
 
 String _$dashboardLowStockCountHash() => r'1ebb2f1f66f9e1562a4c88b9cdf0cc8b14128dff';
+
+/// Demand forecast for the best sellers of the range. Like the sections
+/// above it follows the date range, so one change reloads it with the rest.
+///
+/// A report whose `available` is false (the ML service is down) is data, not
+/// an error: the section renders a calm "unavailable" state, and `AsyncError`
+/// stays reserved for problems reaching our own API.
+
+@ProviderFor(dashboardForecast)
+final dashboardForecastProvider = DashboardForecastProvider._();
+
+/// Demand forecast for the best sellers of the range. Like the sections
+/// above it follows the date range, so one change reloads it with the rest.
+///
+/// A report whose `available` is false (the ML service is down) is data, not
+/// an error: the section renders a calm "unavailable" state, and `AsyncError`
+/// stays reserved for problems reaching our own API.
+
+final class DashboardForecastProvider
+    extends $FunctionalProvider<AsyncValue<ForecastReport>, ForecastReport, FutureOr<ForecastReport>>
+    with $FutureModifier<ForecastReport>, $FutureProvider<ForecastReport> {
+  /// Demand forecast for the best sellers of the range. Like the sections
+  /// above it follows the date range, so one change reloads it with the rest.
+  ///
+  /// A report whose `available` is false (the ML service is down) is data, not
+  /// an error: the section renders a calm "unavailable" state, and `AsyncError`
+  /// stays reserved for problems reaching our own API.
+  DashboardForecastProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'dashboardForecastProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$dashboardForecastHash();
+
+  @$internal
+  @override
+  $FutureProviderElement<ForecastReport> $createElement($ProviderPointer pointer) => $FutureProviderElement(pointer);
+
+  @override
+  FutureOr<ForecastReport> create(Ref ref) {
+    return dashboardForecast(ref);
+  }
+}
+
+String _$dashboardForecastHash() => r'342484f447a655dc72bf710e70a1df1cbaee7ef9';
+
+/// Per-product trend sentences, same rules as [dashboardForecast].
+
+@ProviderFor(dashboardInsights)
+final dashboardInsightsProvider = DashboardInsightsProvider._();
+
+/// Per-product trend sentences, same rules as [dashboardForecast].
+
+final class DashboardInsightsProvider
+    extends $FunctionalProvider<AsyncValue<InsightReport>, InsightReport, FutureOr<InsightReport>>
+    with $FutureModifier<InsightReport>, $FutureProvider<InsightReport> {
+  /// Per-product trend sentences, same rules as [dashboardForecast].
+  DashboardInsightsProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'dashboardInsightsProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$dashboardInsightsHash();
+
+  @$internal
+  @override
+  $FutureProviderElement<InsightReport> $createElement($ProviderPointer pointer) => $FutureProviderElement(pointer);
+
+  @override
+  FutureOr<InsightReport> create(Ref ref) {
+    return dashboardInsights(ref);
+  }
+}
+
+String _$dashboardInsightsHash() => r'953d4bb2157ac4aa6825ed983b1b7502a8ae9e46';

@@ -76,3 +76,33 @@ func (h *AnalyticsHandler) LowStockAlertCount(c *gin.Context) {
 	}
 	response.OK(c, http.StatusOK, gin.H{"count": count})
 }
+
+// Forecast handles GET /api/v1/analytics/forecast?from=&to=&limit=10&horizon_days=7.
+//
+// It always answers 200 when the range is valid, even if the ML service is
+// down: every product then carries an "error" and "forecast_available" is
+// false, so the dashboard degrades instead of failing.
+func (h *AnalyticsHandler) Forecast(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	horizon, _ := strconv.Atoi(c.Query("horizon_days"))
+
+	report, err := h.svc.Forecast(c.Request.Context(), dateQuery(c), limit, horizon)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	response.OK(c, http.StatusOK, report)
+}
+
+// Insights handles GET /api/v1/analytics/insights?from=&to=&limit=10, with
+// the same degradation rules as Forecast.
+func (h *AnalyticsHandler) Insights(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.Query("limit"))
+
+	report, err := h.svc.Insights(c.Request.Context(), dateQuery(c), limit)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	response.OK(c, http.StatusOK, report)
+}

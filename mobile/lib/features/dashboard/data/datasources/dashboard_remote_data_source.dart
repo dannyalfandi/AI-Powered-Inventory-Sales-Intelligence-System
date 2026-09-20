@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../../../../core/constants/api_constants.dart';
 import '../../domain/entities/dashboard.dart';
 import '../models/dashboard_models.dart';
+import '../models/forecast_models.dart';
 
 /// The backend reads ?from=&to= as plain dates in APP_TIMEZONE.
 final _apiDate = DateFormat('yyyy-MM-dd');
@@ -20,6 +21,13 @@ abstract interface class DashboardRemoteDataSource {
   Future<CategoryBreakdownResponse> fetchCategoryBreakdown(AnalyticsRange range);
 
   Future<int> fetchLowStockAlertCount();
+
+  /// Demand forecast per product. The response is a *report*: it can say the
+  /// ML service is unavailable while still being a valid 200.
+  Future<ForecastReportModel> fetchForecast(AnalyticsRange range, int limit, int horizonDays);
+
+  /// Trend sentence per product, same report semantics.
+  Future<InsightReportModel> fetchInsights(AnalyticsRange range, int limit);
 }
 
 class DashboardRemoteDataSourceImpl implements DashboardRemoteDataSource {
@@ -53,6 +61,16 @@ class DashboardRemoteDataSourceImpl implements DashboardRemoteDataSource {
   @override
   Future<int> fetchLowStockAlertCount() async =>
       LowStockAlertCountResponse.fromJson(await _get('$_path/low-stock-alert-count', const {})).count;
+
+  @override
+  Future<ForecastReportModel> fetchForecast(AnalyticsRange range, int limit, int horizonDays) async =>
+      ForecastReportModel.fromJson(
+        await _get('$_path/forecast', {..._rangeQuery(range), 'limit': limit, 'horizon_days': horizonDays}),
+      );
+
+  @override
+  Future<InsightReportModel> fetchInsights(AnalyticsRange range, int limit) async =>
+      InsightReportModel.fromJson(await _get('$_path/insights', {..._rangeQuery(range), 'limit': limit}));
 
   Map<String, dynamic> _rangeQuery(AnalyticsRange range) => {
     'from': _apiDate.format(range.from),

@@ -265,3 +265,77 @@ final class GetLowStockAlertCountUseCaseProvider
 }
 
 String _$getLowStockAlertCountUseCaseHash() => r'eeba0de957589f8cbbdd26187519b0d1bc66ee7a';
+
+@ProviderFor(getDemandForecastUseCase)
+final getDemandForecastUseCaseProvider = GetDemandForecastUseCaseProvider._();
+
+final class GetDemandForecastUseCaseProvider
+    extends $FunctionalProvider<GetDemandForecast, GetDemandForecast, GetDemandForecast>
+    with $Provider<GetDemandForecast> {
+  GetDemandForecastUseCaseProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'getDemandForecastUseCaseProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$getDemandForecastUseCaseHash();
+
+  @$internal
+  @override
+  $ProviderElement<GetDemandForecast> $createElement($ProviderPointer pointer) => $ProviderElement(pointer);
+
+  @override
+  GetDemandForecast create(Ref ref) {
+    return getDemandForecastUseCase(ref);
+  }
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(GetDemandForecast value) {
+    return $ProviderOverride(origin: this, providerOverride: $SyncValueProvider<GetDemandForecast>(value));
+  }
+}
+
+String _$getDemandForecastUseCaseHash() => r'16eac457fc6b885f6ca94f168817695f0380650e';
+
+@ProviderFor(getBusinessInsightsUseCase)
+final getBusinessInsightsUseCaseProvider = GetBusinessInsightsUseCaseProvider._();
+
+final class GetBusinessInsightsUseCaseProvider
+    extends $FunctionalProvider<GetBusinessInsights, GetBusinessInsights, GetBusinessInsights>
+    with $Provider<GetBusinessInsights> {
+  GetBusinessInsightsUseCaseProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'getBusinessInsightsUseCaseProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$getBusinessInsightsUseCaseHash();
+
+  @$internal
+  @override
+  $ProviderElement<GetBusinessInsights> $createElement($ProviderPointer pointer) => $ProviderElement(pointer);
+
+  @override
+  GetBusinessInsights create(Ref ref) {
+    return getBusinessInsightsUseCase(ref);
+  }
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(GetBusinessInsights value) {
+    return $ProviderOverride(origin: this, providerOverride: $SyncValueProvider<GetBusinessInsights>(value));
+  }
+}
+
+String _$getBusinessInsightsUseCaseHash() => r'05d26d6b0348e6d7a7011710f67e714b30713841';

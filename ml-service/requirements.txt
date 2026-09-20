@@ -1,0 +1,9 @@
+# Runtime dependencies (what the Docker image installs).
+# scikit-learn is not used by the moving-average model yet; it is pinned here
+# for the planned regression forecaster (see app/services/forecasting.py).
+fastapi==0.141.1
+uvicorn[standard]==0.53.0
+pandas==3.0.6
+scikit-learn==1.9.1
+pydantic==2.13.5
+python-dotenv==1.2.3

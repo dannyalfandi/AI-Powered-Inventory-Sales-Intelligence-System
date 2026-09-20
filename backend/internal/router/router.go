@@ -68,6 +68,9 @@ func New(h Handlers) *gin.Engine {
 		analytics.GET("/top-products", h.Analytics.TopProducts)
 		analytics.GET("/category-breakdown", h.Analytics.CategoryBreakdown)
 		analytics.GET("/low-stock-alert-count", h.Analytics.LowStockAlertCount)
+		// Backed by the Python ML service; degrade per product, never 5xx.
+		analytics.GET("/forecast", h.Analytics.Forecast)
+		analytics.GET("/insights", h.Analytics.Insights)
 	}
 
 	return r

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/backend/internal/client"
 	"github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/backend/internal/model"
 	"github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/backend/internal/repository"
 )
@@ -40,6 +41,11 @@ type AnalyticsService interface {
 	CategoryBreakdown(ctx context.Context, q model.AnalyticsQuery) ([]model.CategoryRevenue, model.AnalyticsRange, error)
 	// LowStockAlertCount is how many products are currently low on stock.
 	LowStockAlertCount(ctx context.Context) (int64, error)
+	// Forecast predicts demand per product via the ML service. It degrades
+	// gracefully: see analytics_forecast.go.
+	Forecast(ctx context.Context, q model.AnalyticsQuery, limit, horizonDays int) (model.ForecastReport, error)
+	// Insights is the trend sentence per product, same degradation rules.
+	Insights(ctx context.Context, q model.AnalyticsQuery, limit int) (model.InsightReport, error)
 }
 
 type analyticsService struct {
@@ -47,30 +53,42 @@ type analyticsService struct {
 	// inventory is reused so the alert count uses exactly the same
 	// low-stock rule as GET /inventory/low-stock.
 	inventory InventoryService
-	cache     Cache
+	// ml is the Python forecasting service. It may be unreachable at any
+	// time; analytics_forecast.go is where that is handled.
+	ml    client.MLService
+	cache Cache
 	// cacheTTL of 0 disables caching.
 	cacheTTL time.Duration
-	loc      *time.Location
-	now      func() time.Time
+	// forecastTTL is the (longer) TTL of forecast/insight reports, which are
+	// far more expensive than a SQL aggregation. 0 disables their caching.
+	forecastTTL time.Duration
+	loc         *time.Location
+	now         func() time.Time
 }
 
 // NewAnalyticsService creates the service. Caching is off when cache is nil
-// or cacheTTL is 0; summary and trend are the only cached queries, because
-// they are the heavy ones the dashboard hits on every load.
+// or the matching TTL is 0; summary and trend are the cached SQL queries,
+// because they are the heavy ones the dashboard hits on every load, and the
+// forecast/insight reports get their own TTL because each one fans out to the
+// ML service.
 func NewAnalyticsService(
 	repo repository.AnalyticsRepository,
 	inventory InventoryService,
+	ml client.MLService,
 	cache Cache,
 	cacheTTL time.Duration,
+	forecastTTL time.Duration,
 	loc *time.Location,
 ) AnalyticsService {
 	return &analyticsService{
-		repo:      repo,
-		inventory: inventory,
-		cache:     cache,
-		cacheTTL:  cacheTTL,
-		loc:       loc,
-		now:       time.Now,
+		repo:        repo,
+		inventory:   inventory,
+		ml:          ml,
+		cache:       cache,
+		cacheTTL:    cacheTTL,
+		forecastTTL: forecastTTL,
+		loc:         loc,
+		now:         time.Now,
 	}
 }
 

@@ -1,6 +1,7 @@
 import '../../../../core/constants/api_constants.dart';
 import '../../../../core/error/guard.dart';
 import '../../domain/entities/dashboard.dart';
+import '../../domain/entities/forecast.dart';
 import '../../domain/repositories/dashboard_repository.dart';
 import '../datasources/dashboard_remote_data_source.dart';
 
@@ -27,4 +28,15 @@ class DashboardRepositoryImpl implements DashboardRepository {
 
   @override
   Future<int> getLowStockAlertCount() => guardApiCall(_remote.fetchLowStockAlertCount);
+
+  @override
+  Future<ForecastReport> getForecast(
+    AnalyticsRange range, {
+    int limit = ApiConstants.forecastProductsLimit,
+    int horizonDays = ApiConstants.forecastHorizonDays,
+  }) => guardApiCall(() async => (await _remote.fetchForecast(range, limit, horizonDays)).toEntity());
+
+  @override
+  Future<InsightReport> getInsights(AnalyticsRange range, {int limit = ApiConstants.forecastProductsLimit}) =>
+      guardApiCall(() async => (await _remote.fetchInsights(range, limit)).toEntity());
 }

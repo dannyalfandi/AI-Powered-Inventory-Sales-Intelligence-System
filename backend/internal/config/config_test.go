@@ -26,6 +26,9 @@ func TestFromLookup(t *testing.T) {
 		"LOW_STOCK_DEFAULT_THRESHOLD": "5",
 		"APP_TIMEZONE":                "Asia/Makassar",
 		"ANALYTICS_CACHE_TTL":         "90s",
+		"ML_SERVICE_URL":              "http://ml-service:8000/",
+		"ML_SERVICE_TIMEOUT":          "3s",
+		"FORECAST_CACHE_TTL":          "15m",
 	}
 
 	with := func(overrides map[string]string) map[string]string {
@@ -60,6 +63,8 @@ func TestFromLookup(t *testing.T) {
 				LowStockDefaultThreshold: 5,
 				Timezone:                 "Asia/Makassar",
 				AnalyticsCacheTTL:        90 * time.Second,
+				// The trailing slash is trimmed, so paths never double up.
+				ML: MLServiceConfig{URL: "http://ml-service:8000", Timeout: 3 * time.Second, CacheTTL: 15 * time.Minute},
 			},
 		},
 		{
@@ -67,6 +72,7 @@ func TestFromLookup(t *testing.T) {
 			env: with(map[string]string{
 				"PORT": "<unset>", "REDIS_DB": "<unset>", "REDIS_PASSWORD": "<unset>",
 				"LOW_STOCK_DEFAULT_THRESHOLD": "<unset>", "APP_TIMEZONE": "<unset>", "ANALYTICS_CACHE_TTL": "<unset>",
+				"ML_SERVICE_URL": "<unset>", "ML_SERVICE_TIMEOUT": "<unset>", "FORECAST_CACHE_TTL": "<unset>",
 			}),
 			want: &Config{
 				Port:        "8080",
@@ -76,6 +82,7 @@ func TestFromLookup(t *testing.T) {
 				LowStockDefaultThreshold: 10,
 				Timezone:                 "Asia/Jakarta",
 				AnalyticsCacheTTL:        5 * time.Minute,
+				ML:                       MLServiceConfig{URL: "http://localhost:8000", Timeout: 5 * time.Second, CacheTTL: 10 * time.Minute},
 			},
 		},
 		{
@@ -102,6 +109,21 @@ func TestFromLookup(t *testing.T) {
 			name:    "invalid ANALYTICS_CACHE_TTL",
 			env:     with(map[string]string{"ANALYTICS_CACHE_TTL": "-1m"}),
 			wantErr: []string{"ANALYTICS_CACHE_TTL must be a non-negative duration"},
+		},
+		{
+			name:    "ML_SERVICE_URL without a scheme",
+			env:     with(map[string]string{"ML_SERVICE_URL": "ml-service:8000"}),
+			wantErr: []string{"ML_SERVICE_URL must start with http:// or https://"},
+		},
+		{
+			name:    "non-positive ML_SERVICE_TIMEOUT",
+			env:     with(map[string]string{"ML_SERVICE_TIMEOUT": "0s"}),
+			wantErr: []string{"ML_SERVICE_TIMEOUT must be a positive duration"},
+		},
+		{
+			name:    "invalid FORECAST_CACHE_TTL",
+			env:     with(map[string]string{"FORECAST_CACHE_TTL": "ten minutes"}),
+			wantErr: []string{"FORECAST_CACHE_TTL must be a non-negative duration"},
 		},
 		{
 			name:    "unknown APP_TIMEZONE",

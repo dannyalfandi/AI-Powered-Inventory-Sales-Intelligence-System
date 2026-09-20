@@ -311,6 +311,41 @@ req GET "/analytics/summary?from=$TODAY&to=2020-01-01";           check "from af
 req GET "/analytics/summary?from=2020-01-01&to=$TODAY";           check "range longer than a year" 422 '"field":"to"'
 req GET "/analytics/sales-trend?granularity=hourly";              check "bad granularity" 422 '"field":"granularity"'
 
+echo "== Analytics: forecast and insights (Python ML service)"
+# Run this script once with the ML service up and once with it stopped: the
+# branch below asserts the happy path or the graceful degradation accordingly.
+ML=${ML_SERVICE_URL:-http://localhost:8000}
+if curl -s -m 3 -o /dev/null -w '%{http_code}' "$ML/health" | grep -q 200; then
+  echo "      ML service reachable at $ML"
+  req GET "/analytics/forecast?limit=3&horizon_days=7";  check "forecast" 200 '"forecast_available":true'
+  expect "3 products forecast"      "$(grep -o '"product_id"' <<<"$body" | wc -l | tr -d ' ')" 3
+  expect "7 predicted days for the first product" "$(grep -o '"predicted_quantity"' <<<"$body" | wc -l | tr -d ' ')" 21
+  check "forecast method is reported" 200 '"method":"moving_average"'
+  check "no product carries an error" 200 '"products"'
+  grep -q '"error"' <<<"$body" \
+    && { fail=$((fail+1)); echo "FAIL  a product failed while the ML service is up: $body"; } \
+    || { pass=$((pass+1)); echo "PASS  every product forecast succeeded"; }
+
+  req GET "/analytics/insights?limit=3"; check "insights" 200 '"insights_available":true'
+  check "insight has an Indonesian summary" 200 '"summary":"Penjualan'
+  check "insight has a trend direction"     200 '"trend":"'
+
+  req GET "/analytics/forecast?from=$TODAY&to=$TODAY"; check "range too short to forecast" 422 '"field":"from"'
+else
+  echo "      ML service NOT reachable at $ML -> checking graceful degradation"
+  # A range the happy path never uses: a successful report cached earlier
+  # (FORECAST_CACHE_TTL) would otherwise be served and hide the outage.
+  # Degraded reports are never cached, so this key stays empty.
+  DEGRADED="from=$(date -d '-25 days' +%F)&to=$TODAY"
+  req GET "/analytics/forecast?$DEGRADED&limit=3"
+  check "forecast still answers 200 while the ML service is down" 200 '"forecast_available":false'
+  check "each product carries its own error"                      200 '"error":"layanan forecasting sedang tidak tersedia"'
+  req GET "/analytics/insights?$DEGRADED&limit=3"
+  check "insights still answer 200 while the ML service is down"  200 '"insights_available":false'
+  req GET "/analytics/summary?from=$TODAY&to=$TODAY"
+  check "the rest of analytics is unaffected by the ML outage"    200 '"total_revenue"'
+fi
+
 echo "== Cleanup (soft delete; stock_movements are immutable and stay)"
 req DELETE /products/$PA;   check "delete product A" 204
 req DELETE /categories/$CAT; check "category deletable once products are gone" 204
