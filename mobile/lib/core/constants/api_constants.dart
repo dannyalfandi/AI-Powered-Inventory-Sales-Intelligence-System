@@ -15,10 +15,14 @@ abstract final class ApiConstants {
   static const inventoryPath = '/api/v1/inventory';
   static const customersPath = '/api/v1/customers';
   static const salesOrdersPath = '/api/v1/sales-orders';
+  static const analyticsPath = '/api/v1/analytics';
 
   /// Mirrors backend service.MaxPageSize.
   static const maxPageSize = 100;
 
   /// Mirrors backend service.DefaultPageSize.
   static const defaultPageSize = 20;
+
+  /// Rows requested from /analytics/top-products (backend caps it at 50).
+  static const topProductsLimit = 10;
 }

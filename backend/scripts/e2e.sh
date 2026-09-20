@@ -223,6 +223,94 @@ for id in "${RACE[@]}" $OC; do
   curl -s -o /dev/null -X PATCH "$B/sales-orders/$id/status" -H 'Content-Type: application/json' -d '{"status":"CANCELLED"}'
 done
 
+echo "== Analytics: setup (own category, products and customer for exact numbers)"
+TODAY=$(date +%F)
+field() { grep -o "\"$1\":-\?[0-9]*" <<<"${2:-$body}" | head -1 | cut -d: -f2; }
+# The JSON object of one row, e.g. obj '"product_id":12' -> {...}
+obj() { grep -o "{[^{}]*$1[^{}]*}" <<<"${2:-$body}" | head -1; }
+
+req POST /categories "{\"name\":\"E2E Analytics $RUN\"}";                                          ACAT=$(jid)
+req POST /products "{\"sku\":\"E2E-AN1-$RUN\",\"name\":\"E2E Analytics Kopi\",\"price\":10000,\"category_id\":$ACAT}"; AP1=$(jid)
+req POST /products "{\"sku\":\"E2E-AN2-$RUN\",\"name\":\"E2E Analytics Teh\",\"price\":25000}";      AP2=$(jid)
+req POST /inventory/$AP1/movements '{"type":"IN","quantity":100}'
+req POST /inventory/$AP2/movements '{"type":"IN","quantity":100}'
+req POST /customers "{\"name\":\"E2E Analytics Cust $RUN\"}";                                       ACUST=$(jid)
+
+# Baseline before our orders (this call may also populate the summary cache).
+req GET "/analytics/summary?from=$TODAY&to=$TODAY"; check "summary baseline" 200 '"total_revenue"'
+BASE_REV=$(field total_revenue); BASE_ORDERS=$(field total_orders); BASE_ITEMS=$(field total_items_sold)
+
+echo "== Analytics: orders (2 sold, 1 pending, 1 cancelled)"
+order() { # items-json -> OID
+  req POST /sales-orders "{\"customer_id\":$ACUST,\"items\":$1}"
+  jid
+}
+# Sold: 3x10000 + 1x25000 = 55000
+O1=$(order "[{\"product_id\":$AP1,\"quantity\":3},{\"product_id\":$AP2,\"quantity\":1}]")
+req PATCH /sales-orders/$O1/status '{"status":"CONFIRMED"}'; check "analytics order 1 confirmed" 200
+# Sold: 2x25000 = 50000, then shipped (still a sale)
+O2=$(order "[{\"product_id\":$AP2,\"quantity\":2}]")
+req PATCH /sales-orders/$O2/status '{"status":"CONFIRMED"}'; check "analytics order 2 confirmed" 200
+req PATCH /sales-orders/$O2/status '{"status":"SHIPPED"}';   check "analytics order 2 shipped" 200
+# Not a sale: stays PENDING (50000)
+O3=$(order "[{\"product_id\":$AP1,\"quantity\":5}]")
+# Not a sale: confirmed then cancelled (20000)
+O4=$(order "[{\"product_id\":$AP1,\"quantity\":2}]")
+req PATCH /sales-orders/$O4/status '{"status":"CONFIRMED"}'; check "analytics order 4 confirmed" 200
+req PATCH /sales-orders/$O4/status '{"status":"CANCELLED"}'; check "analytics order 4 cancelled" 200
+# Expected from the two sold orders only: revenue 105000, 2 orders, 6 items.
+
+echo "== Analytics: top products (not cached, so exact)"
+req GET "/analytics/top-products?from=$TODAY&to=$TODAY&limit=50"; check "top-products" 200 '"products"'
+row=$(obj "\"product_id\":$AP1")
+expect "AP1 quantity (3 sold; 5 pending + 2 cancelled ignored)" "$(field quantity_sold "$row")" 3
+expect "AP1 revenue" "$(field revenue "$row")" 30000
+row=$(obj "\"product_id\":$AP2")
+expect "AP2 quantity (1 + 2 from two sold orders)" "$(field quantity_sold "$row")" 3
+expect "AP2 revenue" "$(field revenue "$row")" 75000
+grep -q "\"sku\":\"E2E-AN1-$RUN\"" <<<"$body" && { pass=$((pass+1)); echo "PASS  top-products carries the item snapshot SKU"; } || { fail=$((fail+1)); echo "FAIL  $body"; }
+
+echo "== Analytics: category breakdown (not cached, so exact)"
+req GET "/analytics/category-breakdown?from=$TODAY&to=$TODAY"; check "category-breakdown" 200 '"categories"'
+row=$(obj "\"category_id\":$ACAT")
+expect "our category revenue (only AP1)" "$(field revenue "$row")" 30000
+expect "our category quantity"           "$(field quantity_sold "$row")" 3
+grep -q '"category_id":null' <<<"$body" && { pass=$((pass+1)); echo "PASS  products without a category are grouped separately"; } || { fail=$((fail+1)); echo "FAIL  no null category bucket: $body"; }
+
+echo "== Analytics: summary and trend (cached; deltas are checked against the baseline)"
+req GET "/analytics/summary?from=$TODAY&to=$TODAY"; check "summary" 200 '"average_order_value"'
+DELTA_REV=$(( $(field total_revenue) - BASE_REV ))
+DELTA_ORDERS=$(( $(field total_orders) - BASE_ORDERS ))
+DELTA_ITEMS=$(( $(field total_items_sold) - BASE_ITEMS ))
+if [ "$DELTA_REV" = 0 ] && [ "$DELTA_ORDERS" = 0 ]; then
+  pass=$((pass+1))
+  echo "PASS  summary served from cache (unchanged within the TTL)"
+  echo "      note: restart the API with ANALYTICS_CACHE_TTL=0 to assert fresh summary/trend numbers"
+else
+  expect "summary revenue delta (only CONFIRMED + SHIPPED)" "$DELTA_REV" 105000
+  expect "summary orders delta"                             "$DELTA_ORDERS" 2
+  expect "summary items delta"                              "$DELTA_ITEMS" 6
+  req GET "/analytics/sales-trend?from=$TODAY&to=$TODAY&granularity=daily"
+  point=$(obj "\"period_start\":\"$TODAY\"")
+  [ -n "$point" ] && { pass=$((pass+1)); echo "PASS  trend has a point for today"; } || { fail=$((fail+1)); echo "FAIL  no point for $TODAY: $body"; }
+fi
+
+echo "== Analytics: trend shape and other endpoints"
+WEEK_AGO=$(date -d '-6 days' +%F)
+req GET "/analytics/sales-trend?from=$WEEK_AGO&to=$TODAY&granularity=daily"; check "trend daily" 200 '"granularity":"daily"'
+expect "7 daily points, gaps filled with zeros" "$(grep -o '"period_start"' <<<"$body" | wc -l | tr -d ' ')" 7
+req GET "/analytics/sales-trend?from=$WEEK_AGO&to=$TODAY&granularity=weekly"; check "trend weekly" 200 '"granularity":"weekly"'
+req GET "/analytics/summary";      check "summary defaults to the last 30 days" 200 '"from"'
+req GET "/inventory/low-stock?page_size=1"; LOW_TOTAL=$(field total)
+req GET /analytics/low-stock-alert-count;   check "low-stock-alert-count" 200 '"count"'
+expect "alert count matches /inventory/low-stock" "$(field count)" "$LOW_TOTAL"
+
+echo "== Analytics: validation"
+req GET "/analytics/summary?from=2026-13-01";                     check "bad date format" 422 '"field":"from"'
+req GET "/analytics/summary?from=$TODAY&to=2020-01-01";           check "from after to" 422 '"field":"from"'
+req GET "/analytics/summary?from=2020-01-01&to=$TODAY";           check "range longer than a year" 422 '"field":"to"'
+req GET "/analytics/sales-trend?granularity=hourly";              check "bad granularity" 422 '"field":"granularity"'
+
 echo "== Cleanup (soft delete; stock_movements are immutable and stay)"
 req DELETE /products/$PA;   check "delete product A" 204
 req DELETE /categories/$CAT; check "category deletable once products are gone" 204

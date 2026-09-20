@@ -15,6 +15,7 @@ type Handlers struct {
 	Inventory  *handler.InventoryHandler
 	Customer   *handler.CustomerHandler
 	SalesOrder *handler.SalesOrderHandler
+	Analytics  *handler.AnalyticsHandler
 }
 
 func New(h Handlers) *gin.Engine {
@@ -59,6 +60,14 @@ func New(h Handlers) *gin.Engine {
 		orders.GET("", h.SalesOrder.List)
 		orders.GET("/:id", h.SalesOrder.GetByID)
 		orders.PATCH("/:id/status", h.SalesOrder.UpdateStatus)
+
+		// Read-only aggregations over the sales tables (no analytics table).
+		analytics := v1.Group("/analytics")
+		analytics.GET("/summary", h.Analytics.Summary)
+		analytics.GET("/sales-trend", h.Analytics.SalesTrend)
+		analytics.GET("/top-products", h.Analytics.TopProducts)
+		analytics.GET("/category-breakdown", h.Analytics.CategoryBreakdown)
+		analytics.GET("/low-stock-alert-count", h.Analytics.LowStockAlertCount)
 	}
 
 	return r

@@ -25,6 +25,9 @@ type Config struct {
 	LowStockDefaultThreshold int64
 	// Timezone (IANA name) of business dates, e.g. the date in order numbers.
 	Timezone string
+	// AnalyticsCacheTTL is how long analytics summary/trend responses stay
+	// cached in Redis. 0 disables caching (useful for tests and debugging).
+	AnalyticsCacheTTL time.Duration
 }
 
 type RedisConfig struct {
@@ -82,6 +85,12 @@ func FromLookup(lookup func(string) (string, bool)) (*Config, error) {
 		problems = append(problems, "LOW_STOCK_DEFAULT_THRESHOLD must be a non-negative integer")
 	}
 	cfg.LowStockDefaultThreshold = threshold
+
+	if ttl, err := time.ParseDuration(optional("ANALYTICS_CACHE_TTL", "5m")); err != nil || ttl < 0 {
+		problems = append(problems, "ANALYTICS_CACHE_TTL must be a non-negative duration, e.g. 5m or 0")
+	} else {
+		cfg.AnalyticsCacheTTL = ttl
+	}
 
 	cfg.Timezone = optional("APP_TIMEZONE", "Asia/Jakarta")
 	if _, err := time.LoadLocation(cfg.Timezone); err != nil {

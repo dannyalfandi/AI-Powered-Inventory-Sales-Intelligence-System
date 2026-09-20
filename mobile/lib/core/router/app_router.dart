@@ -5,6 +5,7 @@ import '../../features/category/presentation/screens/category_form_screen.dart';
 import '../../features/category/presentation/screens/category_list_screen.dart';
 import '../../features/customer/presentation/screens/customer_form_screen.dart';
 import '../../features/customer/presentation/screens/customer_list_screen.dart';
+import '../../features/dashboard/presentation/screens/dashboard_screen.dart';
 import '../../features/inventory/presentation/screens/low_stock_screen.dart';
 import '../../features/inventory/presentation/screens/product_stock_screen.dart';
 import '../../features/product/presentation/screens/product_form_screen.dart';
@@ -18,6 +19,7 @@ part 'app_router.g.dart';
 
 /// Route names — navigate with `context.pushNamed(AppRoutes.x)`, never raw paths.
 abstract final class AppRoutes {
+  static const dashboard = 'dashboard';
   static const products = 'products';
   static const productCreate = 'product-create';
   static const productDetail = 'product-detail';
@@ -51,8 +53,13 @@ GoRouter appRouter(Ref ref) {
         branches: [
           StatefulShellBranch(
             routes: [
+              GoRoute(path: '/', name: AppRoutes.dashboard, builder: (context, state) => const DashboardScreen()),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
               GoRoute(
-                path: '/',
+                path: '/products',
                 name: AppRoutes.products,
                 builder: (context, state) => const ProductListScreen(),
               ),
@@ -85,19 +92,12 @@ GoRouter appRouter(Ref ref) {
               ),
             ],
           ),
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/low-stock',
-                name: AppRoutes.lowStock,
-                builder: (context, state) => const LowStockScreen(),
-              ),
-            ],
-          ),
         ],
       ),
 
       // Full-screen routes (root navigator, no bottom navigation).
+      // Low stock is reached from the low-stock card on the dashboard.
+      GoRoute(path: '/low-stock', name: AppRoutes.lowStock, builder: (context, state) => const LowStockScreen()),
       // `products/new` must come before `products/:id`.
       GoRoute(
         path: '/products/new',

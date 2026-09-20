@@ -42,7 +42,8 @@ Edit `.env` so the credentials match `../infra/.env`:
 | `REDIS_DB` | `0` (any 0–15) |
 | `PORT` | HTTP port for the API (default `8080`) |
 | `LOW_STOCK_DEFAULT_THRESHOLD` | low-stock threshold for products without their own setting (default `10`) |
-| `APP_TIMEZONE` | IANA time zone for business dates, e.g. the date in order numbers (default `Asia/Jakarta`) |
+| `APP_TIMEZONE` | IANA time zone for business dates, e.g. the date in order numbers and the days analytics groups by (default `Asia/Jakarta`) |
+| `ANALYTICS_CACHE_TTL` | how long analytics summary/sales-trend stay cached in Redis (default `5m`; `0` disables caching) |
 
 If the password contains special characters (`@ : / ? #`), URL-encode them in `DATABASE_URL`.
 
@@ -68,6 +69,8 @@ Schema:
 | `sales_orders` | `id`, `order_number`, `customer_id`, `status`, `total_amount`, `notes`, `confirmed_at`/`shipped_at`/`cancelled_at` (nullable), timestamps | `order_number` unique; FK → `customers.id` (`RESTRICT`); `CHECK status IN (...)`, `CHECK total_amount >= 0`; indexes on `status`, `customer_id`, `created_at` |
 | `sales_order_items` | `id`, `sales_order_id`, `product_id`, `product_sku`, `product_name`, `quantity`, `unit_price`, `subtotal` | FK → `sales_orders.id`, `products.id` (`RESTRICT`); `CHECK quantity > 0`, prices `>= 0` |
 | `sales_order_counters` | `day` (PK, `YYYYMMDD`), `last_value` | per-day sequence for order numbers |
+
+Analytics adds no table. It does add one index, `idx_sales_orders_status_confirmed_at` on `sales_orders (status, confirmed_at)`, because every analytics query filters exactly that pair (`status IN ('CONFIRMED','SHIPPED') AND confirmed_at` in range). It is declared with GORM tags on the model, so `go run ./cmd/migrate` creates it like any other index.
 
 Sales orders are never deleted (no soft delete either). A wrong order is cancelled instead.
 `unit_price`, `product_sku` and `product_name` are snapshots taken when the order is created, so changing or deleting a product later doesn't rewrite order history.
@@ -119,6 +122,11 @@ curl -i http://localhost:8080/health
 | GET | `/api/v1/sales-orders` | `?page=1&page_size=20&status=PENDING&customer_id=3` | 200 + `meta` (with `customer`, without `items`) |
 | GET | `/api/v1/sales-orders/:id` | – | 200 (with `customer` and `items`) |
 | PATCH | `/api/v1/sales-orders/:id/status` | `{"status":"CONFIRMED"}` | 200 |
+| GET | `/api/v1/analytics/summary` | `?from=&to=` | 200 |
+| GET | `/api/v1/analytics/sales-trend` | `?from=&to=&granularity=daily\|weekly` | 200 |
+| GET | `/api/v1/analytics/top-products` | `?from=&to=&limit=10` | 200 |
+| GET | `/api/v1/analytics/category-breakdown` | `?from=&to=` | 200 |
+| GET | `/api/v1/analytics/low-stock-alert-count` | – | 200 |
 
 `price` is an integer in whole Rupiah. Responses use `{"data": ...}`; errors use
 `{"error": {"code", "message", "details"}}` with status 400 (bad JSON/ID/query), 404, 409 (duplicate SKU/category name/email, category or customer in use), 422 (validation, invalid status transition, insufficient stock), 500.
@@ -186,6 +194,49 @@ Status state machine (`PATCH /api/v1/sales-orders/:id/status`, status is case-in
 - Each stock change is a normal `stock_movements` row with `sales_order_id` set and a reason like `sales order SO-20260920-0001 confirmed` / `… cancelled`, so it also shows up in the product's movement history.
 - `confirmed_at`, `shipped_at` and `cancelled_at` record when each transition happened.
 
+Analytics (read-only; there is no analytics table):
+
+- Every number is aggregated by Postgres from `sales_orders` + `sales_order_items` (+ `products`/`categories`) at request time, so nothing can go stale.
+- **What counts as a sale:** orders with status `CONFIRMED` or `SHIPPED`. `PENDING` hasn't taken stock yet and `CANCELLED` was undone, so both are left out of every figure.
+- **The sale date is `confirmed_at`**, grouped into calendar days in `APP_TIMEZONE`.
+- **Date range:** `from`/`to` are `YYYY-MM-DD`, inclusive on both ends. Defaults to the last 30 days; a missing `from` is 29 days before `to`, a missing `to` is today. `from` must be on or before `to` and the range is capped at 366 days (422 otherwise).
+- `limit` on top-products defaults to 10 and is capped at 50. Its SKU and name come from the order item snapshot, so a later rename doesn't rewrite history.
+- The category breakdown uses the product's *current* category (order items don't snapshot it); products without one are grouped as `"category_id": null`. Soft-deleted products and categories stay included, so the breakdown still adds up to the summary revenue.
+- `low-stock-alert-count` calls the same inventory service as `GET /inventory/low-stock`, so the number can't drift from the list.
+
+```bash
+curl "http://localhost:8080/api/v1/analytics/summary?from=2026-09-01&to=2026-09-20"
+# {"data":{"range":{"from":"2026-09-01","to":"2026-09-20"},
+#          "total_revenue":673000,"total_orders":10,"total_items_sold":30,"average_order_value":67300}}
+
+curl "http://localhost:8080/api/v1/analytics/sales-trend?from=2026-09-18&to=2026-09-20&granularity=daily"
+# {"data":{"range":{"from":"2026-09-18","to":"2026-09-20"},"granularity":"daily","points":[
+#   {"period_start":"2026-09-18","period_end":"2026-09-18","revenue":0,"orders":0},
+#   {"period_start":"2026-09-19","period_end":"2026-09-19","revenue":0,"orders":0},
+#   {"period_start":"2026-09-20","period_end":"2026-09-20","revenue":928000,"orders":13}]}}
+# weekly buckets start on Monday: {"period_start":"2026-09-14","period_end":"2026-09-20",...}
+
+curl "http://localhost:8080/api/v1/analytics/top-products?from=2026-09-20&to=2026-09-20&limit=3"
+# {"data":{"range":{...},"products":[
+#   {"product_id":17,"sku":"KOPI-001","name":"Kopi Arabica","quantity_sold":3,"revenue":135000}]}}
+
+curl "http://localhost:8080/api/v1/analytics/category-breakdown?from=2026-09-20&to=2026-09-20"
+# {"data":{"range":{...},"categories":[
+#   {"category_id":null,"category_name":"Tanpa Kategori","quantity_sold":34,"revenue":778000},
+#   {"category_id":8,"category_name":"Minuman","quantity_sold":2,"revenue":90000}]}}
+
+curl http://localhost:8080/api/v1/analytics/low-stock-alert-count
+# {"data":{"count":11}}
+
+curl "http://localhost:8080/api/v1/analytics/summary?from=2020-01-01&to=2026-09-20"
+# 422 {"error":{"code":"validation_failed","message":"request validation failed",
+#      "details":[{"field":"to","message":"range must be at most 366 days"}]}}
+```
+
+Trend points include periods without sales (`revenue: 0`), so a chart has no gaps.
+
+**Caching.** `summary` and `sales-trend` are cached in Redis for `ANALYTICS_CACHE_TTL` (default 5 minutes); they are the queries a dashboard hits on every load. The key is `analytics:v1:<query>[:<granularity>]:<from>:<to>`, so each range and granularity is cached separately. There is no invalidation on write: the dashboard may lag up to the TTL behind a new order. `top-products`, `category-breakdown` and `low-stock-alert-count` are not cached (cheap, and usually wanted fresh). A Redis outage is logged and treated as a cache miss, never an error.
+
 Examples:
 
 ```bash
@@ -224,6 +275,7 @@ go test -cover ./...           # with coverage
 go test -run TestProductService ./internal/service -v
 go test -run 'TestCategoryService|TestInventoryService' ./internal/service -v
 go test -run 'TestCustomerService|TestSalesOrderService' ./internal/service -v
+go test -run TestAnalyticsService ./internal/service -v
 ```
 
 Smoke test against a real API, which needs Postgres, migrations and `go run ./cmd/api`. It needs bash and curl; on Windows, use Git Bash:
@@ -236,9 +288,18 @@ The script covers:
 - Category, Product↔Category and Inventory, including 20 concurrent OUTs
 - Customers
 - the full sales order flow: create → confirm (stock down) → cancel (stock back) → ship, invalid transitions, and a rollback when one item is short
+- analytics: orders in four statuses, then checks that only the CONFIRMED/SHIPPED ones show up in summary, top-products and category-breakdown, plus trend shape, the alert count and the date validation.
+  Summary and trend are cached, so the script compares them against a baseline taken before its own orders; if it sees a cached response it says so instead of failing. Start the API with `ANALYTICS_CACHE_TTL=0` to assert those numbers exactly.
 - concurrency: 5 orders racing for the same stock, one order confirmed 10× in parallel, and 20 parallel creates with unique order numbers
 
 It creates uniquely named data and soft-deletes products and categories at the end. Stock movements, inventory rows, orders and customers with orders stay behind.
+
+The analytics SQL has its own tests against a real Postgres, because "only CONFIRMED and SHIPPED count" lives in the queries and a mock can't prove it. They skip unless `TEST_DATABASE_URL` is set, and run inside a transaction that is rolled back, so the database keeps its data:
+
+```bash
+TEST_DATABASE_URL="postgres://inventory:...@localhost:5432/inventory_intel?sslmode=disable" \
+  go test ./internal/repository -run Analytics -v
+```
 
 Unit tests need no database. The service layer is tested with testify mocks of the repository interfaces.
 - The inventory mock's `Mutate` runs the service's mutation against an in-memory row, the same way the real repository does inside its transaction.

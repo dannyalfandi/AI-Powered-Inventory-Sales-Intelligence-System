@@ -18,16 +18,19 @@ const (
 // only the status changes (see service.orderTransitions). Stock is deducted on
 // CONFIRMED and returned when a CONFIRMED order is CANCELLED.
 type SalesOrder struct {
-	ID          uint        `gorm:"primaryKey" json:"id"`
-	OrderNumber string      `gorm:"size:32;not null;uniqueIndex" json:"order_number"`
-	CustomerID  uint        `gorm:"not null;index" json:"customer_id"`
-	Status      OrderStatus `gorm:"size:16;not null;index;check:chk_sales_orders_status,status IN ('PENDING','CONFIRMED','SHIPPED','CANCELLED')" json:"status"`
+	ID          uint   `gorm:"primaryKey" json:"id"`
+	OrderNumber string `gorm:"size:32;not null;uniqueIndex" json:"order_number"`
+	CustomerID  uint   `gorm:"not null;index" json:"customer_id"`
+	// The composite index serves the analytics queries, which always filter
+	// "status IN ('CONFIRMED','SHIPPED') AND confirmed_at in range".
+	Status OrderStatus `gorm:"size:16;not null;index;index:idx_sales_orders_status_confirmed_at,priority:1;check:chk_sales_orders_status,status IN ('PENDING','CONFIRMED','SHIPPED','CANCELLED')" json:"status"`
 	// TotalAmount is the sum of item subtotals, in whole Rupiah.
 	TotalAmount int64  `gorm:"not null;check:chk_sales_orders_total_non_negative,total_amount >= 0" json:"total_amount"`
 	Notes       string `gorm:"type:text" json:"notes"`
 
 	// Set when the order enters that status; null otherwise.
-	ConfirmedAt *time.Time `json:"confirmed_at"`
+	// ConfirmedAt is the sale date used by analytics.
+	ConfirmedAt *time.Time `gorm:"index:idx_sales_orders_status_confirmed_at,priority:2" json:"confirmed_at"`
 	ShippedAt   *time.Time `json:"shipped_at"`
 	CancelledAt *time.Time `json:"cancelled_at"`
 
