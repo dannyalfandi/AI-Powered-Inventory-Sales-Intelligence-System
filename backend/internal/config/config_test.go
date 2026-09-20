@@ -2,6 +2,7 @@ package config
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,6 +25,7 @@ func TestFromLookup(t *testing.T) {
 
 		"LOW_STOCK_DEFAULT_THRESHOLD": "5",
 		"APP_TIMEZONE":                "Asia/Makassar",
+		"ANALYTICS_CACHE_TTL":         "90s",
 	}
 
 	with := func(overrides map[string]string) map[string]string {
@@ -57,13 +59,14 @@ func TestFromLookup(t *testing.T) {
 
 				LowStockDefaultThreshold: 5,
 				Timezone:                 "Asia/Makassar",
+				AnalyticsCacheTTL:        90 * time.Second,
 			},
 		},
 		{
 			name: "defaults for optional values",
 			env: with(map[string]string{
 				"PORT": "<unset>", "REDIS_DB": "<unset>", "REDIS_PASSWORD": "<unset>",
-				"LOW_STOCK_DEFAULT_THRESHOLD": "<unset>", "APP_TIMEZONE": "<unset>",
+				"LOW_STOCK_DEFAULT_THRESHOLD": "<unset>", "APP_TIMEZONE": "<unset>", "ANALYTICS_CACHE_TTL": "<unset>",
 			}),
 			want: &Config{
 				Port:        "8080",
@@ -72,6 +75,7 @@ func TestFromLookup(t *testing.T) {
 
 				LowStockDefaultThreshold: 10,
 				Timezone:                 "Asia/Jakarta",
+				AnalyticsCacheTTL:        5 * time.Minute,
 			},
 		},
 		{
@@ -93,6 +97,11 @@ func TestFromLookup(t *testing.T) {
 			name:    "negative LOW_STOCK_DEFAULT_THRESHOLD",
 			env:     with(map[string]string{"LOW_STOCK_DEFAULT_THRESHOLD": "-1"}),
 			wantErr: []string{"LOW_STOCK_DEFAULT_THRESHOLD must be a non-negative integer"},
+		},
+		{
+			name:    "invalid ANALYTICS_CACHE_TTL",
+			env:     with(map[string]string{"ANALYTICS_CACHE_TTL": "-1m"}),
+			wantErr: []string{"ANALYTICS_CACHE_TTL must be a non-negative duration"},
 		},
 		{
 			name:    "unknown APP_TIMEZONE",

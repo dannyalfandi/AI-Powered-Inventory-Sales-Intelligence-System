@@ -68,6 +68,8 @@ func run() error {
 	}
 	customerRepo := repository.NewCustomerRepository(db)
 	salesOrderRepo := repository.NewSalesOrderRepository(db)
+	analyticsRepo := repository.NewAnalyticsRepository(db, loc)
+	analyticsSvc := service.NewAnalyticsService(analyticsRepo, inventorySvc, cache.NewStore(rdb), cfg.AnalyticsCacheTTL, loc)
 	customerSvc := service.NewCustomerService(customerRepo)
 	salesOrderSvc := service.NewSalesOrderService(salesOrderRepo, customerRepo, cfg.LowStockDefaultThreshold, loc)
 
@@ -81,6 +83,7 @@ func run() error {
 		Inventory:  handler.NewInventoryHandler(inventorySvc),
 		Customer:   handler.NewCustomerHandler(customerSvc),
 		SalesOrder: handler.NewSalesOrderHandler(salesOrderSvc),
+		Analytics:  handler.NewAnalyticsHandler(analyticsSvc),
 	})
 
 	srv := &http.Server{

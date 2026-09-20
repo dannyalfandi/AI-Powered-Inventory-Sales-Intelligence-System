@@ -12,6 +12,7 @@ Conventions (Riverpod, per-feature clean architecture) are in [`CLAUDE.md`](CLAU
 | Models | `freezed` + `json_serializable` |
 | Routing | `go_router` |
 | Lints | `flutter_lints` + `riverpod_lint` (as an `analysis_options.yaml` plugin) |
+| Charts | `fl_chart` (dashboard line + pie charts) |
 | Tests | `flutter_test` + `mocktail` |
 
 `riverpod_lint` 3.x is an `analysis_server_plugin`. It no longer uses `custom_lint`, which is why `custom_lint` isn't a dependency (the two versions can't be resolved together).
@@ -32,7 +33,7 @@ lib/
     network/page_meta_model.dart  {"page","page_size","total"} meta of list responses
     pagination/paged.dart         PageResult<T> (domain) + PagedState<T> (infinite-scroll lists)
     router/app_router.dart        appRouterProvider (go_router), AppRoutes
-    router/home_shell.dart        bottom navigation: Produk · Kategori · Stok Menipis
+    router/home_shell.dart        bottom navigation: Dashboard · Produk · Kategori · Pelanggan · Pesanan
     utils/                        formatRupiah(), formatDateTime()
   features/product/
     domain/      entities (Product + ProductCategory, ProductPage, ProductInput, ProductPatch, ProductRules),
@@ -79,6 +80,20 @@ lib/
                  salesOrderDetailProvider(id) (+ changeStatus), orderFormProvider, statusChangeErrorLines()
       screens/   SalesOrderListScreen, SalesOrderDetailScreen, SalesOrderFormScreen
       widgets/   OrderStatusBadge (+ label / icon / action text per status)
+  features/dashboard/
+    domain/      AnalyticsRange, DashboardSummary, SalesTrend(+Point), TopProduct, CategoryBreakdown,
+                 TrendGranularity; usecases GetDashboardSummary, GetSalesTrend, GetTopProducts,
+                 GetCategoryBreakdown, GetLowStockAlertCount
+    data/        response models + TrendGranularityCodec, DashboardRemoteDataSource (all 5 analytics
+                 endpoints), DashboardRepositoryImpl
+    presentation/
+      providers/ dashboard_providers.dart (DI), dashboardDateRangeProvider (one range for the page),
+                 trendGranularityFilterProvider, dashboardSummary/SalesTrend/TopProducts/
+                 CategoryBreakdown/LowStockCount providers (one per endpoint)
+      screens/   DashboardScreen
+      widgets/   DashboardSection + AsyncSection (per-section loading/error), DateRangeBar, SummaryCards,
+                 SalesTrendChart (fl_chart line), TopProductsSection, CategoryBreakdownChart (fl_chart pie),
+                 LowStockCard
   features/product/presentation/widgets/product_picker.dart   pickProduct() — searchable, disables products already added
   shared/
     widgets/state_views.dart    LoadingView / ErrorView / EmptyView
@@ -91,9 +106,10 @@ Screens and routes:
 
 | Route | Screen |
 |---|---|
-| `/` (tab) | Products: search, infinite scroll, swipe delete. Tapping a product opens its detail. |
+| `/` (tab) | Dashboard: summary cards, date range (7/30/90 hari or custom), sales trend (daily/weekly), top 10 products, revenue per category, low-stock badge |
+| `/products` (tab) | Products: search, infinite scroll, swipe delete. Tapping a product opens its detail. |
 | `/categories` (tab) | Categories: search, infinite scroll, swipe delete |
-| `/low-stock` (tab) | Products with `quantity <= low_stock_threshold`. Refreshed whenever the tab is opened. |
+| `/low-stock` | Products with `quantity <= low_stock_threshold`, opened from the dashboard card. |
 | `/products/new`, `/products/:id/edit` | Product form with a category dropdown ("Tanpa Kategori" + all categories) |
 | `/products/:id` | Product detail: category, current stock, low-stock status, "Catat pergerakan" and movement history |
 | `/categories/new`, `/categories/:id/edit` | Category form |
@@ -103,7 +119,8 @@ Screens and routes:
 | `/sales-orders/new` | Order form: customer picker, product picker, quantities, running total |
 | `/sales-orders/:id` | Order detail: status + timeline, customer, items with snapshot prices, total, action buttons |
 
-Bottom navigation (5 tabs): Produk · Kategori · Pelanggan · Pesanan · Stok Menipis.
+Bottom navigation (5 tabs): Dashboard · Produk · Kategori · Pelanggan · Pesanan.
+Stok Menipis is no longer a tab: it is opened from the low-stock card on the dashboard (`context.pushNamed(AppRoutes.lowStock)`), which keeps the dashboard as the home screen without a sixth tab.
 
 Behaviour worth knowing:
 - **Category delete**: the backend returns 409 while products still use the category. The row stays and a dialog explains which products block it ("masih dipakai oleh N produk…").
@@ -131,6 +148,12 @@ Behaviour worth knowing:
   These rules mirror the backend, and local and backend (422) errors appear under the same line/field.
   The running total uses current product prices. The backend snapshots prices when the order is created, and the order detail shows those snapshots.
   Items can't be edited after creation; cancel the order and create a new one.
+
+- **Dashboard**: five endpoints load in parallel, each in its own provider and its own section. A section that fails shows only its own message and "Coba lagi"; the others keep their data. While a section reloads (after a date change) its previous data stays on screen under a thin progress bar.
+  The date range is one provider that the four range-based sections watch, so changing it reloads them together; the granularity toggle is a separate provider, so daily↔weekly costs exactly one request.
+  The low-stock count is not range-bound (it is current stock), so it does not reload on a date change, and its card stays tappable even when the count fails.
+  `DashboardScreen` keeps all five providers subscribed with `ref.listen`, so scrolling a card out of the `ListView` does not dispose it and refetch on scroll back.
+  Money is formatted with `formatRupiah`; chart axes use `formatRupiahCompact` ("Rp 928rb"). Products without a category arrive as `category_id: null` and are shown as an italic grey "Tanpa Kategori" slice.
 
 Dependency direction: `presentation → domain ← data`. `domain` imports nothing from Flutter, Dio or Riverpod.
 
@@ -224,10 +247,12 @@ flutter analyze              # lints incl. riverpod_lint
   - customers with/without email
   - orders with nested `customer` + `items`, and list orders without `items`
   - the 422/409 error shapes
+  - analytics: summary, daily/weekly trend, top products and category breakdown (incl. `"products": null` / `"categories": null` on an empty range, and `category_id: null`), low-stock count
 - `test/features/sales_order/`:
   - the 4×4 state machine and `OrderRules`
   - usecases and providers (filters, `changeStatus` refreshes, per-item error lines, form state)
   - widget tests: detail buttons per status, confirm dialog, disabled while in flight, short-stock dialog; form duplicate product / quantity 0 / 422 per line / running total; list badges and filter
+- `test/features/dashboard/`: providers (default 30-day range, date change reloads all four range-based sections, granularity reloads only the trend, one failing endpoint leaves the others with data) and widget tests (per-section spinner, data, per-section retry, low-stock navigation, preset chip)
 - `test/core/`: backend error envelope → `Failure`, pagination helpers
 
 ## Error handling
