@@ -4,6 +4,8 @@ import 'package:inventory_intel/core/error/failure.dart';
 import 'package:inventory_intel/core/error/failure_mapper.dart';
 import 'package:inventory_intel/features/category/data/models/category_model.dart';
 import 'package:inventory_intel/features/customer/data/models/customer_model.dart';
+import 'package:inventory_intel/features/dashboard/data/models/dashboard_models.dart';
+import 'package:inventory_intel/features/dashboard/domain/entities/dashboard.dart';
 import 'package:inventory_intel/features/inventory/data/models/inventory_model.dart';
 import 'package:inventory_intel/features/inventory/domain/entities/inventory.dart';
 import 'package:inventory_intel/features/product/data/models/product_model.dart';
@@ -339,5 +341,137 @@ void main() {
       expect(f, isA<ServerFailure>().having((f) => f.isConflict, 'isConflict', true));
       expect(f.message, contains('still has 2 sales order(s)'));
     });
+  });
+
+  // --- analytics / dashboard (captured from the live API) -------------------
+
+  group('analytics summary', () {
+    test('totals with the echoed range', () {
+      final s = DashboardSummaryModel.fromJson({
+        'range': {'from': '2026-09-18', 'to': '2026-09-20'},
+        'total_revenue': 928000,
+        'total_orders': 13,
+        'total_items_sold': 42,
+        'average_order_value': 71385,
+      }).toEntity();
+
+      expect(s.totalRevenue, 928000);
+      expect(s.totalOrders, 13);
+      expect(s.totalItemsSold, 42);
+      expect(s.averageOrderValue, 71385);
+      expect(s.range.from, DateTime(2026, 9, 18));
+      expect(s.range.to, DateTime(2026, 9, 20));
+    });
+
+    test('an empty range returns zeros, not nulls', () {
+      final s = DashboardSummaryModel.fromJson({
+        'range': {'from': '2025-01-01', 'to': '2025-01-02'},
+        'total_revenue': 0,
+        'total_orders': 0,
+        'total_items_sold': 0,
+        'average_order_value': 0,
+      }).toEntity();
+
+      expect(s.totalRevenue, 0);
+      expect(s.averageOrderValue, 0);
+    });
+  });
+
+  group('analytics sales trend', () {
+    test('daily points, including periods with no sales', () {
+      final t = SalesTrendModel.fromJson({
+        'range': {'from': '2026-09-18', 'to': '2026-09-20'},
+        'granularity': 'daily',
+        'points': [
+          {'period_start': '2026-09-18', 'period_end': '2026-09-18', 'revenue': 0, 'orders': 0},
+          {'period_start': '2026-09-19', 'period_end': '2026-09-19', 'revenue': 0, 'orders': 0},
+          {'period_start': '2026-09-20', 'period_end': '2026-09-20', 'revenue': 928000, 'orders': 13},
+        ],
+      }).toEntity();
+
+      expect(t.granularity, TrendGranularity.daily);
+      expect(t.points, hasLength(3));
+      expect(t.points.first.revenue, 0);
+      expect(t.points.last.revenue, 928000);
+      expect(t.points.last.orders, 13);
+      expect(t.points.last.periodStart, DateTime(2026, 9, 20));
+    });
+
+    test('weekly points span Monday to Sunday', () {
+      final t = SalesTrendModel.fromJson({
+        'range': {'from': '2026-08-31', 'to': '2026-09-20'},
+        'granularity': 'weekly',
+        'points': [
+          {'period_start': '2026-09-14', 'period_end': '2026-09-20', 'revenue': 928000, 'orders': 13},
+        ],
+      }).toEntity();
+
+      expect(t.granularity, TrendGranularity.weekly);
+      expect(t.points.single.periodStart, DateTime(2026, 9, 14));
+      expect(t.points.single.periodEnd, DateTime(2026, 9, 20));
+    });
+
+    test('granularity maps both ways; unknown is a FormatException', () {
+      expect(TrendGranularityCodec.encode(TrendGranularity.daily), 'daily');
+      expect(TrendGranularityCodec.encode(TrendGranularity.weekly), 'weekly');
+      expect(TrendGranularityCodec.decode('weekly'), TrendGranularity.weekly);
+      expect(() => TrendGranularityCodec.decode('hourly'), throwsFormatException);
+    });
+  });
+
+  group('analytics top products', () {
+    test('rows carry the order item snapshot', () {
+      final rows = TopProductsResponse.fromJson({
+        'products': [
+          {'product_id': 17, 'sku': 'KOPI-001', 'name': 'Kopi Arabica', 'quantity_sold': 3, 'revenue': 135000},
+        ],
+        'range': {'from': '2026-09-18', 'to': '2026-09-20'},
+      }).toEntities();
+
+      expect(rows.single.productId, 17);
+      expect(rows.single.sku, 'KOPI-001');
+      expect(rows.single.quantitySold, 3);
+      expect(rows.single.revenue, 135000);
+    });
+
+    test('an empty range sends "products": null, which reads as an empty list', () {
+      final rows = TopProductsResponse.fromJson({
+        'products': null,
+        'range': {'from': '2025-01-01', 'to': '2025-01-02'},
+      }).toEntities();
+
+      expect(rows, isEmpty);
+    });
+  });
+
+  group('analytics category breakdown', () {
+    test('null category_id is the "no category" bucket', () {
+      final rows = CategoryBreakdownResponse.fromJson({
+        'categories': [
+          {'category_id': null, 'category_name': 'Tanpa Kategori', 'quantity_sold': 34, 'revenue': 778000},
+          {'category_id': 8, 'category_name': 'Minuman', 'quantity_sold': 2, 'revenue': 90000},
+        ],
+        'range': {'from': '2026-09-18', 'to': '2026-09-20'},
+      }).toEntities();
+
+      expect(rows, hasLength(2));
+      expect(rows.first.categoryId, isNull);
+      expect(rows.first.categoryName, 'Tanpa Kategori');
+      expect(rows.first.revenue, 778000);
+      expect(rows.last.categoryId, 8);
+    });
+
+    test('an empty range sends "categories": null', () {
+      final rows = CategoryBreakdownResponse.fromJson({
+        'categories': null,
+        'range': {'from': '2025-01-01', 'to': '2025-01-02'},
+      }).toEntities();
+
+      expect(rows, isEmpty);
+    });
+  });
+
+  test('analytics low-stock alert count', () {
+    expect(LowStockAlertCountResponse.fromJson({'count': 11}).count, 11);
   });
 }
