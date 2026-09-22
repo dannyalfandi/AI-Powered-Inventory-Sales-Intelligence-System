@@ -1,0 +1,8 @@
+# Code generation for the ARB files: `flutter gen-l10n` (also runs on build).
+# English is the template and the fallback: a key missing from app_id.arb
+# falls back to its English text instead of crashing.
+arb-dir: lib/l10n
+template-arb-file: app_en.arb
+output-localization-file: app_localizations.dart
+output-class: AppLocalizations
+nullable-getter: false
