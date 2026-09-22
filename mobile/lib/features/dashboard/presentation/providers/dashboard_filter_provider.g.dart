@@ -24,7 +24,8 @@ final dashboardDateRangeProvider = DashboardDateRangeProvider._();
 /// Only the range lives here. The chart granularity is a separate provider
 /// ([TrendGranularityFilter]) so switching daily/weekly refetches the trend
 /// alone instead of all four range-based endpoints.
-final class DashboardDateRangeProvider extends $NotifierProvider<DashboardDateRange, AnalyticsRange> {
+final class DashboardDateRangeProvider
+    extends $NotifierProvider<DashboardDateRange, AnalyticsRange> {
   /// The single source of truth for the dashboard date range: every data
   /// provider watches it, so one change refreshes the whole page at once.
   ///
@@ -51,11 +52,15 @@ final class DashboardDateRangeProvider extends $NotifierProvider<DashboardDateRa
 
   /// {@macro riverpod.override_with_value}
   Override overrideWithValue(AnalyticsRange value) {
-    return $ProviderOverride(origin: this, providerOverride: $SyncValueProvider<AnalyticsRange>(value));
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<AnalyticsRange>(value),
+    );
   }
 }
 
-String _$dashboardDateRangeHash() => r'a917a8e4d250a7633b2be6f05982642cd9cb60bf';
+String _$dashboardDateRangeHash() =>
+    r'a917a8e4d250a7633b2be6f05982642cd9cb60bf';
 
 /// The single source of truth for the dashboard date range: every data
 /// provider watches it, so one change refreshes the whole page at once.
@@ -72,7 +77,12 @@ abstract class _$DashboardDateRange extends $Notifier<AnalyticsRange> {
     final ref = this.ref as $Ref<AnalyticsRange, AnalyticsRange>;
     final element =
         ref.element
-            as $ClassProviderElement<AnyNotifier<AnalyticsRange, AnalyticsRange>, AnalyticsRange, Object?, Object?>;
+            as $ClassProviderElement<
+              AnyNotifier<AnalyticsRange, AnalyticsRange>,
+              AnalyticsRange,
+              Object?,
+              Object?
+            >;
     return element.handleCreate(ref, build);
   }
 }
@@ -83,7 +93,8 @@ abstract class _$DashboardDateRange extends $Notifier<AnalyticsRange> {
 final trendGranularityFilterProvider = TrendGranularityFilterProvider._();
 
 /// Bucket size of the sales trend chart only.
-final class TrendGranularityFilterProvider extends $NotifierProvider<TrendGranularityFilter, TrendGranularity> {
+final class TrendGranularityFilterProvider
+    extends $NotifierProvider<TrendGranularityFilter, TrendGranularity> {
   /// Bucket size of the sales trend chart only.
   TrendGranularityFilterProvider._()
     : super(
@@ -105,11 +116,15 @@ final class TrendGranularityFilterProvider extends $NotifierProvider<TrendGranul
 
   /// {@macro riverpod.override_with_value}
   Override overrideWithValue(TrendGranularity value) {
-    return $ProviderOverride(origin: this, providerOverride: $SyncValueProvider<TrendGranularity>(value));
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<TrendGranularity>(value),
+    );
   }
 }
 
-String _$trendGranularityFilterHash() => r'25437b8d31e13e56382d5042f995f92582147423';
+String _$trendGranularityFilterHash() =>
+    r'25437b8d31e13e56382d5042f995f92582147423';
 
 /// Bucket size of the sales trend chart only.
 

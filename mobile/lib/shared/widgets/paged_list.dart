@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../core/l10n/l10n.dart';
 import '../../core/pagination/paged.dart';
+import 'state_views.dart';
 
 /// Last row of an infinite-scroll list: spinner while loading the next page,
 /// retry button after a failure, "load more" button, or the total count.
@@ -15,7 +17,7 @@ class PagedListFooter extends StatelessWidget {
   final PagedState<Object?> state;
   final VoidCallback onLoadMore;
 
-  /// E.g. `(n) => '$n kategori'`.
+  /// E.g. `(n) => context.l10n.categoriesCount(n)`.
   final String Function(int total) totalLabel;
 
   @override
@@ -27,10 +29,10 @@ class PagedListFooter extends StatelessWidget {
       child = TextButton.icon(
         onPressed: onLoadMore,
         icon: const Icon(Icons.refresh),
-        label: Text('Gagal memuat: ${state.loadMoreError!.message}'),
+        label: Text(context.l10n.commonLoadFailed(errorMessage(context, state.loadMoreError!))),
       );
     } else if (state.hasMore) {
-      child = TextButton(onPressed: onLoadMore, child: const Text('Muat lebih banyak'));
+      child = TextButton(onPressed: onLoadMore, child: Text(context.l10n.commonLoadMore));
     } else {
       child = Text(totalLabel(state.total), style: Theme.of(context).textTheme.bodySmall);
     }

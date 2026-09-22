@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/error/failure.dart';
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/router/app_router.dart';
 import '../../../../shared/widgets/paged_list.dart';
 import '../../../../shared/widgets/state_views.dart';
@@ -38,6 +39,9 @@ class _CustomerListScreenState extends ConsumerState<CustomerListScreen> {
     super.dispose();
   }
 
+  /// Shorthand so the callbacks below read like the build method.
+  AppLocalizations get l10n => context.l10n;
+
   void _onSearchChanged(String value) {
     setState(() {}); // toggles the clear button
     _debounce?.cancel();
@@ -59,11 +63,11 @@ class _CustomerListScreenState extends ConsumerState<CustomerListScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Hapus pelanggan?'),
-        content: Text('Pelanggan "${c.name}" akan dihapus.'),
+        title: Text(l10n.customerDeleteConfirmTitle),
+        content: Text(l10n.customerDeleteConfirmBody(c.name)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Hapus')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l10n.commonCancel)),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(l10n.commonDelete)),
         ],
       ),
     );
@@ -78,20 +82,20 @@ class _CustomerListScreenState extends ConsumerState<CustomerListScreen> {
     final messenger = ScaffoldMessenger.of(context);
     try {
       await ref.read(customerListProvider.notifier).delete(c.id);
-      messenger.showSnackBar(SnackBar(content: Text('Pelanggan ${c.name} dihapus')));
+      messenger.showSnackBar(SnackBar(content: Text(l10n.customerDeleted(c.name))));
       return true;
     } on Failure catch (f) {
       if (!mounted) return false;
-      final message = customerDeleteErrorMessage(f, c);
+      final message = customerDeleteErrorMessage(context, f, c);
       if (f is ServerFailure && f.isConflict) {
         await showDialog<void>(
           context: context,
           builder: (ctx) => AlertDialog(
             icon: const Icon(Icons.receipt_long_outlined),
-            title: const Text('Pelanggan masih punya pesanan'),
+            title: Text(l10n.customerDeleteBlockedTitle),
             content: Text(message),
             actions: [
-              FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('Mengerti')),
+              FilledButton(onPressed: () => Navigator.pop(ctx), child: Text(l10n.commonUnderstood)),
             ],
           ),
         );
@@ -109,14 +113,14 @@ class _CustomerListScreenState extends ConsumerState<CustomerListScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Pelanggan'),
+        title: Text(l10n.customersTitle),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(64),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
             child: SearchBar(
               controller: _searchController,
-              hintText: 'Cari nama, email, atau telepon',
+              hintText: l10n.customersSearchHint,
               leading: const Icon(Icons.search),
               elevation: const WidgetStatePropertyAll(0),
               onChanged: _onSearchChanged,
@@ -124,7 +128,7 @@ class _CustomerListScreenState extends ConsumerState<CustomerListScreen> {
               trailing: [
                 if (_searchController.text.isNotEmpty)
                   IconButton(
-                    tooltip: 'Hapus pencarian',
+                    tooltip: l10n.commonClearSearch,
                     icon: const Icon(Icons.clear),
                     onPressed: () {
                       _searchController.clear();
@@ -140,13 +144,13 @@ class _CustomerListScreenState extends ConsumerState<CustomerListScreen> {
         heroTag: 'customer_fab',
         onPressed: () => context.pushNamed(AppRoutes.customerCreate),
         icon: const Icon(Icons.person_add_alt),
-        label: const Text('Pelanggan'),
+        label: Text(l10n.customersTitle),
       ),
       body: customers.when(
         loading: () => const LoadingView(),
         error: (e, _) => RefreshableView(
           onRefresh: _refresh,
-          child: ErrorView(message: errorMessage(e), onRetry: () => ref.invalidate(customerListProvider)),
+          child: ErrorView(message: errorMessage(context, e), onRetry: () => ref.invalidate(customerListProvider)),
         ),
         data: (state) {
           if (state.items.isEmpty) {
@@ -155,8 +159,8 @@ class _CustomerListScreenState extends ConsumerState<CustomerListScreen> {
               child: EmptyView(
                 icon: search.isEmpty ? Icons.people_outline : Icons.search_off,
                 message: search.isEmpty
-                    ? 'Belum ada pelanggan.\nTambahkan pelanggan pertama.'
-                    : 'Tidak ada pelanggan untuk "$search".',
+                    ? l10n.customersEmptyHint
+                    : l10n.customersEmptyForSearch(search),
               ),
             );
           }
@@ -173,7 +177,7 @@ class _CustomerListScreenState extends ConsumerState<CustomerListScreen> {
                   return PagedListFooter(
                     state: state,
                     onLoadMore: () => ref.read(customerListProvider.notifier).loadMore(),
-                    totalLabel: (n) => '$n pelanggan',
+                    totalLabel: (n) => l10n.customersCount(n),
                   );
                 }
                 final c = state.items[i];
@@ -215,7 +219,11 @@ class CustomerTile extends StatelessWidget {
       onTap: onTap,
       leading: CircleAvatar(child: Text(customer.name.characters.first.toUpperCase())),
       title: Text(customer.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text(contact.isEmpty ? 'Tanpa kontak' : contact, maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: Text(
+        contact.isEmpty ? context.l10n.customerNoContact : contact,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
     );
   }
 }

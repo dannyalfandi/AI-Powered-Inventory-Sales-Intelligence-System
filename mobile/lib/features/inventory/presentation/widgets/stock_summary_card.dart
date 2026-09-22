@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/l10n/l10n.dart';
 import '../../domain/entities/inventory.dart';
 
 /// Current quantity, threshold and low-stock status of one product.
@@ -10,6 +11,7 @@ class StockSummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final low = inventory.isLowStock;
@@ -27,14 +29,14 @@ class StockSummaryCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Stok saat ini', style: theme.textTheme.labelLarge),
+                  Text(l10n.inventoryCurrentStock, style: theme.textTheme.labelLarge),
                   Text(
                     '${inventory.quantity}',
                     key: const Key('stock_quantity'),
                     style: theme.textTheme.displaySmall?.copyWith(fontWeight: FontWeight.w600),
                   ),
                   Text(
-                    'Batas stok menipis: ${inventory.lowStockThreshold}',
+                    l10n.inventoryThresholdLine(inventory.lowStockThreshold),
                     style: theme.textTheme.bodyMedium,
                   ),
                 ],
@@ -43,7 +45,11 @@ class StockSummaryCard extends StatelessWidget {
             Chip(
               key: const Key('stock_status'),
               avatar: Icon(low ? Icons.warning_amber_rounded : Icons.check_circle_outline, size: 18),
-              label: Text(empty ? 'Habis' : (low ? 'Stok menipis' : 'Aman')),
+              label: Text(
+                empty
+                    ? l10n.inventoryOutOfStock
+                    : (low ? l10n.productStockLow : l10n.inventoryHealthy),
+              ),
             ),
           ],
         ),

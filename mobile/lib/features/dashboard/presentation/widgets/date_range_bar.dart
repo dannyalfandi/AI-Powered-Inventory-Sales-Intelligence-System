@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/l10n/l10n.dart';
+
 import '../../../../core/utils/date_formatter.dart';
 import '../../domain/entities/dashboard.dart';
 import '../providers/dashboard_filter_provider.dart';
@@ -28,7 +30,7 @@ class DateRangeBar extends StatelessWidget {
               const SizedBox(width: 6),
               Expanded(child: Text(formatDateRange(range.from, range.to), style: theme.textTheme.bodyMedium)),
               Text(
-                '${range.dayCount} hari',
+                context.l10n.dashboardRangeDays(range.dayCount),
                 style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
               ),
             ],
@@ -39,7 +41,7 @@ class DateRangeBar extends StatelessWidget {
             children: [
               for (final days in dashboardPresetDays)
                 ChoiceChip(
-                  label: Text('$days hari'),
+                  label: Text(context.l10n.dashboardRangeDays(days)),
                   // A custom range that happens to equal a preset selects that
                   // chip — the state is the range itself, not "which button".
                   selected: range == AnalyticsRange.lastDays(today, days),
@@ -47,7 +49,7 @@ class DateRangeBar extends StatelessWidget {
                 ),
               ActionChip(
                 avatar: const Icon(Icons.date_range, size: 18),
-                label: const Text('Pilih tanggal'),
+                label: Text(context.l10n.dashboardRangePick),
                 onPressed: () => _pickRange(context, today),
               ),
             ],
@@ -65,8 +67,8 @@ class DateRangeBar extends StatelessWidget {
       firstDate: DateTime(today.year - 5),
       lastDate: DateTime(today.year, today.month, today.day),
       initialDateRange: DateTimeRange(start: range.from, end: range.to),
-      helpText: 'Pilih rentang tanggal',
-      saveText: 'Terapkan',
+      helpText: context.l10n.dashboardRangePickerHelp,
+      saveText: context.l10n.dashboardRangePickerApply,
     );
     if (picked != null) onCustomRange(picked.start, picked.end);
   }

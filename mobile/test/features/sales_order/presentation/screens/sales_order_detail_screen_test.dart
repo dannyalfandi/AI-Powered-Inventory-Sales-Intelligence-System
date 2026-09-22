@@ -12,6 +12,7 @@ import 'package:mocktail/mocktail.dart';
 
 import '../../../../helpers/inventory_fixtures.dart';
 import '../../../../helpers/sales_order_fixtures.dart';
+import '../../../../helpers/l10n_harness.dart';
 
 void main() {
   late MockSalesOrderRepository repo;
@@ -33,7 +34,7 @@ void main() {
           inventoryRepositoryProvider.overrideWithValue(MockInventoryRepository()),
         ],
         retry: (_, _) => null,
-        child: const MaterialApp(home: SalesOrderDetailScreen(orderId: 1)),
+        child: localizedApp(home: const SalesOrderDetailScreen(orderId: 1)),
       );
 
   Finder action(OrderStatus s) => find.byKey(Key('order_action_${s.name}'));
@@ -88,10 +89,10 @@ void main() {
     await tester.tap(action(OrderStatus.confirmed));
     await tester.pumpAndSettle();
 
-    expect(find.text('Konfirmasi pesanan?'), findsOneWidget);
-    expect(find.textContaining('Stok akan dikurangi'), findsOneWidget);
+    expect(find.text(l10nOf(tester).orderConfirmDialogTitle), findsOneWidget);
+    expect(find.textContaining(l10nOf(tester).orderConfirmDialogBody), findsOneWidget);
     expect(find.textContaining('Teh Melati × 5'), findsOneWidget);
-    await tester.tap(find.text('Kembali'));
+    await tester.tap(find.text(l10nOf(tester).commonBack));
     await tester.pumpAndSettle();
     verifyNever(() => repo.changeStatus(any(), any()));
   });
@@ -104,7 +105,7 @@ void main() {
     await tester.tap(action(OrderStatus.cancelled));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('akan dikembalikan'), findsOneWidget);
+    expect(find.textContaining(l10nOf(tester).orderCancelDialogBodyConfirmed), findsOneWidget);
   });
 
   testWidgets('all actions are disabled while a status change is in flight', (tester) async {
@@ -144,10 +145,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('order_status_error_dialog')), findsOneWidget);
-    expect(find.text('Pesanan tidak bisa dikonfirmasi'), findsOneWidget);
-    expect(find.text('Teh Melati (TEH-1): stok tersedia 3, dibutuhkan 5.'), findsOneWidget);
-    expect(find.textContaining('Tidak ada stok yang berubah'), findsOneWidget);
-    await tester.tap(find.text('Mengerti'));
+    expect(find.text(l10nOf(tester).orderConfirmBlockedTitle), findsOneWidget);
+    expect(find.text(l10nOf(tester).orderItemProblem('Teh Melati (TEH-1)', tehShortFailure.messages['items[1].quantity']!)), findsOneWidget);
+    expect(find.text(l10nOf(tester).orderStockProblemBody), findsOneWidget);
+    await tester.tap(find.text(l10nOf(tester).commonUnderstood));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('status_badge_pending')), findsOneWidget);
     expect(enabled(tester, OrderStatus.confirmed), isTrue, reason: 'buttons are usable again');
@@ -162,7 +163,7 @@ void main() {
     await tapAndConfirm(tester, OrderStatus.cancelled);
     await tester.pumpAndSettle();
 
-    expect(find.text('Tidak dapat terhubung ke server.'), findsOneWidget);
+    expect(find.text(l10nOf(tester).networkUnreachable), findsOneWidget);
     expect(enabled(tester, OrderStatus.cancelled), isTrue);
   });
 }

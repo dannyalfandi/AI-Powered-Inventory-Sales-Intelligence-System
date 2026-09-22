@@ -1,5 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import '../../../../core/validation/field_issue.dart';
+
 part 'category.freezed.dart';
 
 /// Product category (backend model.Category).
@@ -48,10 +50,10 @@ abstract class CategoryPatch with _$CategoryPatch {
 abstract final class CategoryRules {
   static const nameMaxLength = 100;
 
-  static String? validateName(String value) {
+  static FieldIssue? validateName(String value) {
     final v = value.trim();
-    if (v.isEmpty) return 'Nama kategori wajib diisi';
-    if (v.length > nameMaxLength) return 'Nama kategori maksimal $nameMaxLength karakter';
+    if (v.isEmpty) return const FieldIssue(FieldIssueKind.nameRequired);
+    if (v.length > nameMaxLength) return const FieldIssue(FieldIssueKind.nameTooLong, max: nameMaxLength);
     return null;
   }
 }

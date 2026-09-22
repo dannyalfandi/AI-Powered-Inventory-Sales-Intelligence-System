@@ -53,7 +53,7 @@ void main() {
       test(c.name, () async {
         await expectLater(
           usecase(c.input),
-          throwsA(isA<ValidationFailure>().having((f) => f.messages.keys.toSet(), 'fields', c.fields)),
+          throwsA(isA<ValidationFailure>().having((f) => f.issues.keys.toSet(), 'fields', c.fields)),
         );
         verifyNever(() => repo.createProduct(any()));
       });

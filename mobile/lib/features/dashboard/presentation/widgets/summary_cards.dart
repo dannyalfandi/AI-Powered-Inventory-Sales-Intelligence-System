@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../domain/entities/dashboard.dart';
 
@@ -12,11 +13,16 @@ class SummaryCards extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final cards = [
-      _CardData('Pendapatan', formatRupiah(summary.totalRevenue), Icons.payments_outlined),
-      _CardData('Pesanan', '${summary.totalOrders}', Icons.receipt_long_outlined),
-      _CardData('Item Terjual', '${summary.totalItemsSold}', Icons.inventory_2_outlined),
-      _CardData('Rata-rata/Pesanan', formatRupiah(summary.averageOrderValue), Icons.calculate_outlined),
+      _CardData(l10n.dashboardSummaryRevenue, formatRupiah(summary.totalRevenue), Icons.payments_outlined),
+      _CardData(l10n.dashboardSummaryOrders, '${summary.totalOrders}', Icons.receipt_long_outlined),
+      _CardData(l10n.dashboardSummaryItemsSold, '${summary.totalItemsSold}', Icons.inventory_2_outlined),
+      _CardData(
+        l10n.dashboardSummaryAverageOrder,
+        formatRupiah(summary.averageOrderValue),
+        Icons.calculate_outlined,
+      ),
     ];
     return GridView.count(
       crossAxisCount: 2,

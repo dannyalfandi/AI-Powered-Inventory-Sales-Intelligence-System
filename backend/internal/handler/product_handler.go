@@ -23,7 +23,7 @@ func NewProductHandler(svc service.ProductService) *ProductHandler {
 func (h *ProductHandler) Create(c *gin.Context) {
 	var in model.CreateProductInput
 	if err := c.ShouldBindJSON(&in); err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid_body", err.Error(), nil)
+		writeInvalidBody(c, err)
 		return
 	}
 	p, err := h.svc.Create(c.Request.Context(), in)
@@ -76,7 +76,7 @@ func (h *ProductHandler) Update(c *gin.Context) {
 	}
 	var in model.UpdateProductInput
 	if err := c.ShouldBindJSON(&in); err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid_body", err.Error(), nil)
+		writeInvalidBody(c, err)
 		return
 	}
 	p, err := h.svc.Update(c.Request.Context(), id, in)

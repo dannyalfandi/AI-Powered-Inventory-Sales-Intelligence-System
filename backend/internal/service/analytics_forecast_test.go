@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/backend/internal/client"
+	"github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/backend/internal/i18n"
 	"github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/backend/internal/model"
 )
 
@@ -163,7 +164,7 @@ func TestForecast(t *testing.T) {
 		require.Len(t, report.Products, 4)
 		for _, item := range report.Products {
 			if item.ProductID == 3 {
-				assert.Equal(t, mlUnavailableMessage, item.Error)
+				assert.Equal(t, i18n.Translate(i18n.KeyMLUnavailable, i18n.ID), item.Error)
 				assert.Empty(t, item.Forecast)
 				assert.Empty(t, item.Method)
 				continue
@@ -185,7 +186,7 @@ func TestForecast(t *testing.T) {
 		assert.False(t, report.Available)
 		require.Len(t, report.Products, 3)
 		for _, item := range report.Products {
-			assert.Equal(t, mlUnavailableMessage, item.Error)
+			assert.Equal(t, i18n.Translate(i18n.KeyMLUnavailable, i18n.ID), item.Error)
 		}
 	})
 
@@ -198,7 +199,7 @@ func TestForecast(t *testing.T) {
 		report, err := svc.Forecast(context.Background(), model.AnalyticsQuery{}, 1, 0)
 
 		require.NoError(t, err)
-		assert.Equal(t, mlFailedMessage, report.Products[0].Error)
+		assert.Equal(t, i18n.Translate(i18n.KeyMLFailed, i18n.ID), report.Products[0].Error)
 		assert.False(t, report.Available)
 	})
 
@@ -357,7 +358,7 @@ func TestInsights(t *testing.T) {
 
 		require.NoError(t, err)
 		assert.True(t, report.Available)
-		assert.Equal(t, mlUnavailableMessage, report.Products[0].Error)
+		assert.Equal(t, i18n.Translate(i18n.KeyMLUnavailable, i18n.ID), report.Products[0].Error)
 		assert.Nil(t, report.Products[0].ChangePercent, "a failed product has no number at all")
 		assert.NotEmpty(t, report.Products[1].Summary)
 	})
@@ -372,7 +373,7 @@ func TestInsights(t *testing.T) {
 
 		require.NoError(t, err)
 		assert.False(t, report.Available)
-		assert.Equal(t, mlUnavailableMessage, report.Products[1].Error)
+		assert.Equal(t, i18n.Translate(i18n.KeyMLUnavailable, i18n.ID), report.Products[1].Error)
 	})
 
 	t.Run("a real 0% change is reported, not dropped", func(t *testing.T) {

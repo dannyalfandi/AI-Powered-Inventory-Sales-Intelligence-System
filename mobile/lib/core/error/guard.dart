@@ -14,8 +14,8 @@ Future<T> guardApiCall<T>(Future<T> Function() body) async {
     throw mapDioException(e);
   } on TypeError catch (_) {
     // Missing/mistyped JSON field — backend contract drift.
-    throw const ServerFailure('Format respons server tidak sesuai', code: 'invalid_response');
+    throw const ServerFailure('malformed response', code: 'invalid_response', issue: FailureIssue.malformedResponse);
   } on FormatException catch (_) {
-    throw const ServerFailure('Format respons server tidak sesuai', code: 'invalid_response');
+    throw const ServerFailure('malformed response', code: 'invalid_response', issue: FailureIssue.malformedResponse);
   }
 }

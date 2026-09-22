@@ -17,12 +17,14 @@ CODES=$(mktemp); trap 'rm -f "$CODES"' EXIT
 pass=0; fail=0
 
 # req METHOD PATH [BODY] -> sets $code and $body
+# LANG_HEADER (optional) is sent as Accept-Language, e.g. LANG_HEADER=en req ...
 req() {
-  local out
+  local out lang=()
+  [ -n "$LANG_HEADER" ] && lang=(-H "Accept-Language: $LANG_HEADER")
   if [ -n "$3" ]; then
-    out=$(curl -s -w $'\n%{http_code}' -X "$1" "$B$2" -H 'Content-Type: application/json' -d "$3")
+    out=$(curl -s -w $'\n%{http_code}' -X "$1" "$B$2" "${lang[@]}" -H 'Content-Type: application/json' -d "$3")
   else
-    out=$(curl -s -w $'\n%{http_code}' -X "$1" "$B$2")
+    out=$(curl -s -w $'\n%{http_code}' -X "$1" "$B$2" "${lang[@]}")
   fi
   code=${out##*$'\n'}; body=${out%$'\n'*}
 }
@@ -57,7 +59,7 @@ req POST /products "{\"sku\":\"E2E-B-$RUN\",\"name\":\"E2E Roti\",\"price\":1500
 PB=$(jid)
 req POST /products "{\"sku\":\"E2E-C-$RUN\",\"name\":\"X\",\"category_id\":999999}";                         check "unknown category_id" 422 '"field":"category_id"'
 req GET  /products/$PA;                                             check "get product preloads category" 200 "\"name\":\"E2E Minuman $RUN\""
-req DELETE /categories/$CAT;                                        check "delete category in use" 409 "used by 1 product"
+req DELETE /categories/$CAT;                                        check "delete category in use" 409 "masih dipakai oleh 1 produk"
 req PATCH /products/$PB "{\"category_id\":$CAT2}";                  check "patch: move product B to cat2" 200 "\"category_id\":$CAT2,\"category\":{\"id\":$CAT2"
 req PATCH /products/$PB '{"price":16000}';                          check "patch other field keeps category" 200 "\"category_id\":$CAT2"
 req PATCH /products/$PB '{"category_id":0}';                        check "patch: category_id 0 clears it" 200 '"category_id":null'
@@ -70,7 +72,7 @@ req GET /inventory/$PA;                                             check "no ro
 req GET /inventory/999999;                                          check "inventory of missing product" 404
 req POST /inventory/$PA/movements '{"type":"IN","quantity":25,"reason":"restock"}'; check "IN 25" 201 '"quantity_before":0,"quantity_after":25'
 req POST /inventory/$PA/movements '{"type":"out","quantity":5}';    check "OUT 5 (lowercase type)" 201 '"quantity_before":25,"quantity_after":20'
-req POST /inventory/$PA/movements '{"type":"OUT","quantity":21}';   check "OUT 21 > stock rejected" 422 'insufficient stock: 20 available'
+req POST /inventory/$PA/movements '{"type":"OUT","quantity":21}';   check "OUT 21 > stock rejected" 422 'stok tidak cukup: tersedia 20'
 req GET /inventory/$PA;                                             check "stock unchanged after rejected OUT" 200 '"quantity":20,'
 req POST /inventory/$PA/movements '{"type":"ADJUSTMENT","quantity":7,"reason":"stock opname"}'; check "ADJUSTMENT to 7" 201 '"quantity_before":20,"quantity_after":7'
 req POST /inventory/$PA/movements '{"type":"TRANSFER","quantity":1}'; check "unknown type" 422 '"field":"type"'
@@ -144,7 +146,7 @@ grep -q '"total_amount":155000' <<<"$body" && grep -q '"customer":{"id":'"$CUST"
   && { pass=$((pass+1)); echo "PASS  detail has total, customer and items"; } || { fail=$((fail+1)); echo "FAIL  detail: $body"; }
 
 echo "== Sales orders: state machine"
-req PATCH /sales-orders/$OA/status '{"status":"SHIPPED"}';   check "PENDING -> SHIPPED rejected" 422 'allowed: CONFIRMED, CANCELLED'
+req PATCH /sales-orders/$OA/status '{"status":"SHIPPED"}';   check "PENDING -> SHIPPED rejected" 422 'yang diizinkan: CONFIRMED, CANCELLED'
 req PATCH /sales-orders/$OA/status '{"status":"DELIVERED"}'; check "unknown status" 422 '"field":"status"'
 req PATCH /sales-orders/$OA/status '{"status":"confirmed"}'; check "PENDING -> CONFIRMED" 200 '"status":"CONFIRMED"'
 expect "CONFIRMED deducted P1 (10-3)" "$(stock $P1)" 7
@@ -161,12 +163,12 @@ expect "P1 after B confirmed (7-4)" "$(stock $P1)" 3
 req PATCH /sales-orders/$OB/status '{"status":"CANCELLED"}'; check "cancel confirmed order B" 200 '"status":"CANCELLED"'
 expect "P1 returned after cancel (3+4)" "$(stock $P1)" 7
 req GET "/inventory/$P1/movements?page_size=1";              check "IN movement for the cancel" 200 '"type":"IN","quantity":4,"quantity_before":3,"quantity_after":7'
-req PATCH /sales-orders/$OB/status '{"status":"CONFIRMED"}'; check "CANCELLED is final" 422 "can't change status anymore"
+req PATCH /sales-orders/$OB/status '{"status":"CONFIRMED"}'; check "CANCELLED is final" 422 'tidak bisa diubah lagi'
 
 echo "== Sales orders: insufficient stock rolls back every item"
 req POST /sales-orders "{\"customer_id\":$CUST,\"items\":[{\"product_id\":$P1,\"quantity\":2},{\"product_id\":$P2,\"quantity\":10}]}"; OC=$(jid)
 req PATCH /sales-orders/$OC/status '{"status":"CONFIRMED"}'
-check "confirm with P2 short" 422 "\"field\":\"items\[1\].quantity\",\"message\":\"insufficient stock for product $P2 (E2E-SO2-$RUN): 3 available, 10 requested\""
+check "confirm with P2 short" 422 "\"field\":\"items\[1\].quantity\",\"message\":\"stok produk $P2 (E2E-SO2-$RUN) tidak cukup: tersedia 3, diminta 10\""
 expect "P1 not deducted (rollback)" "$(stock $P1)" 7
 expect "P2 unchanged"               "$(stock $P2)" 3
 expect "order C still PENDING"      "$(status_of $OC)" PENDING
@@ -184,7 +186,7 @@ req GET "/sales-orders?customer_id=abc";                          check "bad cus
 req GET /sales-orders/999999;                                     check "unknown order" 404
 
 echo "== Customer delete rules"
-req DELETE /customers/$CUST;  check "customer with SHIPPED + PENDING orders" 409 'still has 2 sales order(s) that are not cancelled'
+req DELETE /customers/$CUST;  check "customer with SHIPPED + PENDING orders" 409 'masih punya 2 pesanan yang belum dibatalkan'
 req DELETE /customers/$CUST2; check "customer whose only order is CANCELLED" 204
 req GET /sales-orders/$OB;    check "cancelled order still readable after customer delete" 200 "\"customer\":{\"id\":$CUST2"
 
@@ -344,6 +346,47 @@ else
   check "insights still answer 200 while the ML service is down"  200 '"insights_available":false'
   req GET "/analytics/summary?from=$TODAY&to=$TODAY"
   check "the rest of analytics is unaffected by the ML outage"    200 '"total_revenue"'
+fi
+
+echo "== i18n: the same rules in Indonesian and in English"
+# Default (no header) must stay Indonesian: clients that send no
+# Accept-Language, like the current Flutter app, keep working unchanged.
+req POST /products '{"sku":"","name":"","price":-1}'
+check "validation in Indonesian by default" 422 '"message":"wajib diisi"'
+req POST /categories "{\"name\":\"E2E Minuman $RUN\"}"
+check "duplicate category in Indonesian"    409 'sudah ada'
+
+LANG_HEADER=en
+req POST /products '{"sku":"","name":"","price":-1}'
+check "validation in English"               422 '"message":"is required"'
+check "field names are never translated"    422 '"field":"sku"'
+req POST /products "{\"sku\":\"E2E-A-$RUN\",\"name\":\"E2E Kopi\",\"price\":45000}"
+check "duplicate SKU in English"            409 'already exists'
+req POST /inventory/$PA/movements '{"type":"OUT","quantity":999999,"reason":"e2e i18n"}'
+check "insufficient stock in English"       422 'available, .* requested'
+req GET /products/999999
+check "not found in English"                404 'not found'
+req GET "/analytics/summary?from=2026-13-01"
+check "analytics validation in English"     422 'must be a date in YYYY-MM-DD format'
+req PATCH /sales-orders/$OB/status '{"status":"PENDING"}'
+check "invalid transition in English"       422 "can't change status"
+
+LANG_HEADER=en-US,en
+req GET /products/999999
+check "browser-style Accept-Language"       404 'not found'
+LANG_HEADER=fr
+req GET /products/999999
+check "unsupported language falls back to Indonesian" 404 'tidak ditemukan'
+unset LANG_HEADER
+
+if curl -s -m 3 -o /dev/null -w '%{http_code}' "${ML_SERVICE_URL:-http://localhost:8000}/health" | grep -q 200; then
+  LANG_HEADER=en
+  req GET "/analytics/insights?limit=2"
+  check "insight summary in English"        200 '"summary":"Sales '
+  LANG_HEADER=id
+  req GET "/analytics/insights?limit=2&from=$(date -d '-20 days' +%F)&to=$TODAY"
+  check "insight summary in Indonesian"     200 '"summary":"Penjualan'
+  unset LANG_HEADER
 fi
 
 echo "== Cleanup (soft delete; stock_movements are immutable and stay)"

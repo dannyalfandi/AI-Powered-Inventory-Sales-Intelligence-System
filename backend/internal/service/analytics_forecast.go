@@ -10,6 +10,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/backend/internal/client"
+	"github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/backend/internal/i18n"
 	"github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/backend/internal/model"
 )
 
@@ -36,12 +37,6 @@ const (
 
 	// maxForecastConcurrency bounds how hard one request hits the ML service.
 	maxForecastConcurrency = 8
-
-	// mlUnavailableMessage is what a product carries when the ML service
-	// could not be reached. Kept generic: the detail is in the log, not in
-	// an end-user's dashboard.
-	mlUnavailableMessage = "layanan forecasting sedang tidak tersedia"
-	mlFailedMessage      = "forecast gagal dihitung untuk produk ini"
 )
 
 // Forecast predicts demand for the best-selling products of the range.
@@ -75,7 +70,10 @@ func (s *analyticsService) Forecast(
 	err = s.eachProduct(ctx, products, func(ctx context.Context, i int, p model.TopProduct) {
 		item := model.ProductForecast{ProductID: p.ProductID, ProductName: p.Name, SKU: p.SKU}
 		res, err := s.ml.ForecastDemand(ctx, client.ForecastRequest{
-			ProductID:   p.ProductID,
+			ProductID: p.ProductID,
+			// The ML service writes no prose for a forecast today, but it
+			// validates the request and those messages are localized too.
+			Lang:        string(i18n.FromContext(ctx)),
 			History:     history[p.ProductID],
 			HorizonDays: horizonDays,
 		})
@@ -120,7 +118,9 @@ func (s *analyticsService) Insights(ctx context.Context, q model.AnalyticsQuery,
 		item := model.ProductInsight{ProductID: p.ProductID, ProductName: p.Name, SKU: p.SKU}
 		res, err := s.ml.TrendInsight(ctx, client.TrendRequest{
 			ProductID: p.ProductID,
-			History:   history[p.ProductID],
+			// The sentence in `summary` comes back in this language.
+			Lang:    string(i18n.FromContext(ctx)),
+			History: history[p.ProductID],
 		})
 		if err != nil {
 			item.Error = mlErrorMessage(ctx, "insight", p.ProductID, err)
@@ -148,15 +148,12 @@ func (s *analyticsService) forecastTargets(
 	q model.AnalyticsQuery,
 	limit int,
 ) (model.AnalyticsRange, []model.TopProduct, error) {
-	rng, err := s.parseRange(q)
+	rng, err := s.parseRange(ctx, q)
 	if err != nil {
 		return model.AnalyticsRange{}, nil, err
 	}
 	if days := int(rng.End.Sub(rng.Start).Hours() / 24); days < minHistoryDays {
-		return model.AnalyticsRange{}, nil, &ValidationError{Fields: []FieldError{{
-			Field:   "from",
-			Message: fmt.Sprintf("range must cover at least %d days to forecast", minHistoryDays),
-		}}}
+		return model.AnalyticsRange{}, nil, fieldError(ctx, "from", i18n.KeyRangeMinDays, minHistoryDays)
 	}
 	if limit <= 0 {
 		limit = defaultTopProducts
@@ -200,14 +197,16 @@ func mlErrorMessage(ctx context.Context, op string, productID uint, err error) s
 	switch {
 	case errors.Is(err, client.ErrUnavailable):
 		slog.WarnContext(ctx, "ml service unavailable", "op", op, "product_id", productID, "error", err)
-		return mlUnavailableMessage
+		// Generic on purpose: the detail belongs in the log, not on a
+		// dashboard. Translated like every other message the client sees.
+		return i18n.T(ctx, i18n.KeyMLUnavailable)
 	case errors.Is(err, client.ErrInvalidRequest):
 		// Our payload was wrong — a bug here, not an outage there.
 		slog.ErrorContext(ctx, "ml service rejected request", "op", op, "product_id", productID, "error", err)
-		return mlFailedMessage
+		return i18n.T(ctx, i18n.KeyMLFailed)
 	default:
 		slog.ErrorContext(ctx, "ml service call failed", "op", op, "product_id", productID, "error", err)
-		return mlFailedMessage
+		return i18n.T(ctx, i18n.KeyMLFailed)
 	}
 }
 

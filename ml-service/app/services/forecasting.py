@@ -16,6 +16,7 @@ from typing import Protocol
 import pandas as pd
 
 from app.core.config import Settings, get_settings
+from app.core.i18n import normalize, translate
 from app.models.schemas import ForecastPoint, ForecastRequest, ForecastResponse
 from app.services.history import ValidationProblem, future_dates, to_daily_series
 
@@ -68,22 +69,31 @@ def get_forecaster(method: str) -> Forecaster:
 def forecast_demand(request: ForecastRequest, settings: Settings | None = None) -> ForecastResponse:
     """Validates the data-dependent rules, then runs the configured forecaster."""
     settings = settings or get_settings()
+    lang = normalize(request.lang)
 
     if len(request.history) < settings.min_history_points:
         raise ValidationProblem(
             "history",
-            f"history must have at least {settings.min_history_points} data points, got {len(request.history)}",
+            translate(
+                "error.history_min_points",
+                lang,
+                minimum=settings.min_history_points,
+                got=len(request.history),
+            ),
+            lang,
         )
     if request.horizon_days > settings.max_horizon_days:
         raise ValidationProblem(
             "horizon_days",
-            f"horizon_days must be at most {settings.max_horizon_days}, got {request.horizon_days}",
+            translate("error.horizon_max", lang, maximum=settings.max_horizon_days, got=request.horizon_days),
+            lang,
         )
     window_days = request.window_days or settings.default_window_days
     if window_days > settings.max_window_days:
         raise ValidationProblem(
             "window_days",
-            f"window_days must be at most {settings.max_window_days}, got {window_days}",
+            translate("error.window_max", lang, maximum=settings.max_window_days, got=window_days),
+            lang,
         )
 
     series = to_daily_series(request.history)

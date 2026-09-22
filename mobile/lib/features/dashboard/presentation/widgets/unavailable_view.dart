@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/l10n/l10n.dart';
+
 /// Shown when the ML service is down (`forecast_available: false`).
 ///
 /// Deliberately quiet: this is not a bug and not the user's fault, it is a
@@ -52,7 +54,7 @@ class UnavailableView extends StatelessWidget {
           ],
           if (onRetry != null) ...[
             const SizedBox(height: 8),
-            TextButton(onPressed: onRetry, child: const Text('Coba lagi')),
+            TextButton(onPressed: onRetry, child: Text(context.l10n.commonRetry)),
           ],
         ],
       ),

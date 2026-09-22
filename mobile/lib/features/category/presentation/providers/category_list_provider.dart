@@ -1,7 +1,10 @@
+import 'package:flutter/widgets.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../../../core/constants/api_constants.dart';
 import '../../../../core/error/failure.dart';
+import '../../../../core/l10n/l10n.dart';
+import '../../../../shared/widgets/state_views.dart';
 import '../../../../core/pagination/paged.dart';
 import '../../domain/entities/category.dart';
 import 'category_providers.dart';
@@ -86,15 +89,18 @@ class CategoryList extends _$CategoryList {
 @riverpod
 Future<List<Category>> categoryOptions(Ref ref) => ref.watch(getCategoriesUseCaseProvider).all();
 
-/// User-facing message for a failed category delete. A 409 means products
-/// still use the category (backend: "category 9 is still used by 3 product(s)").
-String categoryDeleteErrorMessage(Failure failure, Category category) {
+/// User-facing message for a failed category delete.
+///
+/// A 409 means products still use the category. The backend only sends a
+/// sentence (code `conflict`, no `details`), and it is already written in the
+/// language this app asked for via `Accept-Language`, so it is quoted as it
+/// is instead of being parsed â€” the old English-only regex over that sentence
+/// broke the moment the server answered in Indonesian.
+String categoryDeleteErrorMessage(BuildContext context, Failure failure, Category category) {
+  final l10n = context.l10n;
+  final reason = errorMessage(context, failure);
   if (failure is ServerFailure && failure.isConflict) {
-    final count = RegExp(r'used by (\d+) product').firstMatch(failure.message)?.group(1);
-    final users = count == null ? 'beberapa produk' : '$count produk';
-    return 'Kategori "${category.name}" masih dipakai oleh $users. '
-        'Pindahkan produk tersebut ke kategori lain (atau hapus produknya) dulu, '
-        'lalu coba hapus lagi.';
+    return l10n.categoryDeleteBlockedBody(category.name, reason);
   }
-  return 'Gagal menghapus kategori: ${failure.message}';
+  return l10n.categoryDeleteFailed(reason);
 }

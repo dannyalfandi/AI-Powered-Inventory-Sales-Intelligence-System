@@ -20,7 +20,7 @@ type Handlers struct {
 
 func New(h Handlers) *gin.Engine {
 	r := gin.New()
-	r.Use(gin.Logger(), gin.Recovery())
+	r.Use(gin.Logger(), gin.Recovery(), language())
 
 	r.GET("/health", h.Health.Check)
 

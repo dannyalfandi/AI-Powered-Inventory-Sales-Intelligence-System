@@ -1,7 +1,10 @@
+import 'package:flutter/widgets.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../../../core/constants/api_constants.dart';
 import '../../../../core/error/failure.dart';
+import '../../../../core/l10n/l10n.dart';
+import '../../../../shared/widgets/state_views.dart';
 import '../../../../core/pagination/paged.dart';
 import '../../domain/entities/customer.dart';
 import 'customer_providers.dart';
@@ -76,19 +79,19 @@ class CustomerList extends _$CustomerList {
   }
 }
 
-/// User-facing message for a failed customer delete. A 409 means the
-/// customer still has orders that are not cancelled (backend: "customer 9
-/// still has 2 sales order(s) that are not cancelled").
-String customerDeleteErrorMessage(Failure failure, Customer customer) {
+/// User-facing message for a failed customer delete.
+///
+/// A 409 means the customer still has orders that are not cancelled. As with
+/// categories, the backend sends only a sentence (code `conflict`, no
+/// `details`) already written in the requested language, so it is quoted
+/// rather than parsed for a count.
+String customerDeleteErrorMessage(BuildContext context, Failure failure, Customer customer) {
+  final l10n = context.l10n;
+  final reason = errorMessage(context, failure);
   if (failure is ServerFailure && failure.isConflict) {
-    final count = RegExp(r'has (\d+) sales order').firstMatch(failure.message)?.group(1);
-    final orders = count == null ? 'pesanan' : '$count pesanan';
-    return 'Pelanggan "${customer.name}" masih punya $orders yang belum dibatalkan '
-        '(menunggu, dikonfirmasi, atau sudah dikirim). '
-        'Pelanggan dengan riwayat pesanan tidak bisa dihapus; batalkan pesanan yang masih '
-        'menunggu/dikonfirmasi bila memang tidak jadi.';
+    return l10n.customerDeleteBlockedBody(customer.name, reason);
   }
-  return 'Gagal menghapus pelanggan: ${failure.message}';
+  return l10n.customerDeleteFailed(reason);
 }
 
 /// First page of customers matching [query] (name, email or phone), for

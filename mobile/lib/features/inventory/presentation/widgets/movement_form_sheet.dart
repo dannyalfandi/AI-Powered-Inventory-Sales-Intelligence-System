@@ -3,6 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/error/failure.dart';
+import '../../../../core/l10n/field_issue_text.dart';
+import '../../../../core/l10n/l10n.dart';
+import '../../../../shared/widgets/state_views.dart';
 import '../../domain/entities/inventory.dart';
 import '../providers/inventory_provider.dart';
 import 'movement_tile.dart';
@@ -78,24 +81,25 @@ class _MovementFormSheetState extends ConsumerState<MovementFormSheet> {
       setState(() {
         _serverErrors = f.messages;
         // `type` has no text field; show it (and message-only 422s) above the button.
-        _generalError = f.messages['type'] ?? (f.messages.isEmpty ? f.message : null);
+        _generalError = f.messages['type'] ?? (f.messages.isEmpty ? errorMessage(context, f) : null);
       });
       _formKey.currentState!.validate();
     } on Failure catch (f) {
-      setState(() => _generalError = f.message);
+      setState(() => _generalError = errorMessage(context, f));
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
   }
 
-  String get _quantityLabel => switch (_type) {
-        MovementType.stockIn => 'Jumlah masuk',
-        MovementType.stockOut => 'Jumlah keluar',
-        MovementType.adjustment => 'Stok baru (hasil hitung fisik)',
+  String _quantityLabel(BuildContext context) => switch (_type) {
+        MovementType.stockIn => context.l10n.movementQuantityIn,
+        MovementType.stockOut => context.l10n.movementQuantityOut,
+        MovementType.adjustment => context.l10n.movementQuantityAdjustment,
       };
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final theme = Theme.of(context);
     // Hint only; the backend decides whether the stock suffices for an OUT.
     final current = ref.watch(productInventoryProvider(widget.productId)).value?.quantity;
@@ -109,13 +113,13 @@ class _MovementFormSheetState extends ConsumerState<MovementFormSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Catat pergerakan stok', style: theme.textTheme.titleLarge),
+            Text(l10n.movementFormTitle, style: theme.textTheme.titleLarge),
             const SizedBox(height: 16),
             SegmentedButton<MovementType>(
               key: const Key('movement_form_type'),
               segments: [
                 for (final t in MovementType.values)
-                  ButtonSegment(value: t, label: Text(t.label), icon: Icon(t.icon)),
+                  ButtonSegment(value: t, label: Text(t.label(context)), icon: Icon(t.icon)),
               ],
               selected: {_type},
               showSelectedIcon: false,
@@ -130,8 +134,8 @@ class _MovementFormSheetState extends ConsumerState<MovementFormSheet> {
               controller: _quantity,
               autofocus: true,
               decoration: InputDecoration(
-                labelText: _quantityLabel,
-                helperText: current == null ? null : 'Stok saat ini: $current',
+                labelText: _quantityLabel(context),
+                helperText: current == null ? null : l10n.movementCurrentStock(current),
               ),
               keyboardType: TextInputType.number,
               // Digits only: negative or decimal quantities can't be typed.
@@ -141,20 +145,20 @@ class _MovementFormSheetState extends ConsumerState<MovementFormSheet> {
               ],
               onChanged: (_) => _clearServerError('quantity'),
               validator: (v) =>
-                  MovementRules.validateQuantity(_type, int.tryParse(v ?? '')) ?? _serverErrors['quantity'],
+                  context.messageFor(MovementRules.validateQuantity(_type, int.tryParse(v ?? ''))) ?? _serverErrors['quantity'],
             ),
             const SizedBox(height: 16),
             TextFormField(
               key: const Key('movement_form_reason'),
               controller: _reason,
-              decoration: const InputDecoration(
-                labelText: 'Keterangan (opsional)',
-                hintText: 'contoh: restock supplier, barang rusak, stock opname',
+              decoration: InputDecoration(
+                labelText: l10n.movementFieldReasonOptional,
+                hintText: l10n.movementReasonHint,
               ),
               maxLines: 2,
               inputFormatters: [LengthLimitingTextInputFormatter(MovementRules.reasonMaxLength)],
               onChanged: (_) => _clearServerError('reason'),
-              validator: (v) => MovementRules.validateReason(v ?? '') ?? _serverErrors['reason'],
+              validator: (v) => context.messageFor(MovementRules.validateReason(v ?? '')) ?? _serverErrors['reason'],
             ),
             if (_generalError != null) ...[
               const SizedBox(height: 12),
@@ -170,7 +174,7 @@ class _MovementFormSheetState extends ConsumerState<MovementFormSheet> {
               onPressed: _submitting ? null : _submit,
               child: _submitting
                   ? const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Text('Simpan'),
+                  : Text(l10n.commonSave),
             ),
           ],
         ),

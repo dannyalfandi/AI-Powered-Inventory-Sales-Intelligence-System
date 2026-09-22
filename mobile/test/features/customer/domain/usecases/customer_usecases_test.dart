@@ -46,7 +46,7 @@ void main() {
       test('rejects locally: ${c.name}', () async {
         await expectLater(
           CreateCustomer(repo)(c.input),
-          throwsA(isA<ValidationFailure>().having((f) => f.messages.keys.toSet(), 'fields', c.fields)),
+          throwsA(isA<ValidationFailure>().having((f) => f.issues.keys.toSet(), 'fields', c.fields)),
         );
         verifyNever(() => repo.createCustomer(any()));
       });
@@ -74,7 +74,7 @@ void main() {
     test('validates only present fields', () async {
       await expectLater(
         UpdateCustomer(repo)(3, const CustomerPatch(name: '', phone: 'x')),
-        throwsA(isA<ValidationFailure>().having((f) => f.messages.keys.toSet(), 'fields', {'name', 'phone'})),
+        throwsA(isA<ValidationFailure>().having((f) => f.issues.keys.toSet(), 'fields', {'name', 'phone'})),
       );
     });
   });

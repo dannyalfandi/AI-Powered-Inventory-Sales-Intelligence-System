@@ -1,6 +1,10 @@
+import 'package:flutter/widgets.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../../../core/error/failure.dart';
+import '../../../../core/l10n/field_issue_text.dart';
+import '../../../../core/l10n/l10n.dart';
+import '../../../../shared/widgets/state_views.dart';
 import '../../../inventory/presentation/providers/inventory_provider.dart';
 import '../../../inventory/presentation/providers/low_stock_list_provider.dart';
 import '../../../inventory/presentation/providers/stock_movement_list_provider.dart';
@@ -52,27 +56,36 @@ class SalesOrderDetail extends _$SalesOrderDetail {
 }
 
 /// Turns a failed status change into one user-facing line per problem,
-/// naming the order item it is about. Backend 422 keys look like
-/// `items[1].quantity` ("insufficient stock for product 7 (TEH-1): 3
-/// available, 10 requested") or `items[0].product_id` (product deleted).
-List<String> statusChangeErrorLines(Failure failure, SalesOrder order) {
-  if (failure is! ValidationFailure || failure.messages.isEmpty) return [failure.message];
+/// naming the order item it is about.
+///
+/// Only the 422 *field names* are parsed (`items[1].quantity`,
+/// `items[0].product_id`) — those are part of the API contract and are never
+/// translated. The sentence next to them already comes back in the language
+/// this app asked for, so it is prefixed with the product and shown as it is;
+/// the old regex over its English wording ("3 available, 10 requested")
+/// silently produced nothing once the server answered in Indonesian.
+List<String> statusChangeErrorLines(BuildContext context, Failure failure, SalesOrder order) {
+  final l10n = context.l10n;
+  if (failure is! ValidationFailure) return [errorMessage(context, failure)];
+  // A transition the app rejected before sending anything carries a typed
+  // issue instead of a backend sentence.
+  if (failure.issues.isNotEmpty) {
+    return [for (final issue in failure.issues.values) ?context.messageFor(issue)];
+  }
+  if (failure.messages.isEmpty) return [errorMessage(context, failure)];
 
   final itemKey = RegExp(r'^items\[(\d+)\]\.(quantity|product_id)$');
-  final stock = RegExp(r'(\d+) available, (\d+) requested');
   return [
     for (final MapEntry(key: field, value: message) in failure.messages.entries)
       switch (itemKey.firstMatch(field)) {
         final m? when int.parse(m.group(1)!) < order.items.length => () {
             final item = order.items[int.parse(m.group(1)!)];
             final label = '${item.productName} (${item.productSku})';
-            if (m.group(2) == 'product_id') return '$label: produk sudah dihapus, tidak bisa dikonfirmasi.';
-            final s = stock.firstMatch(message);
-            return s == null
-                ? '$label: $message'
-                : '$label: stok tersedia ${s.group(1)}, dibutuhkan ${s.group(2)}.';
+            return m.group(2) == 'product_id'
+                ? l10n.orderItemDeleted(label)
+                : l10n.orderItemProblem(label, message);
           }(),
-        _ when field == 'status' => 'Status pesanan sudah berubah ($message). Data pesanan dimuat ulang.',
+        _ when field == 'status' => l10n.orderStatusChangedElsewhere(message),
         _ => message,
       },
   ];

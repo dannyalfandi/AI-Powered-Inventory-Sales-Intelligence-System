@@ -15,6 +15,7 @@ import 'package:mocktail/mocktail.dart';
 
 import '../../helpers/dashboard_fixtures.dart';
 import '../../helpers/forecast_fixtures.dart';
+import '../../helpers/l10n_harness.dart';
 
 void main() {
   late MockDashboardRepository repo;
@@ -103,7 +104,7 @@ void main() {
   });
 
   group('ForecastSection', () {
-    Widget wrap(Widget child) => MaterialApp(home: Scaffold(body: SingleChildScrollView(child: child)));
+    Widget wrap(Widget child) => localizedApp(home: Scaffold(body: SingleChildScrollView(child: child)));
 
     testWidgets('data: product rows with the horizon total and per-day average', (tester) async {
       await tester.pumpWidget(
@@ -112,17 +113,17 @@ void main() {
 
       expect(find.text('Produk 1'), findsOneWidget);
       expect(find.text('SKU-1'), findsOneWidget);
-      expect(find.text('14 unit'), findsOneWidget); // 7 days x 2
-      expect(find.text('2/hari'), findsOneWidget);
-      expect(find.textContaining('7 hari ke depan'), findsOneWidget);
+      expect(find.text(l10nOf(tester).dashboardForecastUnits('14')), findsOneWidget); // 7 days x 2
+      expect(find.text(l10nOf(tester).dashboardForecastPerDay('2')), findsOneWidget);
+      expect(find.text(l10nOf(tester).dashboardForecastHorizon(7)), findsOneWidget);
     });
 
     testWidgets('unavailable: a calm state, not a red error, and no product rows', (tester) async {
       await tester.pumpWidget(wrap(ForecastSection(report: unavailableForecast, onRetry: () {})));
 
       expect(find.byType(UnavailableView), findsOneWidget);
-      expect(find.text('Prediksi permintaan sedang tidak tersedia'), findsOneWidget);
-      expect(find.textContaining('Data penjualan lain di halaman ini tetap terbaru'), findsOneWidget);
+      expect(find.text(l10nOf(tester).dashboardForecastUnavailable), findsOneWidget);
+      expect(find.text(l10nOf(tester).dashboardForecastUnavailableDetail), findsOneWidget);
       // The alarming icon of ErrorView must not appear here.
       expect(find.byIcon(Icons.cloud_off_outlined), findsNothing);
       expect(find.text('Produk 1'), findsNothing);
@@ -132,7 +133,7 @@ void main() {
       var retried = 0;
       await tester.pumpWidget(wrap(ForecastSection(report: unavailableForecast, onRetry: () => retried++)));
 
-      await tester.tap(find.text('Coba lagi'));
+      await tester.tap(find.text(l10nOf(tester).commonRetry));
 
       expect(retried, 1);
     });
@@ -149,7 +150,7 @@ void main() {
         ),
       );
 
-      expect(find.text('14 unit'), findsOneWidget);
+      expect(find.text(l10nOf(tester).dashboardForecastUnits('14')), findsOneWidget);
       expect(find.text('Produk 2'), findsOneWidget);
       expect(find.textContaining('forecast gagal dihitung'), findsOneWidget);
       // Dimmed, not hidden, and without a fake number.
@@ -160,13 +161,13 @@ void main() {
     testWidgets('empty: no sales to predict reads differently from unavailable', (tester) async {
       await tester.pumpWidget(wrap(ForecastSection(report: forecastReport(products: []), onRetry: () {})));
 
-      expect(find.textContaining('Belum ada produk terjual'), findsOneWidget);
+      expect(find.text(l10nOf(tester).dashboardForecastEmpty), findsOneWidget);
       expect(find.byType(UnavailableView), findsNothing);
     });
   });
 
   group('InsightsSection', () {
-    Widget wrap(Widget child) => MaterialApp(home: Scaffold(body: SingleChildScrollView(child: child)));
+    Widget wrap(Widget child) => localizedApp(home: Scaffold(body: SingleChildScrollView(child: child)));
 
     testWidgets('data: summary sentence plus a coloured trend badge', (tester) async {
       await tester.pumpWidget(
@@ -190,10 +191,10 @@ void main() {
       );
 
       expect(find.text('Penjualan naik 32,0% dalam 4 minggu terakhir.'), findsOneWidget);
-      expect(find.text('Naik 32%'), findsOneWidget);
-      expect(find.text('Turun 45%'), findsOneWidget);
+      expect(find.text(l10nOf(tester).trendUpPercent(32)), findsOneWidget);
+      expect(find.text(l10nOf(tester).trendDownPercent(45)), findsOneWidget);
       // A stable trend shows no percentage: "Stabil 0%" would read as noise.
-      expect(find.text('Stabil'), findsOneWidget);
+      expect(find.text(l10nOf(tester).trendStable), findsOneWidget);
       expect(find.byKey(const ValueKey('trend_badge_increasing')), findsOneWidget);
       expect(find.byKey(const ValueKey('trend_badge_decreasing')), findsOneWidget);
       expect(find.byKey(const ValueKey('trend_badge_stable')), findsOneWidget);
@@ -203,7 +204,7 @@ void main() {
       await tester.pumpWidget(wrap(InsightsSection(report: unavailableInsights, onRetry: () {})));
 
       expect(find.byType(UnavailableView), findsOneWidget);
-      expect(find.text('Insight bisnis sedang tidak tersedia'), findsOneWidget);
+      expect(find.text(l10nOf(tester).dashboardInsightsUnavailable), findsOneWidget);
       expect(find.byType(TrendBadge), findsNothing);
     });
 
@@ -224,7 +225,7 @@ void main() {
     testWidgets('empty: nothing sold in the range', (tester) async {
       await tester.pumpWidget(wrap(InsightsSection(report: insightReport(products: []), onRetry: () {})));
 
-      expect(find.textContaining('Belum ada penjualan'), findsOneWidget);
+      expect(find.text(l10nOf(tester).dashboardInsightsEmpty), findsOneWidget);
       expect(find.byType(UnavailableView), findsNothing);
     });
   });
@@ -240,7 +241,7 @@ void main() {
     Widget app() => ProviderScope(
           overrides: [dashboardRepositoryProvider.overrideWithValue(repo)],
           retry: (_, _) => null,
-          child: const MaterialApp(home: Scaffold(body: _SectionsUnderTest())),
+          child: localizedApp(home: const Scaffold(body: _SectionsUnderTest())),
         );
 
     testWidgets('a slow forecast keeps its own spinner while insights already render', (tester) async {
@@ -270,8 +271,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(UnavailableView), findsNWidgets(2));
-      expect(find.text('Prediksi permintaan sedang tidak tersedia'), findsOneWidget);
-      expect(find.text('Insight bisnis sedang tidak tersedia'), findsOneWidget);
+      expect(find.text(l10nOf(tester).dashboardForecastUnavailable), findsOneWidget);
+      expect(find.text(l10nOf(tester).dashboardInsightsUnavailable), findsOneWidget);
     });
   });
 }

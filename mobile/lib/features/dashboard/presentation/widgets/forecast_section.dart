@@ -1,6 +1,8 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
+import '../../../../core/l10n/l10n.dart';
+import '../../../../core/utils/currency_formatter.dart';
 import '../../../../core/utils/date_formatter.dart';
 import '../../../../shared/widgets/state_views.dart';
 import '../../domain/entities/forecast.dart';
@@ -23,8 +25,8 @@ class ForecastSection extends StatelessWidget {
   Widget build(BuildContext context) {
     if (!report.available) {
       return UnavailableView(
-        message: 'Prediksi permintaan sedang tidak tersedia',
-        detail: 'Layanan forecasting sedang mati. Data penjualan lain di halaman ini tetap terbaru.',
+        message: context.l10n.dashboardForecastUnavailable,
+        detail: context.l10n.dashboardForecastUnavailableDetail,
         onRetry: onRetry,
       );
     }
@@ -32,8 +34,8 @@ class ForecastSection extends StatelessWidget {
       // A minimum height, not a fixed one: the message wraps on narrow phones.
       return ConstrainedBox(
         constraints: const BoxConstraints(minHeight: 120),
-        child: const EmptyView(
-          message: 'Belum ada produk terjual pada rentang ini, jadi belum ada yang bisa diprediksi.',
+        child: EmptyView(
+          message: context.l10n.dashboardForecastEmpty,
           icon: Icons.query_stats_outlined,
         ),
       );
@@ -44,7 +46,7 @@ class ForecastSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          '${report.horizonDays} hari ke depan, dari rata-rata penjualan harian',
+          context.l10n.dashboardForecastHorizon(report.horizonDays),
           style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),
         const SizedBox(height: 12),
@@ -123,22 +125,21 @@ class _Total extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
         Text(
-          '${_unit(product.totalPredicted)} unit',
+          context.l10n.dashboardForecastUnits(_unit(context, product.totalPredicted)),
           style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
         ),
         Text(
-          '${_unit(perDay)}/hari',
+          context.l10n.dashboardForecastPerDay(_unit(context, perDay)),
           style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),
       ],
     );
   }
 
-  /// One decimal, Indonesian comma; whole numbers stay whole.
-  static String _unit(double value) {
-    final text = value == value.roundToDouble() ? value.toStringAsFixed(0) : value.toStringAsFixed(1);
-    return text.replaceAll('.', ',');
-  }
+  /// At most one decimal, with the separator of the app's language ("1.5" in
+  /// English, "1,5" in Indonesian); whole numbers stay whole.
+  static String _unit(BuildContext context, double value) =>
+      formatDecimal(Localizations.localeOf(context).languageCode, value);
 }
 
 /// Tiny line of the predicted days: no axes, no labels, just the shape.
@@ -157,7 +158,7 @@ class _Sparkline extends StatelessWidget {
     // Give a flat line room to sit in the middle of the box.
     final maxY = product.peakPredicted == 0 ? 1.0 : product.peakPredicted * 1.4;
     return Semantics(
-      label: 'Prediksi ${product.productName} sampai ${formatDayMonth(points.last.date)}',
+      label: context.l10n.dashboardForecastSemantics(product.productName, formatDayMonth(points.last.date)),
       child: LineChart(
         LineChartData(
           minY: 0,

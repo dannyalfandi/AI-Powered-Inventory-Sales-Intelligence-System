@@ -12,9 +12,9 @@ class CreateSalesOrder {
   /// Product existence is checked by the backend.
   Future<SalesOrder> call(SalesOrderInput input) async {
     final data = input.copyWith(notes: input.notes.trim());
-    final messages = OrderRules.validate(data);
-    if (messages.isNotEmpty) {
-      throw ValidationFailure('Pesanan belum lengkap', messages: messages);
+    final issues = OrderRules.validate(data);
+    if (issues.isNotEmpty) {
+      throw ValidationFailure('input is not valid', issues: issues, issue: FailureIssue.localValidation);
     }
     return _repository.createOrder(data);
   }

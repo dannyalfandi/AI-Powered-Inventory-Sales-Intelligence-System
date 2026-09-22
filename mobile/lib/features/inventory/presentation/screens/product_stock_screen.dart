@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/error/failure.dart';
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/router/app_router.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../shared/widgets/paged_list.dart';
@@ -62,10 +63,14 @@ class _ProductStockScreenState extends ConsumerState<ProductStockScreen> {
   Future<void> _recordMovement() async {
     final messenger = ScaffoldMessenger.of(context);
     final result = await showMovementFormSheet(context, productId: _id);
-    if (result == null) return;
+    if (result == null || !mounted) return;
     final m = result.movement;
     messenger.showSnackBar(
-      SnackBar(content: Text('${m.type.label} dicatat: stok ${m.quantityBefore} → ${m.quantityAfter}')),
+      SnackBar(
+        content: Text(
+          context.l10n.movementRecorded(m.type.label(context), m.quantityBefore, m.quantityAfter),
+        ),
+      ),
     );
   }
 
@@ -76,10 +81,10 @@ class _ProductStockScreenState extends ConsumerState<ProductStockScreen> {
     // A missing product (404) or a failed first load replaces the whole page.
     if (!product.hasValue) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Detail Produk')),
+        appBar: AppBar(title: Text(context.l10n.productStockTitle)),
         body: product.hasError
             ? ErrorView(
-                message: errorMessage(product.error!),
+                message: errorMessage(context, product.error!),
                 onRetry: () => ref.invalidate(productDetailProvider(_id)),
               )
             : const LoadingView(),
@@ -92,7 +97,7 @@ class _ProductStockScreenState extends ConsumerState<ProductStockScreen> {
         title: Text(p.name, overflow: TextOverflow.ellipsis),
         actions: [
           IconButton(
-            tooltip: 'Edit produk',
+            tooltip: context.l10n.inventoryEditProduct,
             icon: const Icon(Icons.edit_outlined),
             onPressed: () => context.pushNamed(AppRoutes.productEdit, pathParameters: {'id': '$_id'}),
           ),
@@ -102,7 +107,7 @@ class _ProductStockScreenState extends ConsumerState<ProductStockScreen> {
         key: const Key('record_movement_button'),
         onPressed: _recordMovement,
         icon: const Icon(Icons.swap_vert),
-        label: const Text('Catat pergerakan'),
+        label: Text(context.l10n.productStockRecordMovement),
       ),
       body: RefreshIndicator(
         onRefresh: _refresh,
@@ -118,7 +123,7 @@ class _ProductStockScreenState extends ConsumerState<ProductStockScreen> {
                   const SizedBox(height: 16),
                   _StockSection(productId: _id),
                   const SizedBox(height: 24),
-                  Text('Riwayat pergerakan', style: Theme.of(context).textTheme.titleMedium),
+                  Text(context.l10n.productStockHistory, style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 4),
                 ],
               ),
@@ -156,7 +161,7 @@ class _ProductHeader extends StatelessWidget {
             Chip(
               key: const Key('product_category_chip'),
               avatar: const Icon(Icons.label_outline, size: 18),
-              label: Text(category?.name ?? 'Tanpa Kategori'),
+              label: Text(category?.name ?? context.l10n.productNoCategory),
               visualDensity: VisualDensity.compact,
             ),
           ],
@@ -186,7 +191,7 @@ class _StockSection extends ConsumerWidget {
         child: SizedBox(
           height: 160,
           child: ErrorView(
-            message: errorMessage(e),
+            message: errorMessage(context, e),
             onRetry: () => ref.invalidate(productInventoryProvider(productId)),
           ),
         ),
@@ -211,16 +216,16 @@ class _MovementHistory extends ConsumerWidget {
       ),
       error: (e, _) => SliverToBoxAdapter(
         child: ErrorView(
-          message: errorMessage(e),
+          message: errorMessage(context, e),
           onRetry: () => ref.invalidate(stockMovementListProvider(productId)),
         ),
       ),
       data: (state) {
         if (state.items.isEmpty) {
-          return const SliverToBoxAdapter(
+          return SliverToBoxAdapter(
             child: EmptyView(
               icon: Icons.history,
-              message: 'Belum ada pergerakan stok.\nCatat stok masuk pertama.',
+              message: context.l10n.inventoryHistoryEmptyHint,
             ),
           );
         }
@@ -232,7 +237,7 @@ class _MovementHistory extends ConsumerWidget {
               return PagedListFooter(
                 state: state,
                 onLoadMore: () => ref.read(stockMovementListProvider(productId).notifier).loadMore(),
-                totalLabel: (n) => '$n pergerakan',
+                totalLabel: (n) => context.l10n.inventoryMovementsCount(n),
               );
             }
             return MovementTile(movement: state.items[i]);

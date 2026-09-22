@@ -3,7 +3,19 @@ import 'package:intl/intl.dart';
 final _rupiah = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
 
 /// Formats whole Rupiah, e.g. 45000 → "Rp 45.000".
+///
+/// Deliberately `id_ID` in both app languages: the amount is Rupiah whichever
+/// language the labels are in, and Rupiah is conventionally written with a
+/// dot as the thousands separator.
 String formatRupiah(int amount) => _rupiah.format(amount);
+
+final _decimal = <String, NumberFormat>{};
+
+/// A plain number with at most one decimal, in the app's language: "1.5" in
+/// English, "1,5" in Indonesian. For counts and averages — not for money,
+/// which stays Rupiah-formatted.
+String formatDecimal(String languageCode, num value) =>
+    _decimal.putIfAbsent(languageCode, () => NumberFormat('#,##0.#', languageCode)).format(value);
 
 final _compact = NumberFormat('#,##0.#', 'id_ID');
 

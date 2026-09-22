@@ -1,10 +1,35 @@
 import 'package:flutter/material.dart';
 
 import '../../core/error/failure.dart';
+import '../../core/l10n/l10n.dart';
 
 /// User-facing message for any error that reaches the UI.
-String errorMessage(Object error) =>
-    error is Failure ? error.message : 'Terjadi kesalahan tak terduga.';
+///
+/// Two sources, one rule: a [Failure] the app produced itself carries a
+/// [FailureIssue] and is written from the ARB files; a failure that carries a
+/// backend message shows that message as it is, because the API already
+/// answered in the language this app asked for.
+String errorMessage(BuildContext context, Object error) {
+  final l10n = context.l10n;
+  if (error is Failure) {
+    final issue = error.issue;
+    if (issue != null) {
+      return switch (issue) {
+        FailureIssue.timeout => l10n.networkTimeout,
+        FailureIssue.cancelled => l10n.networkCancelled,
+        FailureIssue.unreachable => l10n.networkUnreachable,
+        FailureIssue.malformedResponse => error is ServerFailure && error.statusCode != null
+            ? l10n.networkServerError('${error.statusCode}')
+            : l10n.networkServerErrorUnknown,
+        // A form rejected locally: the fields carry the detail, the banner
+        // only needs to say that something needs fixing.
+        FailureIssue.localValidation => l10n.commonValidationFailed,
+      };
+    }
+    if (error.message.isNotEmpty) return error.message;
+  }
+  return l10n.commonUnexpectedError;
+}
 
 class LoadingView extends StatelessWidget {
   const LoadingView({super.key});
@@ -36,7 +61,7 @@ class ErrorView extends StatelessWidget {
               FilledButton.tonalIcon(
                 onPressed: onRetry,
                 icon: const Icon(Icons.refresh),
-                label: const Text('Coba lagi'),
+                label: Text(context.l10n.commonRetry),
               ),
             ],
           ],

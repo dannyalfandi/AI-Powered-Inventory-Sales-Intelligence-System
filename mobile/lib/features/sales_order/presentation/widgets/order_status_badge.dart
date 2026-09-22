@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/l10n/l10n.dart';
 import '../../domain/entities/sales_order.dart';
 
 extension OrderStatusText on OrderStatus {
-  String get label => switch (this) {
-        OrderStatus.pending => 'Menunggu',
-        OrderStatus.confirmed => 'Dikonfirmasi',
-        OrderStatus.shipped => 'Dikirim',
-        OrderStatus.cancelled => 'Dibatalkan',
+  /// Needs a context because the wording is read from the ARB files; the
+  /// enum value (`pending`, `confirmed`, …) is what travels to the API.
+  String label(BuildContext context) => switch (this) {
+        OrderStatus.pending => context.l10n.orderStatusPending,
+        OrderStatus.confirmed => context.l10n.orderStatusConfirmed,
+        OrderStatus.shipped => context.l10n.orderStatusShipped,
+        OrderStatus.cancelled => context.l10n.orderStatusCancelled,
       };
 
   IconData get icon => switch (this) {
@@ -18,11 +21,11 @@ extension OrderStatusText on OrderStatus {
       };
 
   /// Button text for moving an order *to* this status.
-  String get actionLabel => switch (this) {
-        OrderStatus.confirmed => 'Konfirmasi',
-        OrderStatus.shipped => 'Kirim',
-        OrderStatus.cancelled => 'Batalkan',
-        OrderStatus.pending => 'Tandai menunggu',
+  String actionLabel(BuildContext context) => switch (this) {
+        OrderStatus.confirmed => context.l10n.orderActionConfirm,
+        OrderStatus.shipped => context.l10n.orderActionShip,
+        OrderStatus.cancelled => context.l10n.orderActionCancel,
+        OrderStatus.pending => context.l10n.orderActionMarkPending,
       };
 }
 
@@ -55,7 +58,7 @@ class OrderStatusBadge extends StatelessWidget {
         children: [
           Icon(status.icon, size: 14, color: fg),
           const SizedBox(width: 4),
-          Text(status.label, style: Theme.of(context).textTheme.labelMedium?.copyWith(color: fg)),
+          Text(status.label(context), style: Theme.of(context).textTheme.labelMedium?.copyWith(color: fg)),
         ],
       ),
     );

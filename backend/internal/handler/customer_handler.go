@@ -23,7 +23,7 @@ func NewCustomerHandler(svc service.CustomerService) *CustomerHandler {
 func (h *CustomerHandler) Create(c *gin.Context) {
 	var in model.CreateCustomerInput
 	if err := c.ShouldBindJSON(&in); err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid_body", err.Error(), nil)
+		writeInvalidBody(c, err)
 		return
 	}
 	cust, err := h.svc.Create(c.Request.Context(), in)
@@ -76,7 +76,7 @@ func (h *CustomerHandler) Update(c *gin.Context) {
 	}
 	var in model.UpdateCustomerInput
 	if err := c.ShouldBindJSON(&in); err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid_body", err.Error(), nil)
+		writeInvalidBody(c, err)
 		return
 	}
 	cust, err := h.svc.Update(c.Request.Context(), id, in)

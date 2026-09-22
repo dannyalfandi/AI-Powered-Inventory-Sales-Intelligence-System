@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/error/failure.dart';
+import '../../../../core/l10n/field_issue_text.dart';
+import '../../../../core/l10n/l10n.dart';
 import '../../../../shared/widgets/state_views.dart';
 import '../../../category/presentation/providers/category_list_provider.dart';
 import '../../domain/entities/product.dart';
@@ -23,14 +25,14 @@ class ProductFormScreen extends ConsumerWidget {
     final product = ref.watch(productFormProvider(productId));
 
     return Scaffold(
-      appBar: AppBar(title: Text(isEdit ? 'Edit Produk' : 'Tambah Produk')),
+      appBar: AppBar(title: Text(isEdit ? context.l10n.productEdit : context.l10n.productNew)),
       body: product.when(
         // Only the initial load; after a save the form keeps showing.
         skipLoadingOnRefresh: true,
         skipLoadingOnReload: true,
         loading: () => const LoadingView(),
         error: (e, _) => ErrorView(
-          message: errorMessage(e),
+          message: errorMessage(context, e),
           onRetry: () => ref.invalidate(productFormProvider(productId)),
         ),
         data: (p) => _ProductForm(productId: productId, initial: p),
@@ -91,6 +93,7 @@ class _ProductFormState extends ConsumerState<_ProductForm> {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _submitting = true);
+    final l10n = context.l10n;
     final messenger = ScaffoldMessenger.of(context);
     try {
       await ref.read(productFormProvider(widget.productId).notifier).save(
@@ -104,18 +107,20 @@ class _ProductFormState extends ConsumerState<_ProductForm> {
           );
       if (!mounted) return;
       messenger.showSnackBar(
-        SnackBar(content: Text(_isEdit ? 'Produk diperbarui' : 'Produk ditambahkan')),
+        SnackBar(content: Text(_isEdit ? l10n.productUpdated : l10n.productCreated)),
       );
       context.pop(true);
     } on ValidationFailure catch (f) {
       _showServerErrors(f.messages);
-      if (f.messages.isEmpty) messenger.showSnackBar(SnackBar(content: Text(f.message)));
+      if (f.messages.isEmpty) {
+        messenger.showSnackBar(SnackBar(content: Text(l10n.productSaveFailed(f.message))));
+      }
     } on Failure catch (f) {
       if (f is ServerFailure && f.isConflict) {
-        _showServerErrors({'sku': 'SKU sudah dipakai produk lain'});
+        _showServerErrors({'sku': l10n.productSkuTaken});
         return;
       }
-      messenger.showSnackBar(SnackBar(content: Text(f.message)));
+      messenger.showSnackBar(SnackBar(content: Text(l10n.productSaveFailed(f.message))));
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -123,6 +128,7 @@ class _ProductFormState extends ConsumerState<_ProductForm> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Form(
       key: _formKey,
       child: ListView(
@@ -131,29 +137,29 @@ class _ProductFormState extends ConsumerState<_ProductForm> {
           TextFormField(
             key: const Key('product_form_sku'),
             controller: _sku,
-            decoration: const InputDecoration(labelText: 'SKU', hintText: 'contoh: KOPI-001'),
+            decoration: InputDecoration(labelText: l10n.productFieldSku, hintText: l10n.productSkuHint),
             textCapitalization: TextCapitalization.characters,
             textInputAction: TextInputAction.next,
             inputFormatters: [LengthLimitingTextInputFormatter(ProductRules.skuMaxLength)],
             onChanged: (_) => _clearServerError('sku'),
-            validator: (v) => ProductRules.validateSku(v ?? '') ?? _serverErrors['sku'],
+            validator: (v) => context.messageFor(ProductRules.validateSku(v ?? '')) ?? _serverErrors['sku'],
           ),
           const SizedBox(height: 16),
           TextFormField(
             key: const Key('product_form_name'),
             controller: _name,
-            decoration: const InputDecoration(labelText: 'Nama produk'),
+            decoration: InputDecoration(labelText: l10n.productFieldName),
             textCapitalization: TextCapitalization.sentences,
             textInputAction: TextInputAction.next,
             inputFormatters: [LengthLimitingTextInputFormatter(ProductRules.nameMaxLength)],
             onChanged: (_) => _clearServerError('name'),
-            validator: (v) => ProductRules.validateName(v ?? '') ?? _serverErrors['name'],
+            validator: (v) => context.messageFor(ProductRules.validateName(v ?? '')) ?? _serverErrors['name'],
           ),
           const SizedBox(height: 16),
           TextFormField(
             key: const Key('product_form_description'),
             controller: _description,
-            decoration: const InputDecoration(labelText: 'Deskripsi (opsional)'),
+            decoration: InputDecoration(labelText: l10n.productFieldDescriptionOptional),
             minLines: 2,
             maxLines: 4,
             onChanged: (_) => _clearServerError('description'),
@@ -163,7 +169,7 @@ class _ProductFormState extends ConsumerState<_ProductForm> {
           TextFormField(
             key: const Key('product_form_price'),
             controller: _price,
-            decoration: const InputDecoration(labelText: 'Harga', prefixText: 'Rp '),
+            decoration: InputDecoration(labelText: l10n.productFieldPrice, prefixText: 'Rp '),
             keyboardType: TextInputType.number,
             // Digits only: negative or decimal prices can't be typed at all.
             inputFormatters: [
@@ -172,7 +178,7 @@ class _ProductFormState extends ConsumerState<_ProductForm> {
             ],
             onChanged: (_) => _clearServerError('price'),
             validator: (v) =>
-                ProductRules.validatePrice(int.tryParse(v ?? '')) ?? _serverErrors['price'],
+                context.messageFor(ProductRules.validatePrice(int.tryParse(v ?? ''))) ?? _serverErrors['price'],
             onFieldSubmitted: (_) => _submit(),
           ),
           const SizedBox(height: 16),
@@ -192,7 +198,7 @@ class _ProductFormState extends ConsumerState<_ProductForm> {
             onPressed: _submitting ? null : _submit,
             child: _submitting
                 ? const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                : Text(_isEdit ? 'Simpan perubahan' : 'Tambah produk'),
+                : Text(_isEdit ? l10n.commonSaveChanges : l10n.productsAdd),
           ),
         ],
       ),
@@ -223,7 +229,7 @@ class _CategoryField extends ConsumerWidget {
     final options = ref.watch(categoryOptionsProvider);
 
     final items = <DropdownMenuItem<int?>>[
-      const DropdownMenuItem(value: null, child: Text('Tanpa Kategori')),
+      DropdownMenuItem(value: null, child: Text(context.l10n.productNoCategory)),
       for (final c in options.value ?? const [])
         DropdownMenuItem(value: c.id, child: Text(c.name, overflow: TextOverflow.ellipsis)),
     ];
@@ -231,7 +237,7 @@ class _CategoryField extends ConsumerWidget {
     // or if the category disappeared from the list (DropdownButton asserts
     // that its value is one of the items).
     if (value != null && !items.any((i) => i.value == value)) {
-      final label = current?.id == value ? current!.name : 'Kategori #$value';
+      final label = current?.id == value ? current!.name : context.l10n.productCategoryFallback('$value');
       items.add(DropdownMenuItem(value: value, child: Text(label, overflow: TextOverflow.ellipsis)));
     }
 
@@ -242,8 +248,8 @@ class _CategoryField extends ConsumerWidget {
       isExpanded: true,
       onChanged: onChanged,
       decoration: InputDecoration(
-        labelText: 'Kategori',
-        helperText: options.hasError ? 'Gagal memuat daftar kategori' : null,
+        labelText: context.l10n.productFieldCategory,
+        helperText: options.hasError ? context.l10n.productCategoryLoadFailed : null,
         suffixIcon: options.isLoading
             ? const Padding(
                 padding: EdgeInsets.all(12),
@@ -251,7 +257,7 @@ class _CategoryField extends ConsumerWidget {
               )
             : options.hasError
                 ? IconButton(
-                    tooltip: 'Muat ulang kategori',
+                    tooltip: context.l10n.productCategoryReload,
                     icon: const Icon(Icons.refresh),
                     onPressed: () => ref.invalidate(categoryOptionsProvider),
                   )

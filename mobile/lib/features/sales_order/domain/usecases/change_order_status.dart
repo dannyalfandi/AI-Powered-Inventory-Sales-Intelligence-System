@@ -1,4 +1,5 @@
 import '../../../../core/error/failure.dart';
+import '../../../../core/validation/field_issue.dart';
 import '../entities/sales_order.dart';
 import '../repositories/sales_order_repository.dart';
 
@@ -13,9 +14,10 @@ class ChangeOrderStatus {
   /// have changed on another device.
   Future<SalesOrder> call(SalesOrder order, OrderStatus target) async {
     if (!order.status.canMoveTo(target)) {
-      throw ValidationFailure(
-        'Transisi status tidak valid',
-        messages: {'status': 'Pesanan ${order.status.name} tidak bisa diubah ke ${target.name}'},
+      throw const ValidationFailure(
+        'invalid status transition',
+        issues: {'status': FieldIssue(FieldIssueKind.orderTransitionInvalid)},
+        issue: FailureIssue.localValidation,
       );
     }
     return _repository.changeStatus(order.id, target);

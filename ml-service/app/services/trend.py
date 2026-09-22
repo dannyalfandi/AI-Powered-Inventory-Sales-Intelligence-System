@@ -7,6 +7,7 @@ numbers, so the same input always produces the same sentence.
 from __future__ import annotations
 
 from app.core.config import Settings, get_settings
+from app.core.i18n import Lang, normalize, percent, period_label, translate
 from app.models.schemas import TrendRequest, TrendResponse
 from app.services.history import ValidationProblem, to_daily_series
 
@@ -15,12 +16,14 @@ MIN_DAYS = 4  # two periods of at least two days each
 
 def analyze_trend(request: TrendRequest, settings: Settings | None = None) -> TrendResponse:
     settings = settings or get_settings()
+    lang = normalize(request.lang)
 
     series = to_daily_series(request.history)
     if len(series) < MIN_DAYS:
         raise ValidationProblem(
             "history",
-            f"history must cover at least {MIN_DAYS} days to compare two periods, got {len(series)}",
+            translate("error.history_min_days", lang, minimum=MIN_DAYS, got=len(series)),
+            lang,
         )
 
     requested = request.window_days or settings.default_trend_window_days
@@ -36,7 +39,7 @@ def analyze_trend(request: TrendRequest, settings: Settings | None = None) -> Tr
     return TrendResponse(
         trend=trend,
         change_percent=change_percent,
-        summary=_summary(trend, change_percent, recent_total, previous_total, window),
+        summary=_summary(trend, change_percent, recent_total, previous_total, window, lang),
         window_days=window,
         recent_total=recent_total,
         previous_total=previous_total,
@@ -59,29 +62,24 @@ def _direction(change_percent: float, recent: int, previous: int, threshold: flo
     return "increasing" if change_percent > 0 else "decreasing"
 
 
-def _period_label(window: int) -> str:
-    """The span both periods cover together, in weeks when it divides evenly."""
-    total_days = window * 2
-    if total_days % 7 == 0:
-        return f"{total_days // 7} minggu terakhir"
-    return f"{total_days} hari terakhir"
+def _summary(trend: str, change_percent: float, recent: int, previous: int, window: int, lang: Lang) -> str:
+    """The sentence a client displays, filled with the numbers above.
 
-
-def _percent_id(value: float) -> str:
-    """Indonesian decimal notation: 32.5 → "32,5"."""
-    return f"{abs(value):.1f}".replace(".", ",")
-
-
-def _summary(trend: str, change_percent: float, recent: int, previous: int, window: int) -> str:
-    period = _period_label(window)
+    Which template is chosen is a decision about the data, not about language:
+    the same case picks the same key in every language.
+    """
+    period = period_label(window, lang)
     if recent == 0 and previous == 0:
-        return f"Belum ada penjualan dalam {period}."
+        return translate("trend.no_sales", lang, period=period)
     if previous == 0:
-        return f"Penjualan mulai muncul: {recent} unit dalam {window} hari terakhir, sebelumnya tidak ada penjualan."
+        return translate("trend.first_sales", lang, recent=recent, window=window)
     if trend == "stable":
-        return f"Penjualan relatif stabil dalam {period} (perubahan {_percent_id(change_percent)}%)."
-    arah = "naik" if trend == "increasing" else "turun"
-    return (
-        f"Penjualan {arah} {_percent_id(change_percent)}% dalam {period} "
-        f"({recent} unit vs {previous} unit periode sebelumnya)."
+        return translate("trend.stable", lang, period=period, percent=percent(change_percent, lang))
+    return translate(
+        f"trend.{trend}",
+        lang,
+        percent=percent(change_percent, lang),
+        period=period,
+        recent=recent,
+        previous=previous,
     )

@@ -106,7 +106,7 @@ class TestWindow:
             run([1, 2, 3])
 
         assert caught.value.field == "history"
-        assert "at least 4 days" in caught.value.message
+        assert "minimal mencakup 4 hari" in caught.value.message
 
     def test_a_gap_can_make_a_short_history_long_enough(self):
         response = analyze_trend(

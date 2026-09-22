@@ -361,7 +361,9 @@ func TestSalesOrderService_ChangeStatus(t *testing.T) {
 		require.ErrorAs(t, err, &verr)
 		require.Len(t, verr.Fields, 1)
 		assert.Equal(t, "items[1].quantity", verr.Fields[0].Field)
-		assert.Equal(t, "insufficient stock for product 20 (TEH-1): 4 available, 5 requested", verr.Fields[0].Message)
+		// The default language is Indonesian; TestMessagesAreTranslated covers
+		// the English rendering of the same rule.
+		assert.Equal(t, "stok produk 20 (TEH-1) tidak cukup: tersedia 4, diminta 5", verr.Fields[0].Message)
 		// Nothing changed, not even the item that had enough stock.
 		assert.Equal(t, int64(10), stockOf(repo.store, 10))
 		assert.Equal(t, int64(4), stockOf(repo.store, 20))

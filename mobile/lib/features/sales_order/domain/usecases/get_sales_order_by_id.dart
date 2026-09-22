@@ -9,7 +9,7 @@ class GetSalesOrderById {
 
   Future<SalesOrder> call(int id) async {
     if (id <= 0) {
-      throw const ValidationFailure('ID pesanan tidak valid', messages: {'id': 'harus bilangan positif'});
+      throw const ValidationFailure('id must be a positive integer', issue: FailureIssue.localValidation);
     }
     return _repository.getOrderById(id);
   }
