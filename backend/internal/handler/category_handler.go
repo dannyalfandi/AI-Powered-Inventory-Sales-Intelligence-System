@@ -23,7 +23,7 @@ func NewCategoryHandler(svc service.CategoryService) *CategoryHandler {
 func (h *CategoryHandler) Create(c *gin.Context) {
 	var in model.CreateCategoryInput
 	if err := c.ShouldBindJSON(&in); err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid_body", err.Error(), nil)
+		writeInvalidBody(c, err)
 		return
 	}
 	cat, err := h.svc.Create(c.Request.Context(), in)
@@ -76,7 +76,7 @@ func (h *CategoryHandler) Update(c *gin.Context) {
 	}
 	var in model.UpdateCategoryInput
 	if err := c.ShouldBindJSON(&in); err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid_body", err.Error(), nil)
+		writeInvalidBody(c, err)
 		return
 	}
 	cat, err := h.svc.Update(c.Request.Context(), id, in)

@@ -1,5 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import '../../../../core/validation/field_issue.dart';
+
 part 'inventory.freezed.dart';
 
 /// Current stock of one product (backend model.Inventory, 1-1 with product).
@@ -88,17 +90,19 @@ abstract final class MovementRules {
   static const maxQuantity = 1000000000;
   static const reasonMaxLength = 500;
 
-  static String? validateQuantity(MovementType type, int? value) {
-    if (value == null) return 'Jumlah wajib diisi';
-    if (value < 0) return 'Jumlah tidak boleh negatif';
-    if (value == 0 && type != MovementType.adjustment) return 'Jumlah harus lebih dari 0';
-    if (value > maxQuantity) return 'Jumlah maksimal $maxQuantity';
+  static FieldIssue? validateQuantity(MovementType type, int? value) {
+    if (value == null) return const FieldIssue(FieldIssueKind.quantityRequired);
+    if (value < 0) return const FieldIssue(FieldIssueKind.quantityNegative);
+    if (value == 0 && type != MovementType.adjustment) {
+      return const FieldIssue(FieldIssueKind.quantityPositive);
+    }
+    if (value > maxQuantity) return const FieldIssue(FieldIssueKind.quantityTooLarge, max: maxQuantity);
     return null;
   }
 
-  static String? validateReason(String value) {
+  static FieldIssue? validateReason(String value) {
     if (value.trim().length > reasonMaxLength) {
-      return 'Keterangan maksimal $reasonMaxLength karakter';
+      return const FieldIssue(FieldIssueKind.reasonTooLong, max: reasonMaxLength);
     }
     return null;
   }

@@ -80,7 +80,7 @@ func (c *fakeCache) Set(_ context.Context, key string, value []byte, ttl time.Du
 var analyticsNow = time.Date(2026, 9, 20, 10, 0, 0, 0, time.UTC)
 
 func newAnalyticsService(repo *mockAnalyticsRepo, inv InventoryService, c Cache) *analyticsService {
-	svc := NewAnalyticsService(repo, inv, c, 5*time.Minute, jakarta).(*analyticsService)
+	svc := NewAnalyticsService(repo, inv, nil, c, 5*time.Minute, 10*time.Minute, jakarta).(*analyticsService)
 	svc.now = func() time.Time { return analyticsNow }
 	return svc
 }

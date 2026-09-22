@@ -1,5 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import '../../../../core/validation/field_issue.dart';
+
 part 'sales_order.freezed.dart';
 
 /// Sales order status. Mirrors backend `orderTransitions`
@@ -109,37 +111,41 @@ abstract final class OrderRules {
   static const maxQuantity = 1000000;
   static const notesMaxLength = 2000;
 
-  static Map<String, String> validate(SalesOrderInput input) {
-    final messages = <String, String>{};
+  static Map<String, FieldIssue> validate(SalesOrderInput input) {
+    final issues = <String, FieldIssue>{};
     if (input.customerId == null || input.customerId! <= 0) {
-      messages['customer_id'] = 'Pilih pelanggan';
+      issues['customer_id'] = const FieldIssue(FieldIssueKind.customerRequired);
     }
     if (input.items.isEmpty) {
-      messages['items'] = 'Tambahkan minimal satu produk';
+      issues['items'] = const FieldIssue(FieldIssueKind.itemsRequired);
     } else if (input.items.length > maxItems) {
-      messages['items'] = 'Maksimal $maxItems produk per pesanan';
+      issues['items'] = const FieldIssue(FieldIssueKind.itemsTooMany, max: maxItems);
     }
     final seen = <int, int>{};
     for (final (i, line) in input.items.indexed) {
       if (seen[line.productId] case final first?) {
-        messages['items[$i].product_id'] = 'Produk ini sudah ada di baris ${first + 1}; gabungkan jumlahnya';
+        // The form disables products already added, so a duplicate here means
+        // the same product twice: report it on the line that repeats it, and
+        // point back at the line that already has it.
+        issues['items[$i].product_id'] =
+            FieldIssue(FieldIssueKind.itemsDuplicateProduct, line: first + 1);
       } else {
         seen[line.productId] = i;
       }
-      if (validateQuantity(line.quantity) case final msg?) {
-        messages['items[$i].quantity'] = msg;
+      if (validateQuantity(line.quantity) case final issue?) {
+        issues['items[$i].quantity'] = issue;
       }
     }
     if (input.notes.trim().length > notesMaxLength) {
-      messages['notes'] = 'Catatan maksimal $notesMaxLength karakter';
+      issues['notes'] = const FieldIssue(FieldIssueKind.descriptionTooLong, max: notesMaxLength);
     }
-    return messages;
+    return issues;
   }
 
-  static String? validateQuantity(int? quantity) {
-    if (quantity == null) return 'Jumlah wajib diisi';
-    if (quantity <= 0) return 'Jumlah harus lebih dari 0';
-    if (quantity > maxQuantity) return 'Jumlah maksimal $maxQuantity';
+  static FieldIssue? validateQuantity(int? quantity) {
+    if (quantity == null) return const FieldIssue(FieldIssueKind.quantityRequired);
+    if (quantity <= 0) return const FieldIssue(FieldIssueKind.quantityPositive);
+    if (quantity > maxQuantity) return const FieldIssue(FieldIssueKind.quantityTooLarge, max: maxQuantity);
     return null;
   }
 }

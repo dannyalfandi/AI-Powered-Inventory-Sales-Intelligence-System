@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/error/failure.dart';
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/router/app_router.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../core/utils/date_formatter.dart';
@@ -45,19 +46,20 @@ class _SalesOrderListScreenState extends ConsumerState<SalesOrderListScreen> {
   }
 
   Future<void> _pickCustomerFilter() async {
-    final c = await pickCustomer(context, title: 'Filter pelanggan');
+    final c = await pickCustomer(context, title: context.l10n.ordersFilterCustomerPick);
     if (c != null) ref.read(salesOrderFiltersProvider.notifier).setCustomer(c.id, c.name);
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final orders = ref.watch(salesOrderListProvider);
     final filter = ref.watch(salesOrderFiltersProvider);
     final filtered = filter.status != null || filter.customerId != null;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Pesanan'),
+        title: Text(l10n.ordersTitle),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(56),
           child: SizedBox(
@@ -70,21 +72,21 @@ class _SalesOrderListScreenState extends ConsumerState<SalesOrderListScreen> {
                   ActionChip(
                     key: const Key('order_filter_customer'),
                     avatar: const Icon(Icons.person_search_outlined, size: 18),
-                    label: const Text('Semua pelanggan'),
+                    label: Text(l10n.ordersFilterCustomerClear),
                     onPressed: _pickCustomerFilter,
                   )
                 else
                   InputChip(
                     key: const Key('order_filter_customer'),
                     avatar: const Icon(Icons.person_outline, size: 18),
-                    label: Text(filter.customerName ?? 'Pelanggan #${filter.customerId}'),
+                    label: Text(filter.customerName ?? l10n.orderCustomerFallback('${filter.customerId}')),
                     onPressed: _pickCustomerFilter,
                     onDeleted: () => ref.read(salesOrderFiltersProvider.notifier).clearCustomer(),
                   ),
                 const SizedBox(width: 8),
                 ChoiceChip(
                   key: const Key('order_filter_status_all'),
-                  label: const Text('Semua'),
+                  label: Text(l10n.ordersFilterStatusAll),
                   selected: filter.status == null,
                   onSelected: (_) => ref.read(salesOrderFiltersProvider.notifier).setStatus(null),
                 ),
@@ -93,7 +95,7 @@ class _SalesOrderListScreenState extends ConsumerState<SalesOrderListScreen> {
                   ChoiceChip(
                     key: Key('order_filter_status_${s.name}'),
                     avatar: Icon(s.icon, size: 18),
-                    label: Text(s.label),
+                    label: Text(s.label(context)),
                     selected: filter.status == s,
                     onSelected: (_) => ref.read(salesOrderFiltersProvider.notifier).setStatus(s),
                   ),
@@ -107,14 +109,14 @@ class _SalesOrderListScreenState extends ConsumerState<SalesOrderListScreen> {
         heroTag: 'order_fab',
         onPressed: () => context.pushNamed(AppRoutes.salesOrderCreate),
         icon: const Icon(Icons.add_shopping_cart),
-        label: const Text('Pesanan'),
+        label: Text(l10n.ordersTitle),
       ),
       body: orders.when(
         skipLoadingOnReload: true,
         loading: () => const LoadingView(),
         error: (e, _) => RefreshableView(
           onRefresh: _refresh,
-          child: ErrorView(message: errorMessage(e), onRetry: () => ref.invalidate(salesOrderListProvider)),
+          child: ErrorView(message: errorMessage(context, e), onRetry: () => ref.invalidate(salesOrderListProvider)),
         ),
         data: (state) {
           if (state.items.isEmpty) {
@@ -122,7 +124,7 @@ class _SalesOrderListScreenState extends ConsumerState<SalesOrderListScreen> {
               onRefresh: _refresh,
               child: EmptyView(
                 icon: filtered ? Icons.filter_alt_off_outlined : Icons.receipt_long_outlined,
-                message: filtered ? 'Tidak ada pesanan dengan filter ini.' : 'Belum ada pesanan.\nBuat pesanan pertama.',
+                message: filtered ? l10n.ordersEmptyForFilter : l10n.ordersEmptyHint,
               ),
             );
           }
@@ -139,7 +141,7 @@ class _SalesOrderListScreenState extends ConsumerState<SalesOrderListScreen> {
                   return PagedListFooter(
                     state: state,
                     onLoadMore: () => ref.read(salesOrderListProvider.notifier).loadMore(),
-                    totalLabel: (n) => '$n pesanan',
+                    totalLabel: (n) => l10n.ordersCount(n),
                   );
                 }
                 final o = state.items[i];
@@ -169,7 +171,8 @@ class SalesOrderTile extends StatelessWidget {
       onTap: onTap,
       title: Text(order.orderNumber, style: const TextStyle(fontFeatures: [FontFeature.tabularFigures()])),
       subtitle: Text(
-        '${order.customer?.name ?? 'Pelanggan #${order.customerId}'} · ${formatDateTime(order.createdAt)}',
+        '${order.customer?.name ?? context.l10n.orderCustomerFallback('${order.customerId}')} '
+        '· ${formatDateTime(order.createdAt)}',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),

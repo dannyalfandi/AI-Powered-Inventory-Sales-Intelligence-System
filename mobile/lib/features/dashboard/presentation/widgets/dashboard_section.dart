@@ -63,7 +63,7 @@ class AsyncSection<T> extends StatelessWidget {
       // the box (and therefore tappable) however long the message is.
       return ConstrainedBox(
         constraints: BoxConstraints(minHeight: placeholderHeight),
-        child: ErrorView(message: errorMessage(value.error!), onRetry: onRetry),
+        child: ErrorView(message: errorMessage(context, value.error!), onRetry: onRetry),
       );
     }
     if (!value.hasValue) {

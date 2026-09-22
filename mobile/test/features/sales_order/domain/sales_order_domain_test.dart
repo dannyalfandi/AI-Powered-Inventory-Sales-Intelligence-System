@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:inventory_intel/core/error/failure.dart';
+import 'package:inventory_intel/core/validation/field_issue.dart';
 import 'package:inventory_intel/features/sales_order/domain/entities/sales_order.dart';
 import 'package:inventory_intel/features/sales_order/domain/usecases/change_order_status.dart';
 import 'package:inventory_intel/features/sales_order/domain/usecases/create_sales_order.dart';
@@ -43,10 +44,18 @@ void main() {
           notes: notes,
         );
 
-    final cases = <({String name, SalesOrderInput input, Map<String, String> want})>[
+    final cases = <({String name, SalesOrderInput input, Map<String, FieldIssue> want})>[
       (name: 'valid', input: input(), want: {}),
-      (name: 'customer required', input: input(customer: null), want: {'customer_id': 'Pilih pelanggan'}),
-      (name: 'at least one item', input: input(items: []), want: {'items': 'Tambahkan minimal satu produk'}),
+      (
+        name: 'customer required',
+        input: input(customer: null),
+        want: {'customer_id': const FieldIssue(FieldIssueKind.customerRequired)},
+      ),
+      (
+        name: 'at least one item',
+        input: input(items: []),
+        want: {'items': const FieldIssue(FieldIssueKind.itemsRequired)},
+      ),
       (
         name: 'duplicate product points at the first line',
         input: input(items: const [
@@ -54,7 +63,7 @@ void main() {
           OrderLineInput(productId: 20, quantity: 1),
           OrderLineInput(productId: 10, quantity: 2),
         ]),
-        want: {'items[2].product_id': 'Produk ini sudah ada di baris 1; gabungkan jumlahnya'},
+        want: {'items[2].product_id': const FieldIssue(FieldIssueKind.itemsDuplicateProduct, line: 1)},
       ),
       (
         name: 'quantity must be present, positive and within the cap',
@@ -64,15 +73,15 @@ void main() {
           OrderLineInput(productId: 30, quantity: 1000001),
         ]),
         want: {
-          'items[0].quantity': 'Jumlah wajib diisi',
-          'items[1].quantity': 'Jumlah harus lebih dari 0',
-          'items[2].quantity': 'Jumlah maksimal 1000000',
+          'items[0].quantity': const FieldIssue(FieldIssueKind.quantityRequired),
+          'items[1].quantity': const FieldIssue(FieldIssueKind.quantityPositive),
+          'items[2].quantity': const FieldIssue(FieldIssueKind.quantityTooLarge, max: OrderRules.maxQuantity),
         },
       ),
       (
         name: 'too many items',
         input: input(items: [for (var i = 1; i <= 101; i++) OrderLineInput(productId: i, quantity: 1)]),
-        want: {'items': 'Maksimal 100 produk per pesanan'},
+        want: {'items': const FieldIssue(FieldIssueKind.itemsTooMany, max: OrderRules.maxItems)},
       ),
     ];
 
@@ -88,7 +97,7 @@ void main() {
           OrderLineInput(productId: 10, quantity: 1),
           OrderLineInput(productId: 10, quantity: 1),
         ])),
-        throwsA(isA<ValidationFailure>().having((f) => f.messages.keys, 'fields', ['items[1].product_id'])),
+        throwsA(isA<ValidationFailure>().having((f) => f.issues.keys, 'fields', ['items[1].product_id'])),
       );
       verifyNever(() => repo.createOrder(any()));
     });
@@ -134,7 +143,7 @@ void main() {
       test('${from.name} → ${to.name} is rejected locally with a status error', () async {
         await expectLater(
           ChangeOrderStatus(repo)(salesOrder(1, status: from), to),
-          throwsA(isA<ValidationFailure>().having((f) => f.messages.keys, 'fields', ['status'])),
+          throwsA(isA<ValidationFailure>().having((f) => f.issues.keys, 'fields', ['status'])),
         );
         verifyNever(() => repo.changeStatus(any(), any()));
       });

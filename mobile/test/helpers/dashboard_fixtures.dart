@@ -1,6 +1,9 @@
 import 'package:inventory_intel/features/dashboard/domain/entities/dashboard.dart';
+import 'package:inventory_intel/features/dashboard/domain/entities/forecast.dart';
 import 'package:inventory_intel/features/dashboard/domain/repositories/dashboard_repository.dart';
 import 'package:mocktail/mocktail.dart';
+
+import 'forecast_fixtures.dart';
 
 class MockDashboardRepository extends Mock implements DashboardRepository {}
 
@@ -63,6 +66,8 @@ void stubDashboard(
   int lowStockCount = 11,
   List<TopProduct> products = topProducts,
   List<CategoryBreakdown> categories = categoryBreakdown,
+  ForecastReport? forecast,
+  InsightReport? insights,
 }) {
   when(() => repo.getSummary(any()))
       .thenAnswer((i) async => summary(range: i.positionalArguments[0] as AnalyticsRange));
@@ -75,6 +80,15 @@ void stubDashboard(
   when(() => repo.getTopProducts(any(), limit: any(named: 'limit'))).thenAnswer((_) async => products);
   when(() => repo.getCategoryBreakdown(any())).thenAnswer((_) async => categories);
   when(repo.getLowStockAlertCount).thenAnswer((_) async => lowStockCount);
+  when(
+    () => repo.getForecast(
+      any(),
+      limit: any(named: 'limit'),
+      horizonDays: any(named: 'horizonDays'),
+    ),
+  ).thenAnswer((i) async => forecast ?? forecastReport(range: i.positionalArguments[0] as AnalyticsRange));
+  when(() => repo.getInsights(any(), limit: any(named: 'limit')))
+      .thenAnswer((i) async => insights ?? insightReport(range: i.positionalArguments[0] as AnalyticsRange));
 }
 
 /// Call once in `setUpAll` so `any()` works for these argument types.

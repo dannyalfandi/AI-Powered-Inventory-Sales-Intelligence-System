@@ -1,4 +1,5 @@
 import '../../../../core/error/failure.dart';
+import '../../../../core/validation/field_issue.dart';
 import '../entities/product.dart';
 import '../entities/product_input.dart';
 import '../repositories/product_repository.dart';
@@ -12,14 +13,14 @@ class CreateProduct {
   /// [ValidationFailure] without a network round trip when input is invalid.
   Future<Product> call(ProductInput input) async {
     final data = input.trimmed();
-    final messages = <String, String>{
+    final issues = <String, FieldIssue>{
       'sku': ?ProductRules.validateSku(data.sku),
       'name': ?ProductRules.validateName(data.name),
       'price': ?ProductRules.validatePrice(data.price),
       'category_id': ?ProductRules.validateCategoryId(data.categoryId),
     };
-    if (messages.isNotEmpty) {
-      throw ValidationFailure('Input produk tidak valid', messages: messages);
+    if (issues.isNotEmpty) {
+      throw ValidationFailure('input is not valid', issues: issues, issue: FailureIssue.localValidation);
     }
     return _repository.createProduct(data);
   }

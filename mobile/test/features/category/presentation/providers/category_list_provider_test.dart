@@ -6,6 +6,7 @@ import 'package:inventory_intel/features/category/presentation/providers/categor
 import 'package:mocktail/mocktail.dart';
 
 import '../../../../helpers/category_fixtures.dart';
+import '../../../../helpers/l10n_harness.dart';
 
 void main() {
   late MockCategoryRepository repo;
@@ -130,20 +131,26 @@ void main() {
   group('categoryDeleteErrorMessage', () {
     final minuman = category(9, name: 'Minuman');
 
-    test('409 explains that products still use the category, with the count', () {
-      final msg = categoryDeleteErrorMessage(categoryInUseFailure, minuman);
-      expect(msg, contains('"Minuman" masih dipakai oleh 3 produk'));
-      expect(msg, contains('Pindahkan produk'));
-    });
+    for (final locale in testLocales) {
+      testWidgets('409 quotes the backend sentence in ${locale.languageCode}', (tester) async {
+        await withL10n(tester, locale, (context, l10n) {
+          // The reason is whatever the server said — it already answered in
+          // the language the app asked for, so nothing is re-parsed here.
+          expect(
+            categoryDeleteErrorMessage(context, categoryInUseFailure, minuman),
+            l10n.categoryDeleteBlockedBody('Minuman', categoryInUseFailure.message),
+          );
+        });
+      });
 
-    test('409 without a count in the message still explains the conflict', () {
-      final msg = categoryDeleteErrorMessage(const ServerFailure('conflict', statusCode: 409), minuman);
-      expect(msg, contains('masih dipakai oleh beberapa produk'));
-    });
-
-    test('other failures are reported as a failed delete', () {
-      final msg = categoryDeleteErrorMessage(const NetworkFailure('offline'), minuman);
-      expect(msg, 'Gagal menghapus kategori: offline');
-    });
+      testWidgets('other failures read as a failed delete in ${locale.languageCode}', (tester) async {
+        await withL10n(tester, locale, (context, l10n) {
+          expect(
+            categoryDeleteErrorMessage(context, const NetworkFailure('offline'), minuman),
+            l10n.categoryDeleteFailed(l10n.networkUnreachable),
+          );
+        });
+      });
+    }
   });
 }

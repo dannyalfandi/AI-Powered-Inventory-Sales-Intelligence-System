@@ -12,6 +12,7 @@ import 'package:mocktail/mocktail.dart';
 import '../../../../helpers/customer_fixtures.dart';
 import '../../../../helpers/product_fixtures.dart';
 import '../../../../helpers/sales_order_fixtures.dart';
+import '../../../../helpers/l10n_harness.dart';
 
 void main() {
   late MockSalesOrderRepository orders;
@@ -51,7 +52,7 @@ void main() {
           customerRepositoryProvider.overrideWithValue(customers),
         ],
         retry: (_, _) => null,
-        child: const MaterialApp(home: SalesOrderFormScreen()),
+        child: localizedApp(home: const SalesOrderFormScreen()),
       );
 
   Future<void> pickCustomer(WidgetTester tester) async {
@@ -103,7 +104,7 @@ void main() {
 
     final kopi = tester.widget<ListTile>(find.ancestor(of: find.text('Kopi Arabica').last, matching: find.byType(ListTile)));
     expect(kopi.enabled, isFalse);
-    expect(find.textContaining('sudah ditambahkan'), findsOneWidget);
+    expect(find.textContaining(l10nOf(tester).orderFormProductAlreadyAdded), findsOneWidget);
     await tester.tap(find.text('Kopi Arabica').last, warnIfMissed: false);
     await tester.pumpAndSettle();
     await tester.tapAt(const Offset(10, 10)); // dismiss the sheet
@@ -120,8 +121,8 @@ void main() {
 
     await submit(tester);
 
-    expect(find.text('Pilih pelanggan'), findsWidgets);
-    expect(find.text('Jumlah harus lebih dari 0'), findsOneWidget);
+    expect(find.text(l10nOf(tester).orderFormPickCustomer), findsWidgets);
+    expect(find.text(l10nOf(tester).validationQuantityPositive), findsOneWidget);
     verifyNever(() => orders.createOrder(any()));
   });
 
@@ -132,7 +133,7 @@ void main() {
 
     await submit(tester);
 
-    expect(find.text('Tambahkan minimal satu produk'), findsOneWidget);
+    expect(find.text(l10nOf(tester).validationItemsRequired), findsOneWidget);
     verifyNever(() => orders.createOrder(any()));
   });
 
@@ -153,7 +154,7 @@ void main() {
       OrderLineInput(productId: 10, quantity: 1),
       OrderLineInput(productId: 20, quantity: 5),
     ]));
-    expect(find.text('offline'), findsOneWidget);
+    expect(find.text(l10nOf(tester).orderCreateFailed(l10nOf(tester).networkUnreachable)), findsOneWidget);
   });
 
   testWidgets('backend 422 per item is shown under that line', (tester) async {

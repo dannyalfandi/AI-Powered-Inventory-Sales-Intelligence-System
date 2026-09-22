@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/error/failure.dart';
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../core/utils/date_formatter.dart';
 import '../../../../shared/widgets/state_views.dart';
@@ -31,15 +32,21 @@ class _SalesOrderDetailScreenState extends ConsumerState<SalesOrderDetailScreen>
     if (!await _confirm(order, target) || !mounted) return;
 
     setState(() => _pending = target);
+    final l10n = context.l10n;
     final messenger = ScaffoldMessenger.of(context);
     try {
       final updated = await ref.read(salesOrderDetailProvider(widget.orderId).notifier).changeStatus(target);
-      messenger.showSnackBar(SnackBar(content: Text('Pesanan ${updated.orderNumber} ${updated.status.label.toLowerCase()}')));
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(l10n.orderStatusChanged(updated.orderNumber, updated.status.label(context))),
+        ),
+      );
     } on Failure catch (f) {
       if (!mounted) return;
       // The request is over: stop the spinner before showing the error.
       setState(() => _pending = null);
-      final lines = statusChangeErrorLines(f, order);
+      final lines = statusChangeErrorLines(context, f, order);
       final stockProblem = f is ValidationFailure && f.messages.keys.any((k) => k.startsWith('items['));
       if (stockProblem || lines.length > 1) {
         await showDialog<void>(
@@ -47,12 +54,14 @@ class _SalesOrderDetailScreenState extends ConsumerState<SalesOrderDetailScreen>
           builder: (ctx) => AlertDialog(
             key: const Key('order_status_error_dialog'),
             icon: const Icon(Icons.inventory_2_outlined),
-            title: Text(target == OrderStatus.confirmed ? 'Pesanan tidak bisa dikonfirmasi' : 'Status tidak bisa diubah'),
+            title: Text(
+              target == OrderStatus.confirmed ? l10n.orderConfirmBlockedTitle : l10n.orderStatusBlockedTitle,
+            ),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (stockProblem) const Text('Tidak ada stok yang berubah. Masalah per produk:'),
+                if (stockProblem) Text(l10n.orderStockProblemBody),
                 const SizedBox(height: 8),
                 for (final line in lines)
                   Padding(
@@ -64,7 +73,7 @@ class _SalesOrderDetailScreenState extends ConsumerState<SalesOrderDetailScreen>
                   ),
               ],
             ),
-            actions: [FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('Mengerti'))],
+            actions: [FilledButton(onPressed: () => Navigator.pop(ctx), child: Text(l10n.commonUnderstood))],
           ),
         );
       } else {
@@ -76,16 +85,21 @@ class _SalesOrderDetailScreenState extends ConsumerState<SalesOrderDetailScreen>
   }
 
   Future<bool> _confirm(SalesOrder order, OrderStatus target) async {
-    final items = order.items.map((i) => '${i.productName} × ${i.quantity}').join('\n');
+    final l10n = context.l10n;
+    // Listed under the bodies that talk about stock moving, so the user sees
+    // exactly which products are affected before confirming.
+    final affected = l10n.orderDialogItemsAffected(
+      order.items.map((i) => '${i.productName} × ${i.quantity}').join('\n'),
+    );
     final (title, body) = switch (target) {
-      OrderStatus.confirmed => ('Konfirmasi pesanan?', 'Stok akan dikurangi:\n$items'),
-      OrderStatus.shipped => ('Tandai sudah dikirim?', 'Stok tidak berubah (sudah dikurangi saat konfirmasi). Pesanan tidak bisa dibatalkan lagi setelah dikirim.'),
+      OrderStatus.confirmed => (l10n.orderConfirmDialogTitle, '${l10n.orderConfirmDialogBody}\n\n$affected'),
+      OrderStatus.shipped => (l10n.orderShipDialogTitle, l10n.orderShipDialogBody),
       OrderStatus.cancelled when order.status == OrderStatus.confirmed => (
-          'Batalkan pesanan?',
-          'Stok yang sudah dikurangi akan dikembalikan:\n$items'
+          l10n.orderCancelDialogTitle,
+          '${l10n.orderCancelDialogBodyConfirmed}\n\n$affected'
         ),
-      OrderStatus.cancelled => ('Batalkan pesanan?', 'Stok tidak berubah. Pesanan yang dibatalkan tidak bisa diaktifkan lagi.'),
-      OrderStatus.pending => ('Ubah status?', ''),
+      OrderStatus.cancelled => (l10n.orderCancelDialogTitle, l10n.orderCancelDialogBodyPending),
+      OrderStatus.pending => (l10n.orderChangeStatusDialogTitle, ''),
     };
     final ok = await showDialog<bool>(
       context: context,
@@ -94,11 +108,11 @@ class _SalesOrderDetailScreenState extends ConsumerState<SalesOrderDetailScreen>
         title: Text(title),
         content: Text(body),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Kembali')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l10n.commonBack)),
           FilledButton(
             key: const Key('order_confirm_dialog_ok'),
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text(target.actionLabel),
+            child: Text(target.actionLabel(context)),
           ),
         ],
       ),
@@ -111,13 +125,13 @@ class _SalesOrderDetailScreenState extends ConsumerState<SalesOrderDetailScreen>
     final order = ref.watch(salesOrderDetailProvider(widget.orderId));
 
     return Scaffold(
-      appBar: AppBar(title: Text(order.value?.orderNumber ?? 'Detail Pesanan')),
+      appBar: AppBar(title: Text(order.value?.orderNumber ?? context.l10n.orderDetailTitle)),
       body: order.when(
         skipLoadingOnRefresh: true,
         skipLoadingOnReload: true,
         loading: () => const LoadingView(),
         error: (e, _) => ErrorView(
-          message: errorMessage(e),
+          message: errorMessage(context, e),
           onRetry: () => ref.invalidate(salesOrderDetailProvider(widget.orderId)),
         ),
         data: (o) => RefreshIndicator(
@@ -150,7 +164,7 @@ class _ActionBar extends StatelessWidget {
         decoration: BoxDecoration(border: Border(top: BorderSide(color: theme.dividerColor))),
         child: next.isEmpty
             ? Text(
-                'Pesanan ${order.status.label.toLowerCase()} — tidak ada aksi lagi.',
+                context.l10n.orderNoMoreActions(order.status.label(context)),
                 key: const Key('order_no_actions'),
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
@@ -171,7 +185,7 @@ class _ActionBar extends StatelessWidget {
     final busy = pending != null;
     final child = pending == target
         ? const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2))
-        : Text(target.actionLabel);
+        : Text(target.actionLabel(context));
     final onPressed = busy ? null : () => onAction(target);
     final key = Key('order_action_${target.name}');
     if (target == OrderStatus.cancelled) {
@@ -194,6 +208,7 @@ class _OrderBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final theme = Theme.of(context);
     final c = order.customer;
     return ListView(
@@ -209,20 +224,24 @@ class _OrderBody extends StatelessWidget {
         const SizedBox(height: 8),
         _Timeline(order: order),
         const SizedBox(height: 16),
-        Text('Pelanggan', style: theme.textTheme.titleMedium),
+        Text(l10n.orderDetailCustomer, style: theme.textTheme.titleMedium),
         const SizedBox(height: 4),
         Card(
           margin: EdgeInsets.zero,
           child: ListTile(
             leading: const Icon(Icons.person_outline),
-            title: Text(c?.name ?? 'Pelanggan #${order.customerId}'),
+            title: Text(c?.name ?? l10n.orderCustomerFallback('${order.customerId}')),
             subtitle: Text(
-              [c?.email, c?.phone, c?.address].whereType<String>().where((s) => s.isNotEmpty).join('\n').ifEmpty('Tanpa kontak'),
+              [c?.email, c?.phone, c?.address]
+                  .whereType<String>()
+                  .where((s) => s.isNotEmpty)
+                  .join('\n')
+                  .ifEmpty(l10n.customerNoContact),
             ),
           ),
         ),
         const SizedBox(height: 16),
-        Text('Produk (${order.items.length})', style: theme.textTheme.titleMedium),
+        Text(l10n.orderDetailItemsHeading(order.items.length), style: theme.textTheme.titleMedium),
         const SizedBox(height: 4),
         Card(
           margin: EdgeInsets.zero,
@@ -233,13 +252,15 @@ class _OrderBody extends StatelessWidget {
                 ListTile(
                   key: Key('order_item_${item.productId}'),
                   title: Text(item.productName),
-                  subtitle: Text('${item.productSku} · ${item.quantity} × ${formatRupiah(item.unitPrice)}'),
+                  subtitle: Text(
+                    '${item.productSku} · ${l10n.orderItemLine(item.quantity, formatRupiah(item.unitPrice))}',
+                  ),
                   trailing: Text(formatRupiah(item.subtotal), style: theme.textTheme.titleSmall),
                 ),
               ],
               const Divider(height: 1),
               ListTile(
-                title: Text('Total', style: theme.textTheme.titleMedium),
+                title: Text(l10n.orderDetailTotal, style: theme.textTheme.titleMedium),
                 trailing: Text(
                   formatRupiah(order.totalAmount),
                   key: const Key('order_total'),
@@ -251,13 +272,13 @@ class _OrderBody extends StatelessWidget {
         ),
         if (order.notes.isNotEmpty) ...[
           const SizedBox(height: 16),
-          Text('Catatan', style: theme.textTheme.titleMedium),
+          Text(l10n.orderDetailNotes, style: theme.textTheme.titleMedium),
           const SizedBox(height: 4),
           Text(order.notes),
         ],
         const SizedBox(height: 8),
         Text(
-          'Harga adalah snapshot saat pesanan dibuat. Item tidak bisa diubah; batalkan dan buat pesanan baru bila salah.',
+          l10n.orderDetailPriceNote,
           style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),
       ],
@@ -272,12 +293,13 @@ class _Timeline extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final style = Theme.of(context).textTheme.bodySmall;
     final entries = [
-      ('Dibuat', order.createdAt),
-      if (order.confirmedAt case final t?) ('Dikonfirmasi', t),
-      if (order.shippedAt case final t?) ('Dikirim', t),
-      if (order.cancelledAt case final t?) ('Dibatalkan', t),
+      (l10n.orderDetailCreatedAt, order.createdAt),
+      if (order.confirmedAt case final t?) (l10n.orderDetailConfirmedAt, t),
+      if (order.shippedAt case final t?) (l10n.orderDetailShippedAt, t),
+      if (order.cancelledAt case final t?) (l10n.orderDetailCancelledAt, t),
     ];
     return Wrap(
       spacing: 16,

@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/utils/date_formatter.dart';
 import '../../domain/entities/inventory.dart';
 
 extension MovementTypeLabel on MovementType {
-  String get label => switch (this) {
-        MovementType.stockIn => 'Masuk',
-        MovementType.stockOut => 'Keluar',
-        MovementType.adjustment => 'Penyesuaian',
+  /// Needs a context because the label is read from the ARB files; the enum
+  /// value itself (`in`/`out`/`adjustment`) is what travels to the API.
+  String label(BuildContext context) => switch (this) {
+        MovementType.stockIn => context.l10n.movementLabelIn,
+        MovementType.stockOut => context.l10n.movementLabelOut,
+        MovementType.adjustment => context.l10n.movementLabelAdjustment,
       };
 
   IconData get icon => switch (this) {
@@ -17,7 +20,7 @@ extension MovementTypeLabel on MovementType {
       };
 }
 
-/// One stock history entry: "+5 Masuk", "−4 Keluar" or "= 7 Penyesuaian",
+/// One stock history entry: "+5 In", "−4 Out" or "= 7 Adjustment",
 /// with the balance change on the right.
 class MovementTile extends StatelessWidget {
   const MovementTile({super.key, required this.movement});
@@ -46,7 +49,7 @@ class MovementTile extends StatelessWidget {
         foregroundColor: color,
         child: Icon(m.type.icon, size: 20),
       ),
-      title: Text('$amount  ${m.type.label}'),
+      title: Text('$amount  ${m.type.label(context)}'),
       subtitle: Text(
         m.reason.isEmpty ? when : '${m.reason} · $when',
         maxLines: 2,

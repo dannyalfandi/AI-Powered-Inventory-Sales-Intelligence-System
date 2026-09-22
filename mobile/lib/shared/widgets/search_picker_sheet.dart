@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart';
 
+import '../../core/l10n/l10n.dart';
 import 'state_views.dart';
 
 /// Opens a bottom sheet with a search field and results from
@@ -18,8 +19,9 @@ Future<T?> showSearchPicker<T>(
   String Function(T item)? subtitleOf,
   Widget Function(T item)? trailingOf,
   String? Function(T item)? disabledReason,
-  String emptyMessage = 'Tidak ada hasil.',
+  String? emptyMessage,
 }) {
+  final message = emptyMessage ?? context.l10n.commonNoResults;
   return showModalBottomSheet<T>(
     context: context,
     isScrollControlled: true,
@@ -34,7 +36,7 @@ Future<T?> showSearchPicker<T>(
         subtitleOf: subtitleOf,
         trailingOf: trailingOf,
         disabledReason: disabledReason,
-        emptyMessage: emptyMessage,
+        emptyMessage: message,
       ),
     ),
   );
@@ -108,7 +110,7 @@ class _SearchPickerSheetState<T> extends ConsumerState<_SearchPickerSheet<T>> {
             skipLoadingOnReload: true,
             loading: () => const LoadingView(),
             error: (e, _) => ErrorView(
-              message: errorMessage(e),
+              message: errorMessage(context, e),
               onRetry: () => ref.invalidate(widget.resultsFor(_query)),
             ),
             data: (items) {

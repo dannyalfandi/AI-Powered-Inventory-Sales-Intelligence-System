@@ -17,12 +17,10 @@ Failure mapDioException(DioException e) {
     DioExceptionType.connectionTimeout ||
     DioExceptionType.sendTimeout ||
     DioExceptionType.receiveTimeout =>
-      const NetworkFailure('Server tidak merespons. Coba lagi.'),
-    DioExceptionType.cancel => const NetworkFailure('Permintaan dibatalkan.'),
+      const NetworkFailure('request timed out', issue: FailureIssue.timeout),
+    DioExceptionType.cancel => const NetworkFailure('request cancelled', issue: FailureIssue.cancelled),
     // connectionError, badCertificate, unknown, and any type added by future Dio versions.
-    _ => const NetworkFailure(
-        'Tidak dapat terhubung ke server. Periksa koneksi atau API_BASE_URL.',
-      ),
+    _ => const NetworkFailure('cannot reach the server', issue: FailureIssue.unreachable),
   };
 }
 
@@ -32,20 +30,29 @@ Failure _fromResponse(Response<dynamic>? response) {
   final error = body is Map ? body['error'] : null;
 
   if (error is! Map) {
-    return ServerFailure('Server error (HTTP ${status ?? '-'})', statusCode: status);
+    // No parsable envelope: there is no backend sentence to show, so the UI
+    // renders FailureIssue.malformedResponse in the user's language.
+    return ServerFailure(
+      'server error (HTTP ${status ?? '-'})',
+      statusCode: status,
+      issue: FailureIssue.malformedResponse,
+    );
   }
 
   final code = error['code'] as String?;
-  final message = (error['message'] as String?) ?? 'Server error';
+  // The backend writes this in the language the request asked for.
+  final message = (error['message'] as String?) ?? '';
 
   if (status == 422) {
     final messages = <String, String>{};
     final details = error['details'];
     if (details is List) {
       for (final d in details) {
-        if (d is Map && d['field'] is String) {
+        // Without a message there is nothing to show next to the field; the
+        // screen then falls back to the 422's own sentence.
+        if (d is Map && d['field'] is String && d['message'] is String) {
           final field = d['field'] as String;
-          final msg = '${d['message'] ?? 'tidak valid'}';
+          final msg = d['message'] as String;
           // Keep every message if the backend reports a field twice.
           messages.update(field, (prev) => '$prev; $msg', ifAbsent: () => msg);
         }

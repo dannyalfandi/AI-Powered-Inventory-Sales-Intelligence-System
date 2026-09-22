@@ -11,6 +11,7 @@ import 'package:inventory_intel/features/customer/presentation/screens/customer_
 import 'package:mocktail/mocktail.dart';
 
 import '../../../helpers/customer_fixtures.dart';
+import '../../../helpers/l10n_harness.dart';
 
 void main() {
   late MockCustomerRepository repo;
@@ -62,11 +63,20 @@ void main() {
     });
   });
 
-  test('customerDeleteErrorMessage explains the 409 with the order count', () {
-    final msg = customerDeleteErrorMessage(customerHasOrdersFailure, customer(9, name: 'Budi'));
-    expect(msg, contains('"Budi" masih punya 2 pesanan yang belum dibatalkan'));
-    expect(customerDeleteErrorMessage(const NetworkFailure('offline'), customer(9)), 'Gagal menghapus pelanggan: offline');
-  });
+  for (final locale in testLocales) {
+    testWidgets('customerDeleteErrorMessage quotes the 409 in ${locale.languageCode}', (tester) async {
+      await withL10n(tester, locale, (context, l10n) {
+        expect(
+          customerDeleteErrorMessage(context, customerHasOrdersFailure, customer(9, name: 'Budi')),
+          l10n.customerDeleteBlockedBody('Budi', customerHasOrdersFailure.message),
+        );
+        expect(
+          customerDeleteErrorMessage(context, const NetworkFailure('offline'), customer(9)),
+          l10n.customerDeleteFailed(l10n.networkUnreachable),
+        );
+      });
+    });
+  }
 
   group('customerFormProvider', () {
     final existing = customer(5, name: 'Budi', email: 'budi@example.com', phone: '0812');
@@ -112,7 +122,7 @@ void main() {
     Widget app(Widget home) => ProviderScope(
           overrides: [customerRepositoryProvider.overrideWithValue(repo)],
           retry: (_, _) => null,
-          child: MaterialApp(home: home),
+          child: localizedApp(home: home),
         );
 
     testWidgets('list shows contact info; deleting a customer with orders explains why', (tester) async {
@@ -124,12 +134,12 @@ void main() {
       expect(find.text('budi@example.com · 0812'), findsOneWidget);
       await tester.drag(find.text('Budi'), const Offset(-600, 0));
       await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(FilledButton, 'Hapus'));
+      await tester.tap(find.widgetWithText(FilledButton, l10nOf(tester).commonDelete));
       await tester.pumpAndSettle();
 
-      expect(find.text('Pelanggan masih punya pesanan'), findsOneWidget);
-      expect(find.textContaining('masih punya 2 pesanan'), findsOneWidget);
-      await tester.tap(find.text('Mengerti'));
+      expect(find.text(l10nOf(tester).customerDeleteBlockedTitle), findsOneWidget);
+      expect(find.textContaining(customerHasOrdersFailure.message), findsOneWidget);
+      await tester.tap(find.text(l10nOf(tester).commonUnderstood));
       await tester.pumpAndSettle();
       expect(find.text('Budi'), findsOneWidget);
     });
@@ -144,7 +154,7 @@ void main() {
       await tester.tap(find.byKey(const Key('customer_form_submit')));
       await tester.pumpAndSettle();
 
-      expect(find.text('Email sudah dipakai pelanggan lain'), findsOneWidget);
+      expect(find.text(l10nOf(tester).customerEmailTaken), findsOneWidget);
     });
 
     testWidgets('form: local validation for name, email and phone', (tester) async {
@@ -156,9 +166,9 @@ void main() {
       await tester.tap(find.byKey(const Key('customer_form_submit')));
       await tester.pumpAndSettle();
 
-      expect(find.text('Nama wajib diisi'), findsOneWidget);
-      expect(find.text('Format email tidak valid'), findsOneWidget);
-      expect(find.textContaining('Nomor telepon'), findsOneWidget);
+      expect(find.text(l10nOf(tester).validationNameRequired), findsOneWidget);
+      expect(find.text(l10nOf(tester).validationEmailInvalid), findsOneWidget);
+      expect(find.text(l10nOf(tester).validationPhoneInvalid(CustomerRules.phoneMaxLength)), findsOneWidget);
       verifyNever(() => repo.createCustomer(any()));
     });
   });

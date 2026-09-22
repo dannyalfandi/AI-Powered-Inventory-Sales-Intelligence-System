@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:inventory_intel/core/error/failure.dart';
+import 'package:inventory_intel/core/validation/field_issue.dart';
 import 'package:inventory_intel/features/inventory/presentation/providers/inventory_providers.dart';
 import 'package:inventory_intel/features/inventory/presentation/providers/low_stock_list_provider.dart';
 import 'package:inventory_intel/features/sales_order/domain/entities/sales_order.dart';
@@ -12,6 +13,7 @@ import 'package:mocktail/mocktail.dart';
 
 import '../../../../helpers/customer_fixtures.dart';
 import '../../../../helpers/inventory_fixtures.dart';
+import '../../../../helpers/l10n_harness.dart';
 import '../../../../helpers/product_fixtures.dart';
 import '../../../../helpers/sales_order_fixtures.dart';
 
@@ -155,27 +157,57 @@ void main() {
   group('statusChangeErrorLines', () {
     final order = salesOrder(1);
 
-    test('names the short item and translates the numbers', () {
-      expect(statusChangeErrorLines(tehShortFailure, order), ['Teh Melati (TEH-1): stok tersedia 3, dibutuhkan 5.']);
-    });
+    for (final locale in testLocales) {
+      final lang = locale.languageCode;
 
-    test('one line per problem item, including deleted products', () {
-      final lines = statusChangeErrorLines(
-        const ValidationFailure('x', messages: {
+      testWidgets('names the short item and quotes the backend sentence ($lang)', (tester) async {
+        await withL10n(tester, locale, (context, l10n) {
+          expect(
+            statusChangeErrorLines(context, tehShortFailure, order),
+            [l10n.orderItemProblem('Teh Melati (TEH-1)', tehShortFailure.messages['items[1].quantity']!)],
+          );
+        });
+      });
+
+      testWidgets('one line per problem item, including deleted products ($lang)', (tester) async {
+        const failure = ValidationFailure('x', messages: {
           'items[0].product_id': 'product 10 (KOPI-1) is no longer available',
           'items[1].quantity': 'insufficient stock for product 20 (TEH-1): 0 available, 5 requested',
-        }),
-        order,
-      );
-      expect(lines, [
-        'Kopi Arabica (KOPI-1): produk sudah dihapus, tidak bisa dikonfirmasi.',
-        'Teh Melati (TEH-1): stok tersedia 0, dibutuhkan 5.',
-      ]);
-    });
+        });
+        await withL10n(tester, locale, (context, l10n) {
+          expect(statusChangeErrorLines(context, failure, order), [
+            l10n.orderItemDeleted('Kopi Arabica (KOPI-1)'),
+            l10n.orderItemProblem('Teh Melati (TEH-1)', failure.messages['items[1].quantity']!),
+          ]);
+        });
+      });
 
-    test('non-validation failures fall back to their message', () {
-      expect(statusChangeErrorLines(const NetworkFailure('offline'), order), ['offline']);
-    });
+      testWidgets('a locally rejected transition is written from the ARB ($lang)', (tester) async {
+        await withL10n(tester, locale, (context, l10n) {
+          expect(
+            statusChangeErrorLines(
+              context,
+              const ValidationFailure(
+                'invalid status transition',
+                issues: {'status': FieldIssue(FieldIssueKind.orderTransitionInvalid)},
+                issue: FailureIssue.localValidation,
+              ),
+              order,
+            ),
+            [l10n.validationOrderTransition],
+          );
+        });
+      });
+
+      testWidgets('non-validation failures fall back to the app message ($lang)', (tester) async {
+        await withL10n(tester, locale, (context, l10n) {
+          expect(
+            statusChangeErrorLines(context, const NetworkFailure('offline'), order),
+            [l10n.networkUnreachable],
+          );
+        });
+      });
+    }
   });
 
   group('orderFormProvider', () {

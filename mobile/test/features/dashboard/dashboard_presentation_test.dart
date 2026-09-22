@@ -14,6 +14,7 @@ import 'package:inventory_intel/features/dashboard/presentation/screens/dashboar
 import 'package:mocktail/mocktail.dart';
 
 import '../../helpers/dashboard_fixtures.dart';
+import '../../helpers/l10n_harness.dart';
 
 void main() {
   late MockDashboardRepository repo;
@@ -135,12 +136,17 @@ void main() {
             name: AppRoutes.lowStock,
             builder: (_, _) => const Scaffold(body: Text('Halaman Stok Menipis')),
           ),
+          GoRoute(
+            path: '/settings',
+            name: AppRoutes.settings,
+            builder: (_, _) => const Scaffold(body: Text('Halaman Pengaturan')),
+          ),
         ],
       );
       return ProviderScope(
         overrides: [dashboardRepositoryProvider.overrideWithValue(repo)],
         retry: (_, _) => null,
-        child: MaterialApp.router(routerConfig: router),
+        child: localizedApp(routerConfig: router),
       );
     }
 
@@ -178,8 +184,9 @@ void main() {
       expect(find.text('11'), findsOneWidget); // low-stock badge
 
       expect(find.text('Kopi Arabica'), findsOneWidget);
-      expect(find.text('KOPI-001 - 3 terjual'), findsOneWidget);
+      expect(find.text(l10nOf(tester).dashboardTopProductSold('KOPI-001', 3)), findsOneWidget);
 
+      // Comes from the API payload (`category_name`), so it is not translated.
       expect(find.text('Tanpa Kategori'), findsOneWidget);
       expect(find.text('Minuman'), findsOneWidget);
     });
@@ -191,16 +198,16 @@ void main() {
       await tester.pumpWidget(app());
       await tester.pumpAndSettle();
 
-      expect(find.text('Tidak ada koneksi internet'), findsOneWidget);
-      expect(find.text('Coba lagi'), findsOneWidget);
+      expect(find.text(l10nOf(tester).networkUnreachable), findsOneWidget);
+      expect(find.text(l10nOf(tester).commonRetry), findsOneWidget);
       expect(find.text('11'), findsOneWidget); // low-stock section unaffected
 
       when(() => repo.getSummary(any())).thenAnswer((_) async => summary());
-      await tester.tap(find.text('Coba lagi'));
+      await tester.tap(find.text(l10nOf(tester).commonRetry));
       await tester.pumpAndSettle();
 
       expect(find.text('Rp 928.000'), findsOneWidget);
-      expect(find.text('Coba lagi'), findsNothing);
+      expect(find.text(l10nOf(tester).commonRetry), findsNothing);
     });
 
     testWidgets('the low-stock card opens the Low Stock page, also when its count failed', (tester) async {
@@ -210,8 +217,8 @@ void main() {
       await tester.pumpWidget(app());
       await tester.pumpAndSettle();
 
-      expect(find.text('Jumlah gagal dimuat'), findsOneWidget);
-      await tester.tap(find.text('Stok Menipis'));
+      expect(find.text(l10nOf(tester).dashboardLowStockCountFailed), findsOneWidget);
+      await tester.tap(find.text(l10nOf(tester).dashboardLowStockTitle));
       await tester.pumpAndSettle();
 
       expect(find.text('Halaman Stok Menipis'), findsOneWidget);
@@ -223,11 +230,11 @@ void main() {
       await tester.pumpWidget(app());
       await tester.pumpAndSettle();
 
-      await tester.tap(find.widgetWithText(ChoiceChip, '7 hari'));
+      await tester.tap(find.widgetWithText(ChoiceChip, l10nOf(tester).dashboardRangeDays(7)));
       await tester.pumpAndSettle();
 
       final next = rangeOfDays(7);
-      expect(find.text('7 hari'), findsWidgets);
+      expect(find.text(l10nOf(tester).dashboardRangeDays(7)), findsWidgets);
       verify(() => repo.getSummary(next)).called(1);
       verify(() => repo.getCategoryBreakdown(next)).called(1);
     });
@@ -238,11 +245,23 @@ void main() {
       await tester.pumpWidget(app());
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Mingguan'));
+      await tester.tap(find.text(l10nOf(tester).dashboardTrendWeekly));
       await tester.pumpAndSettle();
 
       verify(() => repo.getSalesTrend(defaultRange(), TrendGranularity.weekly)).called(1);
       verify(() => repo.getSummary(any())).called(1); // not refetched
+    });
+
+    testWidgets('the app bar opens Settings (the language lives there, not in a sixth tab)', (tester) async {
+      stubDashboard(repo);
+      useTallSurface(tester);
+      await tester.pumpWidget(app());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('dashboard_settings_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Halaman Pengaturan'), findsOneWidget);
     });
   });
 }

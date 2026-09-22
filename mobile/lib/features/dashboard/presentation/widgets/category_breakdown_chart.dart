@@ -1,6 +1,8 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
+import '../../../../core/l10n/l10n.dart';
+
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../shared/widgets/state_views.dart';
 import '../../domain/entities/dashboard.dart';
@@ -32,9 +34,9 @@ class CategoryBreakdownChart extends StatelessWidget {
   Widget build(BuildContext context) {
     final withRevenue = categories.where((c) => c.revenue > 0).toList();
     if (withRevenue.isEmpty) {
-      return const SizedBox(
+      return SizedBox(
         height: 140,
-        child: EmptyView(message: 'Belum ada penjualan per kategori pada rentang ini.', icon: Icons.pie_chart_outline),
+        child: EmptyView(message: context.l10n.dashboardCategoryEmpty, icon: Icons.pie_chart_outline),
       );
     }
 

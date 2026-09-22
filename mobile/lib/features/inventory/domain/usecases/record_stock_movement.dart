@@ -1,4 +1,5 @@
 import '../../../../core/error/failure.dart';
+import '../../../../core/validation/field_issue.dart';
 import '../entities/inventory.dart';
 import '../repositories/inventory_repository.dart';
 
@@ -11,13 +12,13 @@ class RecordStockMovement {
   /// fields). Stock sufficiency for OUT is left to the backend.
   Future<MovementResult> call(int productId, MovementInput input) async {
     final data = input.trimmed();
-    final messages = <String, String>{
-      if (productId <= 0) 'product_id': 'harus bilangan positif',
+    final issues = <String, FieldIssue>{
+      if (productId <= 0) 'product_id': const FieldIssue(FieldIssueKind.quantityInvalid),
       'quantity': ?MovementRules.validateQuantity(data.type, data.quantity),
       'reason': ?MovementRules.validateReason(data.reason),
     };
-    if (messages.isNotEmpty) {
-      throw ValidationFailure('Input pergerakan stok tidak valid', messages: messages);
+    if (issues.isNotEmpty) {
+      throw ValidationFailure('input is not valid', issues: issues, issue: FailureIssue.localValidation);
     }
     return _repository.recordMovement(productId, data);
   }

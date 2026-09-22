@@ -9,7 +9,7 @@ class GetInventory {
 
   Future<Inventory> call(int productId) async {
     if (productId <= 0) {
-      throw const ValidationFailure('ID produk tidak valid', messages: {'product_id': 'harus bilangan positif'});
+      throw const ValidationFailure('product_id must be a positive integer', issue: FailureIssue.localValidation);
     }
     return _repository.getInventory(productId);
   }

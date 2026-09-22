@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/error/failure.dart';
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/router/app_router.dart';
 import '../../../../shared/widgets/state_views.dart';
 import '../../domain/entities/product.dart';
@@ -52,6 +53,9 @@ class _ProductListScreenState extends ConsumerState<ProductListScreen> {
     });
   }
 
+  /// Shorthand so the callbacks below read like the build method.
+  AppLocalizations get l10n => context.l10n;
+
   Future<void> _refresh() async {
     ref.invalidate(productListProvider);
     try {
@@ -65,11 +69,11 @@ class _ProductListScreenState extends ConsumerState<ProductListScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Hapus produk?'),
-        content: Text('"${p.name}" (${p.sku}) akan dihapus.'),
+        title: Text(l10n.productDeleteConfirmTitle),
+        content: Text(l10n.productDeleteConfirmBody(p.name, p.sku)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Hapus')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l10n.commonCancel)),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(l10n.commonDelete)),
         ],
       ),
     );
@@ -78,11 +82,13 @@ class _ProductListScreenState extends ConsumerState<ProductListScreen> {
 
   Future<void> _delete(Product p) async {
     final messenger = ScaffoldMessenger.of(context);
+    final deleted = l10n.productDeleted(p.name);
     try {
       await ref.read(productListProvider.notifier).delete(p.id);
-      messenger.showSnackBar(SnackBar(content: Text('${p.name} dihapus')));
+      messenger.showSnackBar(SnackBar(content: Text(deleted)));
     } on Failure catch (f) {
-      messenger.showSnackBar(SnackBar(content: Text('Gagal menghapus: ${f.message}')));
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(content: Text(l10n.productDeleteFailed(errorMessage(context, f)))));
     }
   }
 
@@ -92,14 +98,14 @@ class _ProductListScreenState extends ConsumerState<ProductListScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Produk'),
+        title: Text(l10n.productsTitle),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(64),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
             child: SearchBar(
               controller: _searchController,
-              hintText: 'Cari nama atau SKU',
+              hintText: l10n.productsSearchHint,
               leading: const Icon(Icons.search),
               elevation: const WidgetStatePropertyAll(0),
               onChanged: _onSearchChanged,
@@ -109,7 +115,7 @@ class _ProductListScreenState extends ConsumerState<ProductListScreen> {
               trailing: [
                 if (_searchController.text.isNotEmpty)
                   IconButton(
-                    tooltip: 'Hapus pencarian',
+                    tooltip: l10n.commonClearSearch,
                     icon: const Icon(Icons.clear),
                     onPressed: () {
                       _searchController.clear();
@@ -125,14 +131,14 @@ class _ProductListScreenState extends ConsumerState<ProductListScreen> {
         heroTag: 'product_fab',
         onPressed: () => context.pushNamed(AppRoutes.productCreate),
         icon: const Icon(Icons.add),
-        label: const Text('Produk'),
+        label: Text(l10n.productsTitle),
       ),
       body: products.when(
         loading: () => const LoadingView(),
         error: (e, _) => _Refreshable(
           onRefresh: _refresh,
           child: ErrorView(
-            message: errorMessage(e),
+            message: errorMessage(context, e),
             onRetry: () => ref.invalidate(productListProvider),
           ),
         ),
@@ -143,8 +149,8 @@ class _ProductListScreenState extends ConsumerState<ProductListScreen> {
               child: EmptyView(
                 icon: state.search.isEmpty ? Icons.inventory_2_outlined : Icons.search_off,
                 message: state.search.isEmpty
-                    ? 'Belum ada produk.\nTambahkan produk pertama.'
-                    : 'Tidak ada produk untuk "${state.search}".',
+                    ? l10n.productsEmptyHint
+                    : l10n.productsEmptyForSearch(state.search),
               ),
             );
           }
@@ -202,15 +208,15 @@ class _ListFooter extends ConsumerWidget {
       child = TextButton.icon(
         onPressed: () => ref.read(productListProvider.notifier).loadMore(),
         icon: const Icon(Icons.refresh),
-        label: Text('Gagal memuat: ${state.loadMoreError!.message}'),
+        label: Text(context.l10n.commonLoadFailed(errorMessage(context, state.loadMoreError!))),
       );
     } else if (state.hasMore) {
       child = TextButton(
         onPressed: () => ref.read(productListProvider.notifier).loadMore(),
-        child: const Text('Muat lebih banyak'),
+        child: Text(context.l10n.commonLoadMore),
       );
     } else {
-      child = Text('${state.total} produk', style: theme.textTheme.bodySmall);
+      child = Text(context.l10n.productsCount(state.total), style: theme.textTheme.bodySmall);
     }
     return Padding(padding: const EdgeInsets.all(16), child: Center(child: child));
   }

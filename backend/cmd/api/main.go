@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/backend/internal/client"
 	"github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/backend/internal/config"
 	"github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/backend/internal/handler"
 	"github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/backend/internal/repository"
@@ -69,7 +70,13 @@ func run() error {
 	customerRepo := repository.NewCustomerRepository(db)
 	salesOrderRepo := repository.NewSalesOrderRepository(db)
 	analyticsRepo := repository.NewAnalyticsRepository(db, loc)
-	analyticsSvc := service.NewAnalyticsService(analyticsRepo, inventorySvc, cache.NewStore(rdb), cfg.AnalyticsCacheTTL, loc)
+	// The ML service is optional at runtime: if it is down, forecasting
+	// degrades per product and the rest of the API keeps working.
+	mlClient := client.NewMLService(cfg.ML.URL, cfg.ML.Timeout)
+	analyticsSvc := service.NewAnalyticsService(
+		analyticsRepo, inventorySvc, mlClient, cache.NewStore(rdb),
+		cfg.AnalyticsCacheTTL, cfg.ML.CacheTTL, loc,
+	)
 	customerSvc := service.NewCustomerService(customerRepo)
 	salesOrderSvc := service.NewSalesOrderService(salesOrderRepo, customerRepo, cfg.LowStockDefaultThreshold, loc)
 

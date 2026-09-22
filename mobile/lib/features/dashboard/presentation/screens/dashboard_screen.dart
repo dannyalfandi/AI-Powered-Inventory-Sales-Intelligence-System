@@ -2,13 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/router/app_router.dart';
 import '../../domain/entities/dashboard.dart';
+import '../../domain/entities/forecast.dart';
 import '../providers/dashboard_data_providers.dart';
 import '../providers/dashboard_filter_provider.dart';
 import '../widgets/category_breakdown_chart.dart';
 import '../widgets/dashboard_section.dart';
 import '../widgets/date_range_bar.dart';
+import '../widgets/forecast_section.dart';
+import '../widgets/insights_section.dart';
 import '../widgets/low_stock_card.dart';
 import '../widgets/sales_trend_chart.dart';
 import '../widgets/summary_cards.dart';
@@ -32,12 +36,25 @@ class DashboardScreen extends ConsumerWidget {
     ref.listen(dashboardTopProductsProvider, (_, _) {});
     ref.listen(dashboardCategoryBreakdownProvider, (_, _) {});
     ref.listen(dashboardLowStockCountProvider, (_, _) {});
+    ref.listen(dashboardForecastProvider, (_, _) {});
+    ref.listen(dashboardInsightsProvider, (_, _) {});
 
+    final l10n = context.l10n;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Dashboard'),
+        title: Text(l10n.dashboardTitle),
         actions: [
-          IconButton(tooltip: 'Muat ulang', onPressed: () => _refreshAll(ref), icon: const Icon(Icons.refresh)),
+          IconButton(
+            tooltip: l10n.dashboardRefresh,
+            onPressed: () => _refreshAll(ref),
+            icon: const Icon(Icons.refresh),
+          ),
+          IconButton(
+            key: const Key('dashboard_settings_button'),
+            tooltip: l10n.settingsTitle,
+            onPressed: () => context.pushNamed(AppRoutes.settings),
+            icon: const Icon(Icons.settings_outlined),
+          ),
         ],
       ),
       body: RefreshIndicator(
@@ -49,6 +66,8 @@ class DashboardScreen extends ConsumerWidget {
             _SummarySection(),
             _LowStockSection(),
             _SalesTrendSection(),
+            _InsightsSection(),
+            _ForecastSection(),
             _TopProductsSection(),
             _CategorySection(),
           ],
@@ -63,6 +82,8 @@ class DashboardScreen extends ConsumerWidget {
     ref.invalidate(dashboardTopProductsProvider);
     ref.invalidate(dashboardCategoryBreakdownProvider);
     ref.invalidate(dashboardLowStockCountProvider);
+    ref.invalidate(dashboardForecastProvider);
+    ref.invalidate(dashboardInsightsProvider);
   }
 }
 
@@ -84,7 +105,7 @@ class _SummarySection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final summary = ref.watch(dashboardSummaryProvider);
     return DashboardSection(
-      title: 'Ringkasan',
+      title: context.l10n.dashboardSummaryTitle,
       child: AsyncSection<DashboardSummary>(
         value: summary,
         onRetry: () => ref.invalidate(dashboardSummaryProvider),
@@ -116,13 +137,13 @@ class _SalesTrendSection extends ConsumerWidget {
     final trend = ref.watch(dashboardSalesTrendProvider);
     final granularity = ref.watch(trendGranularityFilterProvider);
     return DashboardSection(
-      title: 'Tren Penjualan',
+      title: context.l10n.dashboardTrendTitle,
       trailing: SegmentedButton<TrendGranularity>(
         showSelectedIcon: false,
         style: const ButtonStyle(visualDensity: VisualDensity.compact),
-        segments: const [
-          ButtonSegment(value: TrendGranularity.daily, label: Text('Harian')),
-          ButtonSegment(value: TrendGranularity.weekly, label: Text('Mingguan')),
+        segments: [
+          ButtonSegment(value: TrendGranularity.daily, label: Text(context.l10n.dashboardTrendDaily)),
+          ButtonSegment(value: TrendGranularity.weekly, label: Text(context.l10n.dashboardTrendWeekly)),
         ],
         selected: {granularity},
         onSelectionChanged: (s) => ref.read(trendGranularityFilterProvider.notifier).set(s.first),
@@ -144,7 +165,7 @@ class _TopProductsSection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final products = ref.watch(dashboardTopProductsProvider);
     return DashboardSection(
-      title: 'Produk Terlaris',
+      title: context.l10n.dashboardTopProductsTitle,
       child: AsyncSection<List<TopProduct>>(
         value: products,
         onRetry: () => ref.invalidate(dashboardTopProductsProvider),
@@ -161,12 +182,50 @@ class _CategorySection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final categories = ref.watch(dashboardCategoryBreakdownProvider);
     return DashboardSection(
-      title: 'Penjualan per Kategori',
+      title: context.l10n.dashboardCategoryTitle,
       child: AsyncSection<List<CategoryBreakdown>>(
         value: categories,
         onRetry: () => ref.invalidate(dashboardCategoryBreakdownProvider),
         placeholderHeight: 180,
         builder: (context, data) => CategoryBreakdownChart(categories: data),
+      ),
+    );
+  }
+}
+
+class _InsightsSection extends ConsumerWidget {
+  const _InsightsSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final insights = ref.watch(dashboardInsightsProvider);
+    return DashboardSection(
+      title: context.l10n.dashboardInsightsTitle,
+      child: AsyncSection<InsightReport>(
+        value: insights,
+        onRetry: () => ref.invalidate(dashboardInsightsProvider),
+        placeholderHeight: 160,
+        builder: (context, data) =>
+            InsightsSection(report: data, onRetry: () => ref.invalidate(dashboardInsightsProvider)),
+      ),
+    );
+  }
+}
+
+class _ForecastSection extends ConsumerWidget {
+  const _ForecastSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final forecast = ref.watch(dashboardForecastProvider);
+    return DashboardSection(
+      title: context.l10n.dashboardForecastTitle,
+      child: AsyncSection<ForecastReport>(
+        value: forecast,
+        onRetry: () => ref.invalidate(dashboardForecastProvider),
+        placeholderHeight: 160,
+        builder: (context, data) =>
+            ForecastSection(report: data, onRetry: () => ref.invalidate(dashboardForecastProvider)),
       ),
     );
   }

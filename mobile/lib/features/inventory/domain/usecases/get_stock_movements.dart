@@ -16,7 +16,7 @@ class GetStockMovements {
     int pageSize = ApiConstants.defaultPageSize,
   }) async {
     if (productId <= 0) {
-      throw const ValidationFailure('ID produk tidak valid', messages: {'product_id': 'harus bilangan positif'});
+      throw const ValidationFailure('product_id must be a positive integer', issue: FailureIssue.localValidation);
     }
     return _repository.getMovements(
       productId,

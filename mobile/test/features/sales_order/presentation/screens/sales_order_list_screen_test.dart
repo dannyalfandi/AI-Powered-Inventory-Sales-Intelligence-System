@@ -7,6 +7,7 @@ import 'package:inventory_intel/features/sales_order/presentation/screens/sales_
 import 'package:mocktail/mocktail.dart';
 
 import '../../../../helpers/sales_order_fixtures.dart';
+import '../../../../helpers/l10n_harness.dart';
 
 void main() {
   late MockSalesOrderRepository repo;
@@ -17,7 +18,7 @@ void main() {
   Widget app() => ProviderScope(
         overrides: [salesOrderRepositoryProvider.overrideWithValue(repo)],
         retry: (_, _) => null,
-        child: const MaterialApp(home: SalesOrderListScreen()),
+        child: localizedApp(home: const SalesOrderListScreen()),
       );
 
   testWidgets('shows number, customer, total and a badge per status; status chip filters', (tester) async {
@@ -41,7 +42,7 @@ void main() {
     await tester.tap(find.byKey(const Key('order_filter_status_pending')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Tidak ada pesanan dengan filter ini.'), findsOneWidget);
+    expect(find.text(l10nOf(tester).ordersEmptyForFilter), findsOneWidget);
     verify(() => repo.getOrders(page: 1, pageSize: 20, status: OrderStatus.pending, customerId: null)).called(1);
   });
 }

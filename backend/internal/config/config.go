@@ -28,6 +28,19 @@ type Config struct {
 	// AnalyticsCacheTTL is how long analytics summary/trend responses stay
 	// cached in Redis. 0 disables caching (useful for tests and debugging).
 	AnalyticsCacheTTL time.Duration
+	// ML holds the connection settings of the Python forecasting service.
+	ML MLServiceConfig
+}
+
+// MLServiceConfig points at the FastAPI service in /ml-service. It is called
+// synchronously, so Timeout is what bounds a dashboard request when that
+// service is slow, and CacheTTL is what keeps the call rate down.
+type MLServiceConfig struct {
+	URL     string
+	Timeout time.Duration
+	// CacheTTL is how long a complete forecast/insight report stays in
+	// Redis. 0 disables caching.
+	CacheTTL time.Duration
 }
 
 type RedisConfig struct {
@@ -90,6 +103,21 @@ func FromLookup(lookup func(string) (string, bool)) (*Config, error) {
 		problems = append(problems, "ANALYTICS_CACHE_TTL must be a non-negative duration, e.g. 5m or 0")
 	} else {
 		cfg.AnalyticsCacheTTL = ttl
+	}
+
+	cfg.ML.URL = strings.TrimRight(optional("ML_SERVICE_URL", "http://localhost:8000"), "/")
+	if !strings.HasPrefix(cfg.ML.URL, "http://") && !strings.HasPrefix(cfg.ML.URL, "https://") {
+		problems = append(problems, "ML_SERVICE_URL must start with http:// or https://")
+	}
+	if timeout, err := time.ParseDuration(optional("ML_SERVICE_TIMEOUT", "5s")); err != nil || timeout <= 0 {
+		problems = append(problems, "ML_SERVICE_TIMEOUT must be a positive duration, e.g. 5s")
+	} else {
+		cfg.ML.Timeout = timeout
+	}
+	if ttl, err := time.ParseDuration(optional("FORECAST_CACHE_TTL", "10m")); err != nil || ttl < 0 {
+		problems = append(problems, "FORECAST_CACHE_TTL must be a non-negative duration, e.g. 10m or 0")
+	} else {
+		cfg.ML.CacheTTL = ttl
 	}
 
 	cfg.Timezone = optional("APP_TIMEZONE", "Asia/Jakarta")

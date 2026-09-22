@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/backend/internal/i18n"
 	"github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/backend/internal/model"
 	"github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/backend/internal/repository"
 )
@@ -71,13 +72,13 @@ func NewSalesOrderService(
 
 func (s *salesOrderService) Create(ctx context.Context, in model.CreateSalesOrderInput) (*model.SalesOrder, error) {
 	notes := strings.TrimSpace(in.Notes)
-	if err := validateOrderInput(in, notes); err != nil {
+	if err := validateOrderInput(ctx, in, notes); err != nil {
 		return nil, err
 	}
 
 	customer, err := s.customers.FindByID(ctx, in.CustomerID)
 	if errors.Is(err, repository.ErrNotFound) {
-		return nil, &ValidationError{Fields: []FieldError{{Field: "customer_id", Message: "does not exist"}}}
+		return nil, fieldError(ctx, "customer_id", i18n.KeyDoesNotExist)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("customer %d: %w", in.CustomerID, err)
@@ -98,17 +99,17 @@ func (s *salesOrderService) Create(ctx context.Context, in model.CreateSalesOrde
 		field := fmt.Sprintf("items[%d]", i)
 		p, ok := products[it.ProductID]
 		if !ok {
-			v.add(field+".product_id", fmt.Sprintf("product %d does not exist", it.ProductID))
+			v.add(ctx, field+".product_id", i18n.KeyProductNotExist, it.ProductID)
 			continue
 		}
 		// Price snapshot: later product price changes don't alter this order.
 		if p.Price > 0 && it.Quantity > math.MaxInt64/p.Price {
-			v.add(field+".quantity", "subtotal is too large")
+			v.add(ctx, field+".quantity", i18n.KeySubtotalTooLarge)
 			continue
 		}
 		subtotal := p.Price * it.Quantity
 		if o.TotalAmount > math.MaxInt64-subtotal {
-			v.add(field+".quantity", "order total is too large")
+			v.add(ctx, field+".quantity", i18n.KeyOrderTotalTooLarge)
 			continue
 		}
 		o.TotalAmount += subtotal
@@ -127,7 +128,7 @@ func (s *salesOrderService) Create(ctx context.Context, in model.CreateSalesOrde
 
 	day := s.now().In(s.loc).Format("20060102")
 	if err := s.repo.Create(ctx, o, day); err != nil {
-		return nil, mapRepoError(err, "sales order")
+		return nil, mapRepoError(ctx, err, i18n.KeyEntitySalesOrderGeneric, "")
 	}
 	o.Customer = customer
 	return o, nil
@@ -136,7 +137,7 @@ func (s *salesOrderService) Create(ctx context.Context, in model.CreateSalesOrde
 func (s *salesOrderService) GetByID(ctx context.Context, id uint) (*model.SalesOrder, error) {
 	o, err := s.repo.FindByID(ctx, id)
 	if err != nil {
-		return nil, mapRepoError(err, fmt.Sprintf("sales order %d", id))
+		return nil, mapRepoError(ctx, err, i18n.KeyEntitySalesOrderID, id)
 	}
 	return o, nil
 }
@@ -146,7 +147,7 @@ func (s *salesOrderService) List(ctx context.Context, params model.ListSalesOrde
 	if params.Status != "" {
 		status, ok := parseOrderStatus(string(params.Status))
 		if !ok {
-			return nil, 0, params, &ValidationError{Fields: []FieldError{{Field: "status", Message: statusEnumMessage()}}}
+			return nil, 0, params, fieldError(ctx, "status", i18n.KeyOrderStatusEnum)
 		}
 		params.Status = status
 	}
@@ -160,7 +161,7 @@ func (s *salesOrderService) List(ctx context.Context, params model.ListSalesOrde
 func (s *salesOrderService) ChangeStatus(ctx context.Context, id uint, in model.UpdateOrderStatusInput) (*model.SalesOrder, error) {
 	target, ok := parseOrderStatus(in.Status)
 	if !ok {
-		return nil, &ValidationError{Fields: []FieldError{{Field: "status", Message: statusEnumMessage()}}}
+		return nil, fieldError(ctx, "status", i18n.KeyOrderStatusEnum)
 	}
 
 	err := s.repo.InTx(ctx, func(tx repository.SalesOrderTx) error {
@@ -170,14 +171,14 @@ func (s *salesOrderService) ChangeStatus(ctx context.Context, id uint, in model.
 			return err
 		}
 		from := o.Status
-		if err := checkTransition(from, target); err != nil {
+		if err := checkTransition(ctx, from, target); err != nil {
 			return err
 		}
 
 		now := s.now()
 		switch target {
 		case model.OrderConfirmed:
-			if err := s.deductStock(tx, o); err != nil {
+			if err := s.deductStock(ctx, tx, o); err != nil {
 				return err
 			}
 			o.ConfirmedAt = &now
@@ -185,7 +186,7 @@ func (s *salesOrderService) ChangeStatus(ctx context.Context, id uint, in model.
 			o.ShippedAt = &now
 		case model.OrderCancelled:
 			if from == model.OrderConfirmed {
-				if err := s.returnStock(tx, o); err != nil {
+				if err := s.returnStock(ctx, tx, o); err != nil {
 					return err
 				}
 			}
@@ -199,7 +200,7 @@ func (s *salesOrderService) ChangeStatus(ctx context.Context, id uint, in model.
 		if errors.As(err, &verr) {
 			return nil, verr
 		}
-		return nil, mapRepoError(err, fmt.Sprintf("sales order %d", id))
+		return nil, mapRepoError(ctx, err, i18n.KeyEntitySalesOrderID, id)
 	}
 	return s.GetByID(ctx, id)
 }
@@ -207,7 +208,7 @@ func (s *salesOrderService) ChangeStatus(ctx context.Context, id uint, in model.
 // deductStock takes every item out of stock (one OUT movement each). It
 // checks all items first and reports every problem at once; any problem
 // fails the whole transition, and the transaction rolls back.
-func (s *salesOrderService) deductStock(tx repository.SalesOrderTx, o *model.SalesOrder) error {
+func (s *salesOrderService) deductStock(ctx context.Context, tx repository.SalesOrderTx, o *model.SalesOrder) error {
 	ids := itemProductIDs(o.Items)
 	active, err := tx.ActiveProductIDs(ids)
 	if err != nil {
@@ -222,12 +223,12 @@ func (s *salesOrderService) deductStock(tx repository.SalesOrderTx, o *model.Sal
 	for i, it := range o.Items {
 		field := fmt.Sprintf("items[%d]", i)
 		if !active[it.ProductID] {
-			v.add(field+".product_id", fmt.Sprintf("product %d (%s) is no longer available", it.ProductID, it.ProductSKU))
+			v.add(ctx, field+".product_id", i18n.KeyProductUnavailable, it.ProductID, it.ProductSKU)
 			continue
 		}
 		if have := invs[it.ProductID].Quantity; have < it.Quantity {
-			v.add(field+".quantity", fmt.Sprintf("insufficient stock for product %d (%s): %d available, %d requested",
-				it.ProductID, it.ProductSKU, have, it.Quantity))
+			v.add(ctx, field+".quantity", i18n.KeyInsufficientStockFor,
+				it.ProductID, it.ProductSKU, have, it.Quantity)
 		}
 	}
 	if err := v.errOrNil(); err != nil {
@@ -235,7 +236,7 @@ func (s *salesOrderService) deductStock(tx repository.SalesOrderTx, o *model.Sal
 	}
 
 	for _, it := range o.Items {
-		if err := moveOrderStock(tx, o, it, invs[it.ProductID], model.MovementOut, "confirmed"); err != nil {
+		if err := moveOrderStock(ctx, tx, o, it, invs[it.ProductID], model.MovementOut, "confirmed"); err != nil {
 			return err
 		}
 	}
@@ -244,20 +245,23 @@ func (s *salesOrderService) deductStock(tx repository.SalesOrderTx, o *model.Sal
 
 // returnStock puts back what deductStock took (one IN movement per item),
 // also for products that were soft-deleted in the meantime.
-func (s *salesOrderService) returnStock(tx repository.SalesOrderTx, o *model.SalesOrder) error {
+func (s *salesOrderService) returnStock(ctx context.Context, tx repository.SalesOrderTx, o *model.SalesOrder) error {
 	invs, err := tx.LockInventories(itemProductIDs(o.Items), s.defaultThreshold)
 	if err != nil {
 		return err
 	}
 	for _, it := range o.Items {
-		if err := moveOrderStock(tx, o, it, invs[it.ProductID], model.MovementIn, "cancelled"); err != nil {
+		if err := moveOrderStock(ctx, tx, o, it, invs[it.ProductID], model.MovementIn, "cancelled"); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func moveOrderStock(tx repository.SalesOrderTx, o *model.SalesOrder, it model.SalesOrderItem, inv *model.Inventory, typ model.MovementType, event string) error {
+// The movement reason is stored, not returned per request, so it stays in one
+// language: it is an audit trail, and it would be odd for the same history to
+// read differently depending on who triggered each row.
+func moveOrderStock(ctx context.Context, tx repository.SalesOrderTx, o *model.SalesOrder, it model.SalesOrderItem, inv *model.Inventory, typ model.MovementType, event string) error {
 	orderID := o.ID
 	mv := &model.StockMovement{
 		ProductID:    it.ProductID,
@@ -266,7 +270,7 @@ func moveOrderStock(tx repository.SalesOrderTx, o *model.SalesOrder, it model.Sa
 		Reason:       fmt.Sprintf("sales order %s %s", o.OrderNumber, event),
 		SalesOrderID: &orderID,
 	}
-	if err := applyMovement(inv, mv); err != nil {
+	if err := applyMovement(ctx, inv, mv); err != nil {
 		return err
 	}
 	if err := tx.SaveInventory(inv); err != nil {
@@ -276,55 +280,55 @@ func moveOrderStock(tx repository.SalesOrderTx, o *model.SalesOrder, it model.Sa
 }
 
 // checkTransition enforces orderTransitions.
-func checkTransition(from, to model.OrderStatus) error {
+func checkTransition(ctx context.Context, from, to model.OrderStatus) error {
 	allowed := orderTransitions[from]
 	for _, s := range allowed {
 		if s == to {
 			return nil
 		}
 	}
-	msg := fmt.Sprintf("an order that is %s can't change status anymore", from)
-	if len(allowed) > 0 {
-		names := make([]string, len(allowed))
-		for i, s := range allowed {
-			names[i] = string(s)
-		}
-		msg = fmt.Sprintf("can't change status from %s to %s; allowed: %s", from, to, strings.Join(names, ", "))
+	if len(allowed) == 0 {
+		return fieldError(ctx, "status", i18n.KeyStatusFinal, from)
 	}
-	return &ValidationError{Fields: []FieldError{{Field: "status", Message: msg}}}
+	names := make([]string, len(allowed))
+	for i, s := range allowed {
+		names[i] = string(s)
+	}
+	// Status names stay as they are: they are the API's enum, not prose.
+	return fieldError(ctx, "status", i18n.KeyStatusTransition, from, to, strings.Join(names, ", "))
 }
 
-func validateOrderInput(in model.CreateSalesOrderInput, notes string) error {
+func validateOrderInput(ctx context.Context, in model.CreateSalesOrderInput, notes string) error {
 	v := &ValidationError{}
 	if in.CustomerID == 0 {
-		v.add("customer_id", "is required")
+		v.add(ctx, "customer_id", i18n.KeyRequired)
 	}
 	switch {
 	case len(in.Items) == 0:
-		v.add("items", "must contain at least one item")
+		v.add(ctx, "items", i18n.KeyItemsMin)
 	case len(in.Items) > maxOrderItems:
-		v.add("items", fmt.Sprintf("must contain at most %d items", maxOrderItems))
+		v.add(ctx, "items", i18n.KeyItemsMax, maxOrderItems)
 	}
 	seen := make(map[uint]int, len(in.Items))
 	for i, it := range in.Items {
 		field := fmt.Sprintf("items[%d]", i)
 		switch first, dup := seen[it.ProductID]; {
 		case it.ProductID == 0:
-			v.add(field+".product_id", "is required")
+			v.add(ctx, field+".product_id", i18n.KeyRequired)
 		case dup:
-			v.add(field+".product_id", fmt.Sprintf("product %d is already in items[%d]; combine the quantities", it.ProductID, first))
+			v.add(ctx, field+".product_id", i18n.KeyDuplicateItem, it.ProductID, first)
 		default:
 			seen[it.ProductID] = i
 		}
 		switch {
 		case it.Quantity <= 0:
-			v.add(field+".quantity", "must be greater than 0")
+			v.add(ctx, field+".quantity", i18n.KeyGreaterThanZero)
 		case it.Quantity > maxItemQuantity:
-			v.add(field+".quantity", fmt.Sprintf("must be at most %d", maxItemQuantity))
+			v.add(ctx, field+".quantity", i18n.KeyMaxValue, maxItemQuantity)
 		}
 	}
 	if len(notes) > maxOrderNotesChars {
-		v.add("notes", fmt.Sprintf("must be at most %d characters", maxOrderNotesChars))
+		v.add(ctx, "notes", i18n.KeyMaxChars, maxOrderNotesChars)
 	}
 	return v.errOrNil()
 }
@@ -337,10 +341,6 @@ func parseOrderStatus(s string) (model.OrderStatus, bool) {
 		}
 	}
 	return "", false
-}
-
-func statusEnumMessage() string {
-	return "must be one of PENDING, CONFIRMED, SHIPPED, CANCELLED"
 }
 
 func itemProductIDs(items []model.SalesOrderItem) []uint {
