@@ -23,7 +23,7 @@ func NewSalesOrderHandler(svc service.SalesOrderService) *SalesOrderHandler {
 func (h *SalesOrderHandler) Create(c *gin.Context) {
 	var in model.CreateSalesOrderInput
 	if err := c.ShouldBindJSON(&in); err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid_body", err.Error(), nil)
+		writeInvalidBody(c, err)
 		return
 	}
 	o, err := h.svc.Create(c.Request.Context(), in)
@@ -86,7 +86,7 @@ func (h *SalesOrderHandler) UpdateStatus(c *gin.Context) {
 	}
 	var in model.UpdateOrderStatusInput
 	if err := c.ShouldBindJSON(&in); err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid_body", err.Error(), nil)
+		writeInvalidBody(c, err)
 		return
 	}
 	o, err := h.svc.ChangeStatus(c.Request.Context(), id, in)

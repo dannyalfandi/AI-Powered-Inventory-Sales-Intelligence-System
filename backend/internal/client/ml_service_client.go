@@ -36,7 +36,10 @@ type MLService interface {
 // --- wire types, mirroring docs/ml-service-contract.md --------------------
 
 type ForecastRequest struct {
-	ProductID   uint               `json:"product_id"`
+	ProductID uint `json:"product_id"`
+	// Lang is the language of the messages the ML service sends back, taken
+	// from the Accept-Language of the request that triggered this call.
+	Lang        string             `json:"lang,omitempty"`
 	History     []model.DailySales `json:"history"`
 	HorizonDays int                `json:"horizon_days"`
 	// WindowDays is omitted to use the service's own default (7 days).
@@ -51,8 +54,10 @@ type ForecastResponse struct {
 }
 
 type TrendRequest struct {
-	ProductID uint               `json:"product_id"`
-	History   []model.DailySales `json:"history"`
+	ProductID uint `json:"product_id"`
+	// Lang decides the language of `summary`; see ForecastRequest.Lang.
+	Lang    string             `json:"lang,omitempty"`
+	History []model.DailySales `json:"history"`
 	// WindowDays is omitted to use the service's own default (14 days).
 	WindowDays int `json:"window_days,omitempty"`
 }

@@ -9,7 +9,7 @@ class DeleteCategory {
   /// Throws `ServerFailure` (409) while products still use the category.
   Future<void> call(int id) async {
     if (id <= 0) {
-      throw const ValidationFailure('ID kategori tidak valid', messages: {'id': 'harus bilangan positif'});
+      throw const ValidationFailure('id must be a positive integer', issue: FailureIssue.localValidation);
     }
     return _repository.deleteCategory(id);
   }

@@ -1,5 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import '../../../../core/validation/field_issue.dart';
+
 part 'customer.freezed.dart';
 
 /// Customer who places sales orders (backend model.Customer).
@@ -74,32 +76,34 @@ abstract final class CustomerRules {
   static final _email = RegExp(r'^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$');
   static final _phone = RegExp(r'^\+?[0-9 ()\-]{6,32}$');
 
-  static String? validateName(String value) {
+  static FieldIssue? validateName(String value) {
     final v = value.trim();
-    if (v.isEmpty) return 'Nama wajib diisi';
-    if (v.length > nameMaxLength) return 'Nama maksimal $nameMaxLength karakter';
+    if (v.isEmpty) return const FieldIssue(FieldIssueKind.nameRequired);
+    if (v.length > nameMaxLength) return const FieldIssue(FieldIssueKind.nameTooLong, max: nameMaxLength);
     return null;
   }
 
   /// Empty is valid (email is optional).
-  static String? validateEmail(String value) {
+  static FieldIssue? validateEmail(String value) {
     final v = value.trim();
     if (v.isEmpty) return null;
-    if (v.length > emailMaxLength) return 'Email maksimal $emailMaxLength karakter';
-    if (!_email.hasMatch(v)) return 'Format email tidak valid';
+    if (v.length > emailMaxLength) return const FieldIssue(FieldIssueKind.emailTooLong, max: emailMaxLength);
+    if (!_email.hasMatch(v)) return const FieldIssue(FieldIssueKind.emailInvalid);
     return null;
   }
 
   /// Empty is valid (phone is optional).
-  static String? validatePhone(String value) {
+  static FieldIssue? validatePhone(String value) {
     final v = value.trim();
     if (v.isEmpty) return null;
-    if (!_phone.hasMatch(v)) return 'Nomor telepon 6–$phoneMaxLength digit (boleh +, spasi, -, kurung)';
+    if (!_phone.hasMatch(v)) return const FieldIssue(FieldIssueKind.phoneInvalid, max: phoneMaxLength);
     return null;
   }
 
-  static String? validateAddress(String value) {
-    if (value.trim().length > addressMaxLength) return 'Alamat maksimal $addressMaxLength karakter';
+  static FieldIssue? validateAddress(String value) {
+    if (value.trim().length > addressMaxLength) {
+      return const FieldIssue(FieldIssueKind.addressTooLong, max: addressMaxLength);
+    }
     return null;
   }
 }

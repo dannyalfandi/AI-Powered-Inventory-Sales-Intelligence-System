@@ -99,7 +99,7 @@ void main() {
       test(c.name, () async {
         await expectLater(
           usecase(c.productId, c.input),
-          throwsA(isA<ValidationFailure>().having((f) => f.messages.keys.toSet(), 'fields', c.fields)),
+          throwsA(isA<ValidationFailure>().having((f) => f.issues.keys.toSet(), 'fields', c.fields)),
         );
         verifyNever(() => repo.recordMovement(any(), any()));
       });

@@ -96,9 +96,10 @@ class TestForecastShape:
 
 class TestValidation:
     cases = [
-        ("too few history points", {"history": history([1, 2])}, "history", "at least 3 data points"),
-        ("horizon beyond the limit", {"history": history([1, 2, 3]), "horizon_days": 91}, "horizon_days", "at most 90"),
-        ("window beyond the limit", {"history": history([1, 2, 3]), "window_days": 91}, "window_days", "at most 90"),
+        # The default language is Indonesian; TestMessageLanguage covers English.
+        ("too few history points", {"history": history([1, 2])}, "history", "minimal berisi 3 data point"),
+        ("horizon beyond the limit", {"history": history([1, 2, 3]), "horizon_days": 91}, "horizon_days", "maksimal 90"),
+        ("window beyond the limit", {"history": history([1, 2, 3]), "window_days": 91}, "window_days", "maksimal 90"),
     ]
 
     @pytest.mark.parametrize("name,kwargs,field,message", cases, ids=[c[0] for c in cases])

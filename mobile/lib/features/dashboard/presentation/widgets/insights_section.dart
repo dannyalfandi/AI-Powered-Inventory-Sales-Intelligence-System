@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/l10n/l10n.dart';
 import '../../../../shared/widgets/state_views.dart';
 import '../../domain/entities/forecast.dart';
 import 'unavailable_view.dart';
@@ -17,8 +18,8 @@ class InsightsSection extends StatelessWidget {
   Widget build(BuildContext context) {
     if (!report.available) {
       return UnavailableView(
-        message: 'Insight bisnis sedang tidak tersedia',
-        detail: 'Layanan analisis sedang mati. Angka penjualan di halaman ini tetap terbaru.',
+        message: context.l10n.dashboardInsightsUnavailable,
+        detail: context.l10n.dashboardInsightsUnavailableDetail,
         onRetry: onRetry,
         icon: Icons.lightbulb_outline,
       );
@@ -26,8 +27,8 @@ class InsightsSection extends StatelessWidget {
     if (report.products.isEmpty) {
       return ConstrainedBox(
         constraints: const BoxConstraints(minHeight: 120),
-        child: const EmptyView(
-          message: 'Belum ada penjualan pada rentang ini, jadi belum ada insight.',
+        child: EmptyView(
+          message: context.l10n.dashboardInsightsEmpty,
           icon: Icons.lightbulb_outline,
         ),
       );
@@ -73,7 +74,7 @@ class _InsightRow extends StatelessWidget {
             ),
             const SizedBox(height: 2),
             Text(
-              insight.summary ?? insight.error ?? 'Tidak ada insight untuk produk ini.',
+              insight.summary ?? insight.error ?? context.l10n.dashboardInsightsNone,
               style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
             ),
           ],
@@ -84,10 +85,12 @@ class _InsightRow extends StatelessWidget {
 }
 
 extension TrendDirectionText on TrendDirection {
-  String get label => switch (this) {
-    TrendDirection.increasing => 'Naik',
-    TrendDirection.decreasing => 'Turun',
-    TrendDirection.stable => 'Stabil',
+  /// Needs a context because the wording is read from the ARB files; the
+  /// enum value is what the ML service sends.
+  String label(BuildContext context) => switch (this) {
+    TrendDirection.increasing => context.l10n.trendUp,
+    TrendDirection.decreasing => context.l10n.trendDown,
+    TrendDirection.stable => context.l10n.trendStable,
   };
 
   IconData get icon => switch (this) {
@@ -126,17 +129,21 @@ class TrendBadge extends StatelessWidget {
         children: [
           Icon(trend.icon, size: 14, color: fg),
           const SizedBox(width: 4),
-          Text(_label, style: theme.textTheme.labelMedium?.copyWith(color: fg)),
+          Text(_label(context), style: theme.textTheme.labelMedium?.copyWith(color: fg)),
         ],
       ),
     );
   }
 
-  /// "Naik 32%" when there is a number, just the direction otherwise.
-  String get _label {
+  /// "Up 32%" when there is a number, just the direction otherwise.
+  String _label(BuildContext context) {
     final change = changePercent;
-    if (change == null) return trend.label;
+    if (change == null || trend == TrendDirection.stable) return trend.label(context);
     final rounded = change.abs().round();
-    return trend == TrendDirection.stable ? trend.label : '${trend.label} $rounded%';
+    return switch (trend) {
+      TrendDirection.increasing => context.l10n.trendUpPercent(rounded),
+      TrendDirection.decreasing => context.l10n.trendDownPercent(rounded),
+      TrendDirection.stable => trend.label(context),
+    };
   }
 }

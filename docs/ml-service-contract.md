@@ -21,6 +21,7 @@ verified by `ml-service/tests/test_api.py`; if a shape changes, that test fails.
 | Order | History may arrive in any order; it is sorted before use. |
 | Quantities | Integers `>= 0` in requests. Predictions are floats `>= 0`, rounded to 2 decimals. |
 | Errors | Always HTTP 422 with the envelope below — the same shape the Go backend itself returns. |
+| Language | `"lang": "id"` or `"en"` in the request body picks the language of every sentence in the response (default `id`). The Go backend fills it from the caller's `Accept-Language`. Field names, codes, `trend` values and numbers never change. |
 
 ### Error envelope
 
@@ -63,6 +64,7 @@ Projects daily demand for one product.
 | Field | Type | Required | Rules |
 |---|---|---|---|
 | `product_id` | int | yes | `>= 1`; echoed back untouched |
+| `lang` | `"id"` \| `"en"` | no | language of the error messages; default `"id"` |
 | `history` | array | yes | at least **3** rows (`MIN_HISTORY_POINTS`) |
 | `history[].date` | string `YYYY-MM-DD` | yes | |
 | `history[].quantity_sold` | int | yes | `>= 0` |
@@ -115,7 +117,7 @@ the honest answer and the easy one to explain.
 
 | Case | `field` | Message |
 |---|---|---|
-| fewer than 3 history rows (incl. empty) | `history` | `history must have at least 3 data points, got 2` |
+| fewer than 3 history rows (incl. empty) | `history` | `history must have at least 3 data points, got 2` / `history minimal berisi 3 data point, diterima 2` |
 | `horizon_days` > 90 | `horizon_days` | `horizon_days must be at most 90, got 91` |
 | `horizon_days` < 1 or missing | `horizon_days` | pydantic message |
 | `window_days` > 90 | `window_days` | `window_days must be at most 90, got 91` |
@@ -135,6 +137,7 @@ model, no LLM call; the same input always yields the same sentence.
 | Field | Type | Required | Rules |
 |---|---|---|---|
 | `product_id` | int | no | `>= 1`; only for logging/traceability, not returned |
+| `lang` | `"id"` \| `"en"` | no | language of `summary`; default `"id"` |
 | `history` | array | yes | same row shape as above; must span at least **4 days** after gap filling |
 | `window_days` | int | no | length of **each** period; default **14** (`TREND_WINDOW_DAYS`) |
 
@@ -167,7 +170,7 @@ model, no LLM call; the same input always yields the same sentence.
 |---|---|
 | `trend` | `"increasing"` \| `"decreasing"` \| `"stable"`. Stable means `abs(change_percent) < 5`. |
 | `change_percent` | `(recent - previous) / previous * 100`, 1 decimal. Negative when falling. |
-| `summary` | Ready-to-display Indonesian sentence (decimal comma). |
+| `summary` | Ready-to-display sentence in the requested language. Indonesian uses a decimal comma (`32,0%`), English a decimal point (`32.0%`). |
 | `window_days` | Window actually used: `min(window_days, total_days // 2)`, so both periods fit. 9 days of history → `4` (a 4-vs-4 comparison, the oldest day unused). |
 | `recent_total` / `previous_total` | Units sold in each period, so the caller can render its own wording. |
 
@@ -181,6 +184,16 @@ model, no LLM call; the same input always yields the same sentence.
 | previous period sold nothing | `Penjualan mulai muncul: 42 unit dalam 14 hari terakhir, sebelumnya tidak ada penjualan.` (`change_percent` = `100.0`) |
 | nothing sold in either period | `Belum ada penjualan dalam 4 minggu terakhir.` (`trend` = `stable`, `change_percent` = `0.0`) |
 
+The same table in English (`"lang": "en"`):
+
+| Situation | Sentence |
+|---|---|
+| up | `Sales increased 32.0% over the last 4 weeks (1848 units vs 1400 units in the previous period).` |
+| down | `Sales decreased 45.0% over the last 4 weeks (154 units vs 280 units in the previous period).` |
+| stable | `Sales held steady over the last 4 weeks (3.3% change).` |
+| previous period sold nothing | `Sales have started: 42 units in the last 14 days, none before that.` |
+| nothing sold in either period | `No sales in the last 4 weeks.` |
+
 The period label is the span of **both** periods together (`window_days * 2`):
 weeks when it divides by 7, otherwise days.
 
@@ -188,15 +201,18 @@ weeks when it divides by 7, otherwise days.
 
 | Case | `field` | Message |
 |---|---|---|
-| history spans fewer than 4 days | `history` | `history must cover at least 4 days to compare two periods, got 3` |
+| history spans fewer than 4 days | `history` | `history must cover at least 4 days to compare two periods, got 3` / `history minimal mencakup 4 hari untuk membandingkan dua periode, diterima 3` |
 | `window_days` < 1 | `window_days` | pydantic message |
 | unknown field | that field | `Extra inputs are not permitted` |
 
 ---
 
-## Notes for the Go integration (next step)
+## Notes for the Go integration
 
 - Call these synchronously from the Go service layer; no queue, no worker.
+- Pass `lang` on every call: the Go side resolves `Accept-Language` once per
+  request and forwards the result, so the sentence in `summary` matches the
+  language of the rest of the response.
 - Give the HTTP client a short timeout (the work is milliseconds) and treat a
   timeout or a 5xx as "forecast unavailable" rather than failing the request
   the user made — these numbers are advisory.

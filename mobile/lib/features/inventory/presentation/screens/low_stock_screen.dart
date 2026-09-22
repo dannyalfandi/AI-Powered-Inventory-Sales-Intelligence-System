@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/error/failure.dart';
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/router/app_router.dart';
 import '../../../../shared/widgets/paged_list.dart';
 import '../../../../shared/widgets/state_views.dart';
@@ -46,13 +47,13 @@ class _LowStockScreenState extends ConsumerState<LowStockScreen> {
     final items = ref.watch(lowStockListProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Stok Menipis')),
+      appBar: AppBar(title: Text(context.l10n.inventoryLowStockTitle)),
       body: items.when(
         loading: () => const LoadingView(),
         error: (e, _) => RefreshableView(
           onRefresh: _refresh,
           child: ErrorView(
-            message: errorMessage(e),
+            message: errorMessage(context, e),
             onRetry: () => ref.invalidate(lowStockListProvider),
           ),
         ),
@@ -60,9 +61,9 @@ class _LowStockScreenState extends ConsumerState<LowStockScreen> {
           if (state.items.isEmpty) {
             return RefreshableView(
               onRefresh: _refresh,
-              child: const EmptyView(
+              child: EmptyView(
                 icon: Icons.verified_outlined,
-                message: 'Semua stok aman.\nTidak ada produk di bawah batas stok menipis.',
+                message: context.l10n.inventoryLowStockAllGood,
               ),
             );
           }
@@ -78,7 +79,7 @@ class _LowStockScreenState extends ConsumerState<LowStockScreen> {
                   return PagedListFooter(
                     state: state,
                     onLoadMore: () => ref.read(lowStockListProvider.notifier).loadMore(),
-                    totalLabel: (n) => '$n produk perlu restock',
+                    totalLabel: (n) => context.l10n.inventoryRestockCount(n),
                   );
                 }
                 final item = state.items[i];
@@ -115,9 +116,9 @@ class _LowStockTile extends StatelessWidget {
         color: theme.colorScheme.error,
       ),
       title: Text(item.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text('${item.sku} · batas ${item.lowStockThreshold}'),
+      subtitle: Text('${item.sku} · ${context.l10n.inventoryThresholdShort(item.lowStockThreshold)}'),
       trailing: Text(
-        empty ? 'Habis' : 'Sisa ${item.quantity}',
+        empty ? context.l10n.inventoryOutOfStock : context.l10n.inventoryRemaining(item.quantity),
         style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.error),
       ),
     );

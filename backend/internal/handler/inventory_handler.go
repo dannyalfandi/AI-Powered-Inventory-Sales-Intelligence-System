@@ -41,7 +41,7 @@ func (h *InventoryHandler) Update(c *gin.Context) {
 	}
 	var in model.UpdateInventoryInput
 	if err := c.ShouldBindJSON(&in); err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid_body", err.Error(), nil)
+		writeInvalidBody(c, err)
 		return
 	}
 	inv, err := h.svc.Update(c.Request.Context(), productID, in)
@@ -60,7 +60,7 @@ func (h *InventoryHandler) CreateMovement(c *gin.Context) {
 	}
 	var in model.CreateStockMovementInput
 	if err := c.ShouldBindJSON(&in); err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid_body", err.Error(), nil)
+		writeInvalidBody(c, err)
 		return
 	}
 	mv, inv, err := h.svc.RecordMovement(c.Request.Context(), productID, in)

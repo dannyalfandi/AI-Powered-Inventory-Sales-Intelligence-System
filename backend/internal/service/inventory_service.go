@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/backend/internal/i18n"
 	"github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/backend/internal/model"
 	"github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/backend/internal/repository"
 )
@@ -40,7 +41,7 @@ func NewInventoryService(repo repository.InventoryRepository, products repositor
 func (s *inventoryService) Get(ctx context.Context, productID uint) (*model.Inventory, error) {
 	// Checked first so soft-deleted products are reported as not found.
 	if _, err := s.products.FindByID(ctx, productID); err != nil {
-		return nil, mapRepoError(err, fmt.Sprintf("product %d", productID))
+		return nil, mapRepoError(ctx, err, i18n.KeyEntityProduct, productID)
 	}
 
 	inv, err := s.repo.FindByProductID(ctx, productID)
@@ -58,9 +59,9 @@ func (s *inventoryService) Update(ctx context.Context, productID uint, in model.
 	v := &ValidationError{}
 	switch {
 	case in.LowStockThreshold == nil:
-		v.add("low_stock_threshold", "is required")
+		v.add(ctx, "low_stock_threshold", i18n.KeyRequired)
 	case *in.LowStockThreshold < 0:
-		v.add("low_stock_threshold", "must not be negative")
+		v.add(ctx, "low_stock_threshold", i18n.KeyNotNegative)
 	}
 	if err := v.errOrNil(); err != nil {
 		return nil, err
@@ -71,20 +72,20 @@ func (s *inventoryService) Update(ctx context.Context, productID uint, in model.
 		return nil, nil
 	})
 	if err != nil {
-		return nil, mapRepoError(err, fmt.Sprintf("product %d", productID))
+		return nil, mapRepoError(ctx, err, i18n.KeyEntityProduct, productID)
 	}
 	setLowStock(inv)
 	return inv, nil
 }
 
 func (s *inventoryService) RecordMovement(ctx context.Context, productID uint, in model.CreateStockMovementInput) (*model.StockMovement, *model.Inventory, error) {
-	mv, err := newMovement(in)
+	mv, err := newMovement(ctx, in)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	inv, saved, err := s.repo.Mutate(ctx, productID, s.defaultThreshold, func(inv *model.Inventory) (*model.StockMovement, error) {
-		if err := applyMovement(inv, mv); err != nil {
+		if err := applyMovement(ctx, inv, mv); err != nil {
 			return nil, err
 		}
 		return mv, nil
@@ -94,7 +95,7 @@ func (s *inventoryService) RecordMovement(ctx context.Context, productID uint, i
 		if errors.As(err, &verr) {
 			return nil, nil, verr
 		}
-		return nil, nil, mapRepoError(err, fmt.Sprintf("product %d", productID))
+		return nil, nil, mapRepoError(ctx, err, i18n.KeyEntityProduct, productID)
 	}
 	setLowStock(inv)
 	return saved, inv, nil
@@ -103,7 +104,7 @@ func (s *inventoryService) RecordMovement(ctx context.Context, productID uint, i
 func (s *inventoryService) ListMovements(ctx context.Context, productID uint, params model.ListMovementsParams) ([]model.StockMovement, int64, model.ListMovementsParams, error) {
 	params.Page, params.PageSize = normalizePage(params.Page, params.PageSize)
 	if _, err := s.products.FindByID(ctx, productID); err != nil {
-		return nil, 0, params, mapRepoError(err, fmt.Sprintf("product %d", productID))
+		return nil, 0, params, mapRepoError(ctx, err, i18n.KeyEntityProduct, productID)
 	}
 
 	movements, total, err := s.repo.ListMovements(ctx, productID, params)
@@ -123,7 +124,7 @@ func (s *inventoryService) ListLowStock(ctx context.Context, params model.ListLo
 }
 
 // newMovement validates the request shape (independent of current stock).
-func newMovement(in model.CreateStockMovementInput) (*model.StockMovement, error) {
+func newMovement(ctx context.Context, in model.CreateStockMovementInput) (*model.StockMovement, error) {
 	mv := &model.StockMovement{
 		Type:   model.MovementType(strings.ToUpper(strings.TrimSpace(in.Type))),
 		Reason: strings.TrimSpace(in.Reason),
@@ -133,26 +134,26 @@ func newMovement(in model.CreateStockMovementInput) (*model.StockMovement, error
 	switch mv.Type {
 	case model.MovementIn, model.MovementOut, model.MovementAdjustment:
 	case "":
-		v.add("type", "is required")
+		v.add(ctx, "type", i18n.KeyRequired)
 	default:
-		v.add("type", "must be one of IN, OUT, ADJUSTMENT")
+		v.add(ctx, "type", i18n.KeyMovementTypeEnum)
 	}
 
 	switch {
 	case in.Quantity == nil:
-		v.add("quantity", "is required")
+		v.add(ctx, "quantity", i18n.KeyRequired)
 	case *in.Quantity < 0:
-		v.add("quantity", "must not be negative")
+		v.add(ctx, "quantity", i18n.KeyNotNegative)
 	case *in.Quantity == 0 && mv.Type != model.MovementAdjustment:
-		v.add("quantity", "must be greater than 0")
+		v.add(ctx, "quantity", i18n.KeyGreaterThanZero)
 	case *in.Quantity > maxMovementQuantity:
-		v.add("quantity", fmt.Sprintf("must be at most %d", maxMovementQuantity))
+		v.add(ctx, "quantity", i18n.KeyMaxValue, maxMovementQuantity)
 	default:
 		mv.Quantity = *in.Quantity
 	}
 
 	if len(mv.Reason) > maxReasonLength {
-		v.add("reason", fmt.Sprintf("must be at most %d characters", maxReasonLength))
+		v.add(ctx, "reason", i18n.KeyMaxChars, maxReasonLength)
 	}
 	if err := v.errOrNil(); err != nil {
 		return nil, err
@@ -162,7 +163,7 @@ func newMovement(in model.CreateStockMovementInput) (*model.StockMovement, error
 
 // applyMovement updates inv.Quantity for mv and records the balance on mv.
 // Stock never goes negative: an OUT larger than the stock is rejected.
-func applyMovement(inv *model.Inventory, mv *model.StockMovement) error {
+func applyMovement(ctx context.Context, inv *model.Inventory, mv *model.StockMovement) error {
 	before := inv.Quantity
 	var after int64
 	switch mv.Type {
@@ -170,10 +171,7 @@ func applyMovement(inv *model.Inventory, mv *model.StockMovement) error {
 		after = before + mv.Quantity
 	case model.MovementOut:
 		if mv.Quantity > before {
-			return &ValidationError{Fields: []FieldError{{
-				Field:   "quantity",
-				Message: fmt.Sprintf("insufficient stock: %d available, %d requested", before, mv.Quantity),
-			}}}
+			return fieldError(ctx, "quantity", i18n.KeyInsufficientStock, before, mv.Quantity)
 		}
 		after = before - mv.Quantity
 	case model.MovementAdjustment:

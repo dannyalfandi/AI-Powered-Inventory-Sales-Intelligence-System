@@ -4,8 +4,11 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"strings"
+
+	"github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/backend/internal/i18n"
 )
 
 var (
@@ -32,8 +35,17 @@ func (e *ValidationError) Error() string {
 	return "validation failed: " + strings.Join(msgs, "; ")
 }
 
-func (e *ValidationError) add(field, msg string) {
-	e.Fields = append(e.Fields, FieldError{Field: field, Message: msg})
+// add appends a field error, rendering its message in the language of ctx.
+// Field names are never translated: clients match on them.
+func (e *ValidationError) add(ctx context.Context, field string, key i18n.Key, args ...any) {
+	e.Fields = append(e.Fields, FieldError{Field: field, Message: i18n.T(ctx, key, args...)})
+}
+
+// fieldError is the one-field shorthand of [ValidationError].
+func fieldError(ctx context.Context, field string, key i18n.Key, args ...any) *ValidationError {
+	v := &ValidationError{}
+	v.add(ctx, field, key, args...)
+	return v
 }
 
 // errOrNil returns e only if it has at least one field error.

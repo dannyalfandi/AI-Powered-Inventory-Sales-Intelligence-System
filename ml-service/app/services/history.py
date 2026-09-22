@@ -13,16 +13,22 @@ from datetime import date
 
 import pandas as pd
 
+from app.core.i18n import DEFAULT_LANG, Lang
 from app.models.schemas import HistoryPoint
 
 
 class ValidationProblem(Exception):
-    """A rule that depends on the data, reported to the caller as 422."""
+    """A rule that depends on the data, reported to the caller as 422.
 
-    def __init__(self, field: str, message: str) -> None:
+    It carries the language it was rendered in so the handler can put the
+    envelope around it in the same one.
+    """
+
+    def __init__(self, field: str, message: str, lang: Lang = DEFAULT_LANG) -> None:
         super().__init__(message)
         self.field = field
         self.message = message
+        self.lang = lang
 
 
 def to_daily_series(history: Sequence[HistoryPoint]) -> pd.Series:

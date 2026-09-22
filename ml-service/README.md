@@ -22,17 +22,47 @@ about running and testing it.
 
 Interactive docs while it runs: <http://localhost:8000/docs>.
 
+## Languages
+
+Both endpoints answer in **Indonesian (`id`, the default)** or **English
+(`en`)**, chosen by a `"lang"` field in the request body:
+
+```bash
+curl -X POST http://localhost:8000/insight/trend \
+  -H 'Content-Type: application/json' \
+  -d '{"lang":"en","history":[...]}'
+# {"trend":"increasing","change_percent":32.0,
+#  "summary":"Sales increased 32.0% over the last 4 weeks (1848 units vs 1400 units in the previous period)."}
+```
+
+It is a body field rather than a header because the caller is the Go backend,
+which has already resolved the end user's `Accept-Language`; passing the
+result explicitly keeps the contract visible and easy to test.
+
+- Omitting `lang`, or sending `"id"`, gives Indonesian.
+- `"en"` gives English, including the decimal mark: `32,0%` becomes `32.0%`.
+- An unsupported value is a 422 on the `lang` field.
+- Translated: the `summary` sentence and the messages of the rules this
+  service checks itself (history too short, horizon too large), plus the
+  envelope `message`. **Not translated:** `trend` values (`increasing`),
+  field names, numbers, and the per-field text pydantic writes for a
+  structurally invalid body.
+- The catalog is `app/core/i18n.py`; a test asserts every key exists in both
+  languages with the same placeholders.
+
 ## Layout
 
 ```
 app/
   main.py                 FastAPI app: routes, logging, the 422 error envelope
   core/config.py          Settings from the environment (.env in dev)
+  core/i18n.py            message catalog (id/en) + formatting per language
   models/schemas.py       Pydantic request/response models — the API contract
   services/history.py     history rows → dense daily series (gap filling, dedupe, sorting)
   services/forecasting.py Forecaster protocol + MovingAverageForecaster + registry
   services/trend.py       period comparison + the Indonesian summary
 tests/                    pytest, table-driven like the Go service tests
+                          (test_i18n.py covers both languages end to end)
 Dockerfile                multi-stage python:3.12-slim image (not wired into /infra yet)
 ```
 

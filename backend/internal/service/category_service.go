@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/backend/internal/i18n"
 	"github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/backend/internal/model"
 	"github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/backend/internal/repository"
 )
@@ -32,12 +33,12 @@ func (s *categoryService) Create(ctx context.Context, in model.CreateCategoryInp
 		Name:        strings.TrimSpace(in.Name),
 		Description: strings.TrimSpace(in.Description),
 	}
-	if err := validateCategory(c); err != nil {
+	if err := validateCategory(ctx, c); err != nil {
 		return nil, err
 	}
 
 	if err := s.repo.Create(ctx, c); err != nil {
-		return nil, mapRepoError(err, "category "+c.Name)
+		return nil, mapRepoError(ctx, err, i18n.KeyEntityCategoryName, c.Name)
 	}
 	return c, nil
 }
@@ -45,7 +46,7 @@ func (s *categoryService) Create(ctx context.Context, in model.CreateCategoryInp
 func (s *categoryService) GetByID(ctx context.Context, id uint) (*model.Category, error) {
 	c, err := s.repo.FindByID(ctx, id)
 	if err != nil {
-		return nil, mapRepoError(err, fmt.Sprintf("category %d", id))
+		return nil, mapRepoError(ctx, err, i18n.KeyEntityCategory, id)
 	}
 	return c, nil
 }
@@ -63,7 +64,7 @@ func (s *categoryService) List(ctx context.Context, params model.ListCategoriesP
 func (s *categoryService) Update(ctx context.Context, id uint, in model.UpdateCategoryInput) (*model.Category, error) {
 	c, err := s.repo.FindByID(ctx, id)
 	if err != nil {
-		return nil, mapRepoError(err, fmt.Sprintf("category %d", id))
+		return nil, mapRepoError(ctx, err, i18n.KeyEntityCategory, id)
 	}
 
 	if in.Name != nil {
@@ -72,12 +73,12 @@ func (s *categoryService) Update(ctx context.Context, id uint, in model.UpdateCa
 	if in.Description != nil {
 		c.Description = strings.TrimSpace(*in.Description)
 	}
-	if err := validateCategory(c); err != nil {
+	if err := validateCategory(ctx, c); err != nil {
 		return nil, err
 	}
 
 	if err := s.repo.Update(ctx, c); err != nil {
-		return nil, mapRepoError(err, fmt.Sprintf("category name %q", c.Name))
+		return nil, mapRepoError(ctx, err, i18n.KeyEntityCategoryName, c.Name)
 	}
 	return c, nil
 }
@@ -86,7 +87,7 @@ func (s *categoryService) Update(ctx context.Context, id uint, in model.UpdateCa
 // products still use it; products are never deleted or unlinked implicitly.
 func (s *categoryService) Delete(ctx context.Context, id uint) error {
 	if _, err := s.repo.FindByID(ctx, id); err != nil {
-		return mapRepoError(err, fmt.Sprintf("category %d", id))
+		return mapRepoError(ctx, err, i18n.KeyEntityCategory, id)
 	}
 
 	n, err := s.repo.CountProducts(ctx, id)
@@ -94,22 +95,22 @@ func (s *categoryService) Delete(ctx context.Context, id uint) error {
 		return fmt.Errorf("category %d: %w", id, err)
 	}
 	if n > 0 {
-		return fmt.Errorf("%w: category %d is still used by %d product(s)", ErrConflict, id, n)
+		return fmt.Errorf("%w: %s", ErrConflict, i18n.T(ctx, i18n.KeyCategoryInUse, id, n))
 	}
 
 	if err := s.repo.Delete(ctx, id); err != nil {
-		return mapRepoError(err, fmt.Sprintf("category %d", id))
+		return mapRepoError(ctx, err, i18n.KeyEntityCategory, id)
 	}
 	return nil
 }
 
-func validateCategory(c *model.Category) error {
+func validateCategory(ctx context.Context, c *model.Category) error {
 	v := &ValidationError{}
 	switch {
 	case c.Name == "":
-		v.add("name", "is required")
+		v.add(ctx, "name", i18n.KeyRequired)
 	case len(c.Name) > maxCategoryNameLength:
-		v.add("name", fmt.Sprintf("must be at most %d characters", maxCategoryNameLength))
+		v.add(ctx, "name", i18n.KeyMaxChars, maxCategoryNameLength)
 	}
 	return v.errOrNil()
 }

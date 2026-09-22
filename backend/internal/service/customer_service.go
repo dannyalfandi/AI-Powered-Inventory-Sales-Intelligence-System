@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/backend/internal/i18n"
 	"github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/backend/internal/model"
 	"github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/backend/internal/repository"
 )
@@ -46,12 +47,12 @@ func (s *customerService) Create(ctx context.Context, in model.CreateCustomerInp
 		Phone:   strings.TrimSpace(in.Phone),
 		Address: strings.TrimSpace(in.Address),
 	}
-	if err := validateCustomer(c); err != nil {
+	if err := validateCustomer(ctx, c); err != nil {
 		return nil, err
 	}
 
 	if err := s.repo.Create(ctx, c); err != nil {
-		return nil, mapCustomerRepoError(err, "customer "+c.Name)
+		return nil, mapCustomerRepoError(ctx, err, i18n.KeyEntityCustomerName, c.Name)
 	}
 	return c, nil
 }
@@ -59,7 +60,7 @@ func (s *customerService) Create(ctx context.Context, in model.CreateCustomerInp
 func (s *customerService) GetByID(ctx context.Context, id uint) (*model.Customer, error) {
 	c, err := s.repo.FindByID(ctx, id)
 	if err != nil {
-		return nil, mapRepoError(err, fmt.Sprintf("customer %d", id))
+		return nil, mapRepoError(ctx, err, i18n.KeyEntityCustomer, id)
 	}
 	return c, nil
 }
@@ -77,7 +78,7 @@ func (s *customerService) List(ctx context.Context, params model.ListCustomersPa
 func (s *customerService) Update(ctx context.Context, id uint, in model.UpdateCustomerInput) (*model.Customer, error) {
 	c, err := s.repo.FindByID(ctx, id)
 	if err != nil {
-		return nil, mapRepoError(err, fmt.Sprintf("customer %d", id))
+		return nil, mapRepoError(ctx, err, i18n.KeyEntityCustomer, id)
 	}
 
 	if in.Name != nil {
@@ -92,12 +93,12 @@ func (s *customerService) Update(ctx context.Context, id uint, in model.UpdateCu
 	if in.Address != nil {
 		c.Address = strings.TrimSpace(*in.Address)
 	}
-	if err := validateCustomer(c); err != nil {
+	if err := validateCustomer(ctx, c); err != nil {
 		return nil, err
 	}
 
 	if err := s.repo.Update(ctx, c); err != nil {
-		return nil, mapCustomerRepoError(err, fmt.Sprintf("customer %d", id))
+		return nil, mapCustomerRepoError(ctx, err, i18n.KeyEntityCustomer, id)
 	}
 	return c, nil
 }
@@ -106,7 +107,7 @@ func (s *customerService) Update(ctx context.Context, id uint, in model.UpdateCu
 // has orders that are not CANCELLED (PENDING, CONFIRMED or SHIPPED).
 func (s *customerService) Delete(ctx context.Context, id uint) error {
 	if _, err := s.repo.FindByID(ctx, id); err != nil {
-		return mapRepoError(err, fmt.Sprintf("customer %d", id))
+		return mapRepoError(ctx, err, i18n.KeyEntityCustomer, id)
 	}
 
 	n, err := s.repo.CountActiveOrders(ctx, id)
@@ -114,11 +115,11 @@ func (s *customerService) Delete(ctx context.Context, id uint) error {
 		return fmt.Errorf("customer %d: %w", id, err)
 	}
 	if n > 0 {
-		return fmt.Errorf("%w: customer %d still has %d sales order(s) that are not cancelled", ErrConflict, id, n)
+		return fmt.Errorf("%w: %s", ErrConflict, i18n.T(ctx, i18n.KeyCustomerHasOrders, id, n))
 	}
 
 	if err := s.repo.Delete(ctx, id); err != nil {
-		return mapRepoError(err, fmt.Sprintf("customer %d", id))
+		return mapRepoError(ctx, err, i18n.KeyEntityCustomer, id)
 	}
 	return nil
 }
@@ -133,37 +134,37 @@ func normalizeEmail(email string) *string {
 	return &e
 }
 
-func validateCustomer(c *model.Customer) error {
+func validateCustomer(ctx context.Context, c *model.Customer) error {
 	v := &ValidationError{}
 	switch {
 	case c.Name == "":
-		v.add("name", "is required")
+		v.add(ctx, "name", i18n.KeyRequired)
 	case len(c.Name) > maxCustomerNameLength:
-		v.add("name", fmt.Sprintf("must be at most %d characters", maxCustomerNameLength))
+		v.add(ctx, "name", i18n.KeyMaxChars, maxCustomerNameLength)
 	}
 	if c.Email != nil {
 		switch addr, err := mail.ParseAddress(*c.Email); {
 		case len(*c.Email) > maxEmailLength:
-			v.add("email", fmt.Sprintf("must be at most %d characters", maxEmailLength))
+			v.add(ctx, "email", i18n.KeyMaxChars, maxEmailLength)
 		case err != nil || addr.Address != *c.Email:
 			// addr.Address differs for inputs like "Budi <budi@x.id>".
-			v.add("email", "must be a valid email address")
+			v.add(ctx, "email", i18n.KeyEmailInvalid)
 		}
 	}
 	if c.Phone != "" && !phonePattern.MatchString(c.Phone) {
-		v.add("phone", fmt.Sprintf("must be 6-%d digits, optionally with +, spaces, dashes or parentheses", customerPhoneMaxLength))
+		v.add(ctx, "phone", i18n.KeyPhoneInvalid, customerPhoneMaxLength)
 	}
 	if len(c.Address) > maxAddressLength {
-		v.add("address", fmt.Sprintf("must be at most %d characters", maxAddressLength))
+		v.add(ctx, "address", i18n.KeyMaxChars, maxAddressLength)
 	}
 	return v.errOrNil()
 }
 
 // mapCustomerRepoError reports a duplicate key as a conflict on the email,
 // the only unique field besides the id.
-func mapCustomerRepoError(err error, subject string) error {
+func mapCustomerRepoError(ctx context.Context, err error, entity i18n.Key, ref any) error {
 	if errors.Is(err, repository.ErrDuplicateKey) {
-		return fmt.Errorf("%w: email is already used by another customer", ErrConflict)
+		return fmt.Errorf("%w: %s", ErrConflict, i18n.T(ctx, i18n.KeyEmailTaken))
 	}
-	return mapRepoError(err, subject)
+	return mapRepoError(ctx, err, entity, ref)
 }

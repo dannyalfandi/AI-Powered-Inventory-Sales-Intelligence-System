@@ -1,6 +1,8 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
+import '../../../../core/l10n/l10n.dart';
+
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../core/utils/date_formatter.dart';
 import '../../../../shared/widgets/state_views.dart';
@@ -20,15 +22,15 @@ class SalesTrendChart extends StatelessWidget {
     final theme = Theme.of(context);
     final points = trend.points;
     if (points.isEmpty) {
-      return const SizedBox(
+      return SizedBox(
         height: _height,
-        child: EmptyView(message: 'Tidak ada periode pada rentang ini.', icon: Icons.show_chart),
+        child: EmptyView(message: context.l10n.dashboardTrendNoPeriods, icon: Icons.show_chart),
       );
     }
     if (!trend.hasSales) {
-      return const SizedBox(
+      return SizedBox(
         height: _height,
-        child: EmptyView(message: 'Belum ada penjualan pada rentang ini.', icon: Icons.show_chart),
+        child: EmptyView(message: context.l10n.dashboardTrendNoSales, icon: Icons.show_chart),
       );
     }
 
@@ -99,7 +101,7 @@ class SalesTrendChart extends StatelessWidget {
                     LineTooltipItem(
                       '${_periodLabel(points[s.x.round()])}\n'
                       '${formatRupiah(points[s.x.round()].revenue)} - '
-                      '${points[s.x.round()].orders} pesanan',
+                      '${context.l10n.dashboardTrendTooltipOrders(points[s.x.round()].orders)}',
                       TextStyle(color: theme.colorScheme.onInverseSurface, fontSize: 12),
                     ),
                 ],

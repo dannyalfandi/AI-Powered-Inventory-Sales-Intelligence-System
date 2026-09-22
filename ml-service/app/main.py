@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 from starlette.requests import Request
 
 from app.core.config import SERVICE_NAME, SERVICE_VERSION, get_settings
+from app.core.i18n import DEFAULT_LANG, Lang, normalize, translate
 from app.models.schemas import (
     ErrorResponse,
     ForecastRequest,
@@ -47,8 +48,23 @@ def _error(code: str, message: str, details: list[dict[str, str]] | None = None)
     )
 
 
+def _lang_of(body: object) -> Lang:
+    """The language a rejected request asked for.
+
+    A structurally invalid body never became a model, so the language is read
+    from the raw JSON. Anything unreadable falls back to the default.
+    """
+    if isinstance(body, dict):
+        value = body.get("lang")
+        if isinstance(value, str):
+            return normalize(value)
+    return DEFAULT_LANG
+
+
 @app.exception_handler(RequestValidationError)
 async def on_request_validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
+    # Pydantic writes the per-field text ("Input should be a valid integer");
+    # it is not in the catalog, so only the envelope message is translated.
     details = [
         {
             # Drop the leading "body" segment: the caller cares about the field.
@@ -57,12 +73,19 @@ async def on_request_validation_error(_: Request, exc: RequestValidationError) -
         }
         for error in jsonable_encoder(exc.errors())
     ]
-    return _error("validation_failed", "request validation failed", details)
+    lang = _lang_of(exc.body)
+    return _error("validation_failed", translate("error.validation_failed", lang), details)
 
 
 @app.exception_handler(ValidationProblem)
 async def on_validation_problem(_: Request, exc: ValidationProblem) -> JSONResponse:
-    return _error("validation_failed", "request validation failed", [{"field": exc.field, "message": exc.message}])
+    # exc.message is already in the caller's language: the service rendered it
+    # from the `lang` of the parsed request.
+    return _error(
+        "validation_failed",
+        translate("error.validation_failed", exc.lang),
+        [{"field": exc.field, "message": exc.message}],
+    )
 
 
 @app.get("/health", response_model=HealthResponse, tags=["ops"])

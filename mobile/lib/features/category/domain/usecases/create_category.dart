@@ -1,4 +1,5 @@
 import '../../../../core/error/failure.dart';
+import '../../../../core/validation/field_issue.dart';
 import '../entities/category.dart';
 import '../repositories/category_repository.dart';
 
@@ -11,11 +12,11 @@ class CreateCategory {
   /// round trip when input is invalid.
   Future<Category> call(CategoryInput input) async {
     final data = input.trimmed();
-    final messages = <String, String>{
+    final issues = <String, FieldIssue>{
       'name': ?CategoryRules.validateName(data.name),
     };
-    if (messages.isNotEmpty) {
-      throw ValidationFailure('Input kategori tidak valid', messages: messages);
+    if (issues.isNotEmpty) {
+      throw ValidationFailure('input is not valid', issues: issues, issue: FailureIssue.localValidation);
     }
     return _repository.createCategory(data);
   }

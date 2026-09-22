@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/l10n/l10n.dart';
+
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../shared/widgets/state_views.dart';
 import '../../domain/entities/dashboard.dart';
@@ -15,9 +17,12 @@ class TopProductsSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (products.isEmpty) {
-      return const SizedBox(
+      return SizedBox(
         height: 120,
-        child: EmptyView(message: 'Belum ada produk terjual pada rentang ini.', icon: Icons.emoji_events_outlined),
+        child: EmptyView(
+          message: context.l10n.dashboardTopProductsEmpty,
+          icon: Icons.emoji_events_outlined,
+        ),
       );
     }
     final top = products.map((p) => p.revenue).reduce((a, b) => a > b ? a : b);
@@ -55,7 +60,7 @@ class _TopProductRow extends StatelessWidget {
                   children: [
                     Text(product.name, maxLines: 1, overflow: TextOverflow.ellipsis),
                     Text(
-                      '${product.sku} - ${product.quantitySold} terjual',
+                      context.l10n.dashboardTopProductSold(product.sku, product.quantitySold),
                       style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                     ),
                   ],

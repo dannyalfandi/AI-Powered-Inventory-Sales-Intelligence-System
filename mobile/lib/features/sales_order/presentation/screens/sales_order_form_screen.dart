@@ -4,6 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/error/failure.dart';
+import '../../../../core/l10n/field_issue_text.dart';
+import '../../../../core/l10n/l10n.dart';
+import '../../../../shared/widgets/state_views.dart';
 import '../../../../core/router/app_router.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../customer/presentation/widgets/customer_picker.dart';
@@ -44,7 +47,7 @@ class _SalesOrderFormScreenState extends ConsumerState<SalesOrderFormScreen> {
     final added = ref.read(orderFormProvider.notifier).addProduct(p);
     if (!added) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${p.name} sudah ada di pesanan; ubah jumlahnya saja.')),
+        SnackBar(content: Text(context.l10n.orderFormAlreadyAdded(p.name))),
       );
       return;
     }
@@ -57,16 +60,23 @@ class _SalesOrderFormScreenState extends ConsumerState<SalesOrderFormScreen> {
       _errors = const {};
       _submitting = true;
     });
+    final l10n = context.l10n;
     final messenger = ScaffoldMessenger.of(context);
     try {
       final order = await ref.read(orderFormProvider.notifier).submit();
       if (!mounted) return;
-      messenger.showSnackBar(SnackBar(content: Text('Pesanan ${order.orderNumber} dibuat (menunggu konfirmasi)')));
+      messenger.showSnackBar(SnackBar(content: Text(l10n.orderCreated(order.orderNumber))));
       context.pushReplacementNamed(AppRoutes.salesOrderDetail, pathParameters: {'id': '${order.id}'});
     } on ValidationFailure catch (f) {
-      setState(() => _errors = f.messages.isEmpty ? {'items': f.message} : f.messages);
+      // Local issues are typed and rendered here; backend messages arrive
+      // already translated. Both land under the same field keys.
+      final rendered = {
+        for (final MapEntry(:key, :value) in f.issues.entries) key: ?context.messageFor(value),
+        ...f.messages,
+      };
+      setState(() => _errors = rendered.isEmpty ? {'items': errorMessage(context, f)} : rendered);
     } on Failure catch (f) {
-      messenger.showSnackBar(SnackBar(content: Text(f.message)));
+      messenger.showSnackBar(SnackBar(content: Text(l10n.orderCreateFailed(errorMessage(context, f)))));
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -75,15 +85,16 @@ class _SalesOrderFormScreenState extends ConsumerState<SalesOrderFormScreen> {
   @override
   Widget build(BuildContext context) {
     final form = ref.watch(orderFormProvider);
+    final l10n = context.l10n;
     final theme = Theme.of(context);
     final customer = form.customer;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Pesanan Baru')),
+      appBar: AppBar(title: Text(l10n.orderFormTitle)),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
         children: [
-          Text('Pelanggan', style: theme.textTheme.titleMedium),
+          Text(l10n.orderFormCustomer, style: theme.textTheme.titleMedium),
           const SizedBox(height: 4),
           Card(
             margin: EdgeInsets.zero,
@@ -96,7 +107,7 @@ class _SalesOrderFormScreenState extends ConsumerState<SalesOrderFormScreen> {
             child: ListTile(
               key: const Key('order_form_customer'),
               leading: const Icon(Icons.person_outline),
-              title: Text(customer?.name ?? 'Pilih pelanggan'),
+              title: Text(customer?.name ?? l10n.orderFormPickCustomer),
               subtitle: customer == null
                   ? null
                   : Text([customer.email, customer.phone].whereType<String>().where((s) => s.isNotEmpty).join(' · ')),
@@ -108,19 +119,19 @@ class _SalesOrderFormScreenState extends ConsumerState<SalesOrderFormScreen> {
           const SizedBox(height: 16),
           Row(
             children: [
-              Expanded(child: Text('Produk (${form.lines.length})', style: theme.textTheme.titleMedium)),
+              Expanded(child: Text(l10n.orderFormItemsHeading(form.lines.length), style: theme.textTheme.titleMedium)),
               TextButton.icon(
                 key: const Key('order_form_add_product'),
                 onPressed: _submitting ? null : _addProduct,
                 icon: const Icon(Icons.add),
-                label: const Text('Tambah produk'),
+                label: Text(l10n.orderFormAddProduct),
               ),
             ],
           ),
           if (form.lines.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Text('Belum ada produk.', style: theme.textTheme.bodyMedium),
+              child: Text(l10n.orderFormNoItems, style: theme.textTheme.bodyMedium),
             ),
           for (final (i, line) in form.lines.indexed)
             _LineCard(
@@ -143,7 +154,7 @@ class _SalesOrderFormScreenState extends ConsumerState<SalesOrderFormScreen> {
           const SizedBox(height: 16),
           TextFormField(
             key: const Key('order_form_notes'),
-            decoration: InputDecoration(labelText: 'Catatan (opsional)', errorText: _errors['notes']),
+            decoration: InputDecoration(labelText: l10n.orderFormNotesOptional, errorText: _errors['notes']),
             minLines: 1,
             maxLines: 3,
             enabled: !_submitting,
@@ -163,7 +174,7 @@ class _SalesOrderFormScreenState extends ConsumerState<SalesOrderFormScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Total (harga saat ini)', style: theme.textTheme.bodySmall),
+                    Text(l10n.orderFormTotalCurrent, style: theme.textTheme.bodySmall),
                     Text(
                       formatRupiah(form.total),
                       key: const Key('order_form_total'),
@@ -177,7 +188,7 @@ class _SalesOrderFormScreenState extends ConsumerState<SalesOrderFormScreen> {
                 onPressed: _submitting ? null : _submit,
                 child: _submitting
                     ? const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Text('Buat pesanan'),
+                    : Text(l10n.orderFormSubmit),
               ),
             ],
           ),
@@ -223,7 +234,10 @@ class _LineCard extends StatelessWidget {
                   Text(p.name, style: theme.textTheme.titleSmall),
                   Text('${p.sku} · ${formatRupiah(p.price)}', style: theme.textTheme.bodySmall),
                   const SizedBox(height: 4),
-                  Text('Subtotal ${formatRupiah(line.subtotal)}', style: theme.textTheme.bodyMedium),
+                  Text(
+                    context.l10n.orderFormSubtotal(formatRupiah(line.subtotal)),
+                    style: theme.textTheme.bodyMedium,
+                  ),
                 ],
               ),
             ),
@@ -233,7 +247,12 @@ class _LineCard extends StatelessWidget {
                 key: Key('order_line_qty_$index'),
                 initialValue: line.quantity?.toString() ?? '',
                 enabled: enabled,
-                decoration: InputDecoration(labelText: 'Jumlah', isDense: true, errorText: error, errorMaxLines: 4),
+                decoration: InputDecoration(
+                  labelText: context.l10n.movementFieldQuantity,
+                  isDense: true,
+                  errorText: error,
+                  errorMaxLines: 4,
+                ),
                 keyboardType: TextInputType.number,
                 // Digits only: negative or decimal quantities can't be typed.
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(7)],
@@ -242,7 +261,7 @@ class _LineCard extends StatelessWidget {
             ),
             IconButton(
               key: Key('order_line_remove_$index'),
-              tooltip: 'Hapus produk',
+              tooltip: context.l10n.orderFormRemoveProduct,
               onPressed: enabled ? onRemove : null,
               icon: const Icon(Icons.close),
             ),

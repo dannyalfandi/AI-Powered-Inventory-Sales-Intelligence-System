@@ -84,6 +84,21 @@ func TestForecastDemand(t *testing.T) {
 		assert.Equal(t, "2026-09-04", res.Forecast[0].Date.Format(model.DateFormat))
 	})
 
+	t.Run("lang is sent so the ML service answers in the same language", func(t *testing.T) {
+		var gotBody map[string]any
+		c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&gotBody))
+			respond(http.StatusOK, `{"product_id":1,"forecast":[],"method":"moving_average","window_days":3}`)(w, r)
+		})
+
+		_, err := c.ForecastDemand(context.Background(), ForecastRequest{
+			ProductID: 1, Lang: "en", History: history, HorizonDays: 1,
+		})
+
+		require.NoError(t, err)
+		assert.Equal(t, "en", gotBody["lang"])
+	})
+
 	t.Run("window_days is sent when set", func(t *testing.T) {
 		var gotBody map[string]any
 		c := serve(t, func(w http.ResponseWriter, r *http.Request) {

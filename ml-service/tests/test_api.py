@@ -145,7 +145,7 @@ class TestValidationEnvelope:
         assert response.status_code == 422
         details = response.json()["error"]["details"]
         assert details[0]["field"] == "history"
-        assert "at least 4 days" in details[0]["message"]
+        assert "minimal mencakup 4 hari" in details[0]["message"]
 
     def test_empty_history(self, client: TestClient):
         response = client.post("/forecast/demand", json={"product_id": 1, "history": [], "horizon_days": 7})

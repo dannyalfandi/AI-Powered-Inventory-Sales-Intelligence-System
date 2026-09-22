@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/router/app_router.dart';
 import '../../domain/entities/dashboard.dart';
 import '../../domain/entities/forecast.dart';
@@ -38,11 +39,22 @@ class DashboardScreen extends ConsumerWidget {
     ref.listen(dashboardForecastProvider, (_, _) {});
     ref.listen(dashboardInsightsProvider, (_, _) {});
 
+    final l10n = context.l10n;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Dashboard'),
+        title: Text(l10n.dashboardTitle),
         actions: [
-          IconButton(tooltip: 'Muat ulang', onPressed: () => _refreshAll(ref), icon: const Icon(Icons.refresh)),
+          IconButton(
+            tooltip: l10n.dashboardRefresh,
+            onPressed: () => _refreshAll(ref),
+            icon: const Icon(Icons.refresh),
+          ),
+          IconButton(
+            key: const Key('dashboard_settings_button'),
+            tooltip: l10n.settingsTitle,
+            onPressed: () => context.pushNamed(AppRoutes.settings),
+            icon: const Icon(Icons.settings_outlined),
+          ),
         ],
       ),
       body: RefreshIndicator(
@@ -93,7 +105,7 @@ class _SummarySection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final summary = ref.watch(dashboardSummaryProvider);
     return DashboardSection(
-      title: 'Ringkasan',
+      title: context.l10n.dashboardSummaryTitle,
       child: AsyncSection<DashboardSummary>(
         value: summary,
         onRetry: () => ref.invalidate(dashboardSummaryProvider),
@@ -125,13 +137,13 @@ class _SalesTrendSection extends ConsumerWidget {
     final trend = ref.watch(dashboardSalesTrendProvider);
     final granularity = ref.watch(trendGranularityFilterProvider);
     return DashboardSection(
-      title: 'Tren Penjualan',
+      title: context.l10n.dashboardTrendTitle,
       trailing: SegmentedButton<TrendGranularity>(
         showSelectedIcon: false,
         style: const ButtonStyle(visualDensity: VisualDensity.compact),
-        segments: const [
-          ButtonSegment(value: TrendGranularity.daily, label: Text('Harian')),
-          ButtonSegment(value: TrendGranularity.weekly, label: Text('Mingguan')),
+        segments: [
+          ButtonSegment(value: TrendGranularity.daily, label: Text(context.l10n.dashboardTrendDaily)),
+          ButtonSegment(value: TrendGranularity.weekly, label: Text(context.l10n.dashboardTrendWeekly)),
         ],
         selected: {granularity},
         onSelectionChanged: (s) => ref.read(trendGranularityFilterProvider.notifier).set(s.first),
@@ -153,7 +165,7 @@ class _TopProductsSection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final products = ref.watch(dashboardTopProductsProvider);
     return DashboardSection(
-      title: 'Produk Terlaris',
+      title: context.l10n.dashboardTopProductsTitle,
       child: AsyncSection<List<TopProduct>>(
         value: products,
         onRetry: () => ref.invalidate(dashboardTopProductsProvider),
@@ -170,7 +182,7 @@ class _CategorySection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final categories = ref.watch(dashboardCategoryBreakdownProvider);
     return DashboardSection(
-      title: 'Penjualan per Kategori',
+      title: context.l10n.dashboardCategoryTitle,
       child: AsyncSection<List<CategoryBreakdown>>(
         value: categories,
         onRetry: () => ref.invalidate(dashboardCategoryBreakdownProvider),
@@ -188,7 +200,7 @@ class _InsightsSection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final insights = ref.watch(dashboardInsightsProvider);
     return DashboardSection(
-      title: 'Insight Bisnis',
+      title: context.l10n.dashboardInsightsTitle,
       child: AsyncSection<InsightReport>(
         value: insights,
         onRetry: () => ref.invalidate(dashboardInsightsProvider),
@@ -207,7 +219,7 @@ class _ForecastSection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final forecast = ref.watch(dashboardForecastProvider);
     return DashboardSection(
-      title: 'Prediksi Permintaan',
+      title: context.l10n.dashboardForecastTitle,
       child: AsyncSection<ForecastReport>(
         value: forecast,
         onRetry: () => ref.invalidate(dashboardForecastProvider),

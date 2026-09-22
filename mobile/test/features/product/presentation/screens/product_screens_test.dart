@@ -12,6 +12,7 @@ import 'package:mocktail/mocktail.dart';
 
 import '../../../../helpers/category_fixtures.dart';
 import '../../../../helpers/product_fixtures.dart';
+import '../../../../helpers/l10n_harness.dart';
 
 void main() {
   late MockProductRepository repo;
@@ -31,7 +32,7 @@ void main() {
           categoryRepositoryProvider.overrideWithValue(categories),
         ],
         retry: (_, _) => null,
-        child: MaterialApp(home: home),
+        child: localizedApp(home: home),
       );
 
   void stubList(Object result) {
@@ -73,7 +74,7 @@ void main() {
       await tester.pumpWidget(app(const ProductListScreen()));
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('Belum ada produk'), findsOneWidget);
+      expect(find.text(l10nOf(tester).productsEmptyHint), findsOneWidget);
     });
 
     testWidgets('shows error state and retries', (tester) async {
@@ -81,10 +82,10 @@ void main() {
       await tester.pumpWidget(app(const ProductListScreen()));
       await tester.pumpAndSettle();
 
-      expect(find.text('Tidak dapat terhubung ke server.'), findsOneWidget);
+      expect(find.text(l10nOf(tester).networkUnreachable), findsOneWidget);
 
       stubList(productPage([product(1, name: 'Teh')]));
-      await tester.tap(find.text('Coba lagi'));
+      await tester.tap(find.text(l10nOf(tester).commonRetry));
       await tester.pumpAndSettle();
 
       expect(find.text('Teh'), findsOneWidget);
@@ -109,9 +110,9 @@ void main() {
 
       await submit(tester);
 
-      expect(find.text('SKU wajib diisi'), findsOneWidget);
-      expect(find.text('Nama wajib diisi'), findsOneWidget);
-      expect(find.text('Harga wajib diisi'), findsOneWidget);
+      expect(find.text(l10nOf(tester).validationSkuRequired), findsOneWidget);
+      expect(find.text(l10nOf(tester).validationNameRequired), findsOneWidget);
+      expect(find.text(l10nOf(tester).validationPriceRequired), findsOneWidget);
       verifyNever(() => repo.createProduct(any()));
     });
 
@@ -133,7 +134,7 @@ void main() {
       await fill(tester, sku: 'KOPI-001', name: 'Kopi', price: '45000');
       await submit(tester);
 
-      expect(find.text('SKU sudah dipakai produk lain'), findsOneWidget);
+      expect(find.text(l10nOf(tester).productSkuTaken), findsOneWidget);
     });
 
     testWidgets('backend 422 field errors are shown under the fields', (tester) async {
@@ -156,7 +157,7 @@ void main() {
       await tester.pumpWidget(app(const ProductFormScreen()));
       await tester.pumpAndSettle();
 
-      expect(find.text('Tanpa Kategori'), findsOneWidget); // default selection
+      expect(find.text(l10nOf(tester).productNoCategory), findsOneWidget); // default selection
       await tester.tap(find.byKey(const Key('product_form_category')));
       await tester.pumpAndSettle();
       expect(find.text('Makanan'), findsOneWidget);
@@ -191,7 +192,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Makanan'), findsOneWidget);
-      expect(find.text('Tanpa Kategori'), findsNothing);
+      expect(find.text(l10nOf(tester).productNoCategory), findsNothing);
     });
 
     testWidgets('edit mode pre-fills the loaded product', (tester) async {
@@ -199,7 +200,7 @@ void main() {
       await tester.pumpWidget(app(const ProductFormScreen(productId: 3)));
       await tester.pumpAndSettle();
 
-      expect(find.text('Edit Produk'), findsOneWidget);
+      expect(find.text(l10nOf(tester).productEdit), findsOneWidget);
       expect(find.text('GULA-1'), findsOneWidget);
       expect(find.text('15000'), findsOneWidget);
     });

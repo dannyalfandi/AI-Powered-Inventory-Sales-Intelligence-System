@@ -10,6 +10,7 @@ import '../../features/inventory/presentation/screens/low_stock_screen.dart';
 import '../../features/inventory/presentation/screens/product_stock_screen.dart';
 import '../../features/product/presentation/screens/product_form_screen.dart';
 import '../../features/product/presentation/screens/product_list_screen.dart';
+import '../../features/settings/presentation/screens/settings_screen.dart';
 import '../../features/sales_order/presentation/screens/sales_order_detail_screen.dart';
 import '../../features/sales_order/presentation/screens/sales_order_form_screen.dart';
 import '../../features/sales_order/presentation/screens/sales_order_list_screen.dart';
@@ -20,6 +21,7 @@ part 'app_router.g.dart';
 /// Route names — navigate with `context.pushNamed(AppRoutes.x)`, never raw paths.
 abstract final class AppRoutes {
   static const dashboard = 'dashboard';
+  static const settings = 'settings';
   static const products = 'products';
   static const productCreate = 'product-create';
   static const productDetail = 'product-detail';
@@ -96,6 +98,11 @@ GoRouter appRouter(Ref ref) {
       ),
 
       // Full-screen routes (root navigator, no bottom navigation).
+      GoRoute(
+        path: '/settings',
+        name: AppRoutes.settings,
+        builder: (context, state) => const SettingsScreen(),
+      ),
       // Low stock is reached from the low-stock card on the dashboard.
       GoRoute(path: '/low-stock', name: AppRoutes.lowStock, builder: (context, state) => const LowStockScreen()),
       // `products/new` must come before `products/:id`.

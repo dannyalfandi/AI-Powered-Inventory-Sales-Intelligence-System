@@ -1,5 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import '../../../../core/validation/field_issue.dart';
+
 part 'product_input.freezed.dart';
 
 /// Data needed to create a product (POST /api/v1/products).
@@ -59,30 +61,30 @@ abstract final class ProductRules {
   static const skuMaxLength = 64;
   static const nameMaxLength = 255;
 
-  static String? validateSku(String value) {
+  static FieldIssue? validateSku(String value) {
     final v = value.trim();
-    if (v.isEmpty) return 'SKU wajib diisi';
-    if (v.length > skuMaxLength) return 'SKU maksimal $skuMaxLength karakter';
+    if (v.isEmpty) return const FieldIssue(FieldIssueKind.skuRequired);
+    if (v.length > skuMaxLength) return const FieldIssue(FieldIssueKind.skuTooLong, max: skuMaxLength);
     return null;
   }
 
-  static String? validateName(String value) {
+  static FieldIssue? validateName(String value) {
     final v = value.trim();
-    if (v.isEmpty) return 'Nama wajib diisi';
-    if (v.length > nameMaxLength) return 'Nama maksimal $nameMaxLength karakter';
+    if (v.isEmpty) return const FieldIssue(FieldIssueKind.nameRequired);
+    if (v.length > nameMaxLength) return const FieldIssue(FieldIssueKind.nameTooLong, max: nameMaxLength);
     return null;
   }
 
-  static String? validatePrice(int? value) {
-    if (value == null) return 'Harga wajib diisi';
-    if (value < 0) return 'Harga tidak boleh negatif';
+  static FieldIssue? validatePrice(int? value) {
+    if (value == null) return const FieldIssue(FieldIssueKind.priceRequired);
+    if (value < 0) return const FieldIssue(FieldIssueKind.priceNegative);
     return null;
   }
 
   /// Null (no category) is valid; whether the id exists is checked by the
   /// backend (422 on `category_id`).
-  static String? validateCategoryId(int? value) {
-    if (value != null && value <= 0) return 'Kategori tidak valid';
+  static FieldIssue? validateCategoryId(int? value) {
+    if (value != null && value <= 0) return const FieldIssue(FieldIssueKind.categoryInvalid);
     return null;
   }
 }

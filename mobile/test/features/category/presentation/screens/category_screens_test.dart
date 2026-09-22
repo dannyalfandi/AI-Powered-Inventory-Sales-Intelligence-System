@@ -8,6 +8,7 @@ import 'package:inventory_intel/features/category/presentation/screens/category_
 import 'package:mocktail/mocktail.dart';
 
 import '../../../../helpers/category_fixtures.dart';
+import '../../../../helpers/l10n_harness.dart';
 
 void main() {
   late MockCategoryRepository repo;
@@ -18,14 +19,14 @@ void main() {
   Widget app(Widget home) => ProviderScope(
         overrides: [categoryRepositoryProvider.overrideWithValue(repo)],
         retry: (_, _) => null,
-        child: MaterialApp(home: home),
+        child: localizedApp(home: home),
       );
 
   group('CategoryListScreen', () {
     Future<void> swipeDelete(WidgetTester tester, String name) async {
       await tester.drag(find.text(name), const Offset(-600, 0));
       await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(FilledButton, 'Hapus'));
+      await tester.tap(find.widgetWithText(FilledButton, l10nOf(tester).commonDelete));
       await tester.pumpAndSettle();
     }
 
@@ -46,9 +47,9 @@ void main() {
 
       await swipeDelete(tester, 'Minuman');
 
-      expect(find.text('Kategori masih dipakai'), findsOneWidget);
-      expect(find.textContaining('masih dipakai oleh 3 produk'), findsOneWidget);
-      await tester.tap(find.text('Mengerti'));
+      expect(find.text(l10nOf(tester).categoryDeleteBlockedTitle), findsOneWidget);
+      expect(find.textContaining(categoryInUseFailure.message), findsOneWidget);
+      await tester.tap(find.text(l10nOf(tester).commonUnderstood));
       await tester.pumpAndSettle();
       expect(find.text('Minuman'), findsOneWidget); // restored in the list
     });
@@ -61,7 +62,7 @@ void main() {
 
       await swipeDelete(tester, 'Snack');
 
-      expect(find.text('Kategori Snack dihapus'), findsOneWidget);
+      expect(find.text(l10nOf(tester).categoryDeleted('Snack')), findsOneWidget);
       verify(() => repo.deleteCategory(1)).called(1);
     });
 
@@ -70,7 +71,7 @@ void main() {
       await tester.pumpWidget(app(const CategoryListScreen()));
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('Belum ada kategori'), findsOneWidget);
+      expect(find.text(l10nOf(tester).categoriesEmptyHint), findsOneWidget);
     });
   });
 
@@ -82,7 +83,7 @@ void main() {
       await tester.tap(find.byKey(const Key('category_form_submit')));
       await tester.pumpAndSettle();
 
-      expect(find.text('Nama kategori wajib diisi'), findsOneWidget);
+      expect(find.text(l10nOf(tester).validationNameRequired), findsOneWidget);
       verifyNever(() => repo.createCategory(any()));
     });
 
@@ -96,7 +97,7 @@ void main() {
       await tester.tap(find.byKey(const Key('category_form_submit')));
       await tester.pumpAndSettle();
 
-      expect(find.text('Nama kategori sudah dipakai'), findsOneWidget);
+      expect(find.text(l10nOf(tester).categoryNameTaken), findsOneWidget);
     });
   });
 }

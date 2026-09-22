@@ -8,6 +8,7 @@ import 'package:inventory_intel/features/inventory/presentation/screens/low_stoc
 import 'package:mocktail/mocktail.dart';
 
 import '../../../../helpers/inventory_fixtures.dart';
+import '../../../../helpers/l10n_harness.dart';
 
 void main() {
   late MockInventoryRepository repo;
@@ -17,7 +18,7 @@ void main() {
   Widget app() => ProviderScope(
         overrides: [inventoryRepositoryProvider.overrideWithValue(repo)],
         retry: (_, _) => null,
-        child: const MaterialApp(home: LowStockScreen()),
+        child: localizedApp(home: const LowStockScreen()),
       );
 
   void stubLowStock(Object result) {
@@ -40,11 +41,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Roti Tawar'), findsOneWidget);
-    expect(find.text('Habis'), findsOneWidget);
+    expect(find.text(l10nOf(tester).inventoryOutOfStock), findsOneWidget);
     expect(find.text('Kopi Arabica'), findsOneWidget);
-    expect(find.text('Sisa 3'), findsOneWidget);
-    expect(find.text('SKU-2 · batas 5'), findsOneWidget);
-    expect(find.text('2 produk perlu restock'), findsOneWidget);
+    expect(find.text(l10nOf(tester).inventoryRemaining(3)), findsOneWidget);
+    expect(find.text('SKU-2 · ${l10nOf(tester).inventoryThresholdShort(5)}'), findsOneWidget);
+    expect(find.text(l10nOf(tester).inventoryRestockCount(2)), findsOneWidget);
   });
 
   testWidgets('shows the all-good empty state', (tester) async {
@@ -52,7 +53,7 @@ void main() {
     await tester.pumpWidget(app());
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('Semua stok aman'), findsOneWidget);
+    expect(find.text(l10nOf(tester).inventoryLowStockAllGood), findsOneWidget);
   });
 
   testWidgets('shows error state and retries', (tester) async {
@@ -60,10 +61,10 @@ void main() {
     await tester.pumpWidget(app());
     await tester.pumpAndSettle();
 
-    expect(find.text('Tidak dapat terhubung ke server.'), findsOneWidget);
+    expect(find.text(l10nOf(tester).networkUnreachable), findsOneWidget);
 
     stubLowStock(pageOf([lowStockItem(1, name: 'Gula')]));
-    await tester.tap(find.text('Coba lagi'));
+    await tester.tap(find.text(l10nOf(tester).commonRetry));
     await tester.pumpAndSettle();
 
     expect(find.text('Gula'), findsOneWidget);
@@ -77,7 +78,7 @@ void main() {
     await tester.pumpWidget(app());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Muat lebih banyak'));
+    await tester.tap(find.text(l10nOf(tester).commonLoadMore));
     await tester.pumpAndSettle();
 
     expect(find.text('Garam'), findsOneWidget);

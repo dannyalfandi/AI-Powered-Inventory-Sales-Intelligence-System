@@ -37,7 +37,7 @@ void main() {
       test(c.name, () async {
         await expectLater(
           usecase(c.input),
-          throwsA(isA<ValidationFailure>().having((f) => f.messages.keys, 'fields', ['name'])),
+          throwsA(isA<ValidationFailure>().having((f) => f.issues.keys, 'fields', ['name'])),
         );
         verifyNever(() => repo.createCategory(any()));
       });

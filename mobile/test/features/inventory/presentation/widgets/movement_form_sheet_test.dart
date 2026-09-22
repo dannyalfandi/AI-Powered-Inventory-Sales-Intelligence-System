@@ -8,6 +8,7 @@ import 'package:inventory_intel/features/inventory/presentation/widgets/movement
 import 'package:mocktail/mocktail.dart';
 
 import '../../../../helpers/inventory_fixtures.dart';
+import '../../../../helpers/l10n_harness.dart';
 
 void main() {
   late MockInventoryRepository repo;
@@ -27,7 +28,7 @@ void main() {
   Widget app() => ProviderScope(
         overrides: [inventoryRepositoryProvider.overrideWithValue(repo)],
         retry: (_, _) => null,
-        child: MaterialApp(
+        child: localizedApp(
           home: Scaffold(
             body: Builder(
               builder: (context) {
@@ -57,7 +58,7 @@ void main() {
   testWidgets('shows the current stock as a hint', (tester) async {
     await openSheet(tester);
 
-    expect(find.text('Stok saat ini: 20'), findsOneWidget);
+    expect(find.text(l10nOf(tester).movementCurrentStock(20)), findsOneWidget);
   });
 
   testWidgets('empty quantity is rejected locally', (tester) async {
@@ -65,7 +66,7 @@ void main() {
 
     await submit(tester);
 
-    expect(find.text('Jumlah wajib diisi'), findsOneWidget);
+    expect(find.text(l10nOf(tester).validationQuantityRequired), findsOneWidget);
     verifyNever(() => repo.recordMovement(any(), any()));
   });
 
@@ -80,9 +81,9 @@ void main() {
 
     await enterQuantity(tester, '0');
     await submit(tester);
-    expect(find.text('Jumlah harus lebih dari 0'), findsOneWidget);
+    expect(find.text(l10nOf(tester).validationQuantityPositive), findsOneWidget);
 
-    await tester.tap(find.text('Penyesuaian'));
+    await tester.tap(find.text(l10nOf(tester).movementLabelAdjustment));
     await tester.pumpAndSettle();
     await submit(tester);
 
@@ -95,7 +96,7 @@ void main() {
     when(() => repo.recordMovement(1, any())).thenThrow(insufficientStockFailure);
     await openSheet(tester);
 
-    await tester.tap(find.text('Keluar'));
+    await tester.tap(find.text(l10nOf(tester).movementLabelOut));
     await tester.pumpAndSettle();
     await enterQuantity(tester, '21');
     await submit(tester);
@@ -132,7 +133,7 @@ void main() {
     await enterQuantity(tester, '1');
     await submit(tester);
 
-    expect(find.text('Tidak dapat terhubung ke server.'), findsOneWidget);
+    expect(find.text(l10nOf(tester).networkUnreachable), findsOneWidget);
   });
 }
 
