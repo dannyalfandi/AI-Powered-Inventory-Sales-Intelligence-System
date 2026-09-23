@@ -106,6 +106,67 @@ class AppLocalizationsId extends AppLocalizations {
   String get settingsLanguageIndonesian => 'Bahasa Indonesia';
 
   @override
+  String get settingsAppearanceSection => 'Tampilan';
+
+  @override
+  String get settingsThemeMode => 'Tema';
+
+  @override
+  String get settingsThemeSystem => 'Sistem';
+
+  @override
+  String get settingsThemeLight => 'Terang';
+
+  @override
+  String get settingsThemeDark => 'Gelap';
+
+  @override
+  String get settingsThemeSubtitle =>
+      'Sistem mengikuti pengaturan terang/gelap di ponsel kamu.';
+
+  @override
+  String get settingsAccent => 'Warna aksen';
+
+  @override
+  String get settingsAccentSubtitle =>
+      'Mewarnai tombol, grafik, dan sorotan. Warna status tidak ikut berubah supaya tren turun tetap terbaca sebagai turun.';
+
+  @override
+  String settingsAccentSelected(String name) {
+    return '$name dipilih';
+  }
+
+  @override
+  String get settingsAccentTeal => 'Toska';
+
+  @override
+  String get settingsAccentIndigo => 'Indigo';
+
+  @override
+  String get settingsAccentViolet => 'Ungu';
+
+  @override
+  String get settingsAccentMagenta => 'Magenta';
+
+  @override
+  String get settingsAccentAmber => 'Kuning tua';
+
+  @override
+  String get settingsAccentSlate => 'Abu biru';
+
+  @override
+  String get settingsPreviewTitle => 'Pratinjau';
+
+  @override
+  String get settingsPreviewMetric => 'Pendapatan';
+
+  @override
+  String get settingsPreviewAction => 'Aksi utama';
+
+  @override
+  String get settingsPreviewPositive => 'Naik 12%';
+
+  @override
   String get settingsAboutSection => 'Tentang';
 
   @override

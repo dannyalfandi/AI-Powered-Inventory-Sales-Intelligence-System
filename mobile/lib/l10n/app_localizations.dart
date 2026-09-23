@@ -278,6 +278,120 @@ abstract class AppLocalizations {
   /// **'Bahasa Indonesia'**
   String get settingsLanguageIndonesian;
 
+  /// No description provided for @settingsAppearanceSection.
+  ///
+  /// In en, this message translates to:
+  /// **'Appearance'**
+  String get settingsAppearanceSection;
+
+  /// No description provided for @settingsThemeMode.
+  ///
+  /// In en, this message translates to:
+  /// **'Theme'**
+  String get settingsThemeMode;
+
+  /// No description provided for @settingsThemeSystem.
+  ///
+  /// In en, this message translates to:
+  /// **'System'**
+  String get settingsThemeSystem;
+
+  /// No description provided for @settingsThemeLight.
+  ///
+  /// In en, this message translates to:
+  /// **'Light'**
+  String get settingsThemeLight;
+
+  /// No description provided for @settingsThemeDark.
+  ///
+  /// In en, this message translates to:
+  /// **'Dark'**
+  String get settingsThemeDark;
+
+  /// No description provided for @settingsThemeSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'System follows your phone\'s light and dark setting.'**
+  String get settingsThemeSubtitle;
+
+  /// No description provided for @settingsAccent.
+  ///
+  /// In en, this message translates to:
+  /// **'Accent colour'**
+  String get settingsAccent;
+
+  /// No description provided for @settingsAccentSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Colours the buttons, charts and highlights. Status colours stay the same so a falling trend always reads as falling.'**
+  String get settingsAccentSubtitle;
+
+  /// No description provided for @settingsAccentSelected.
+  ///
+  /// In en, this message translates to:
+  /// **'{name} selected'**
+  String settingsAccentSelected(String name);
+
+  /// No description provided for @settingsAccentTeal.
+  ///
+  /// In en, this message translates to:
+  /// **'Teal'**
+  String get settingsAccentTeal;
+
+  /// No description provided for @settingsAccentIndigo.
+  ///
+  /// In en, this message translates to:
+  /// **'Indigo'**
+  String get settingsAccentIndigo;
+
+  /// No description provided for @settingsAccentViolet.
+  ///
+  /// In en, this message translates to:
+  /// **'Violet'**
+  String get settingsAccentViolet;
+
+  /// No description provided for @settingsAccentMagenta.
+  ///
+  /// In en, this message translates to:
+  /// **'Magenta'**
+  String get settingsAccentMagenta;
+
+  /// No description provided for @settingsAccentAmber.
+  ///
+  /// In en, this message translates to:
+  /// **'Amber'**
+  String get settingsAccentAmber;
+
+  /// No description provided for @settingsAccentSlate.
+  ///
+  /// In en, this message translates to:
+  /// **'Slate'**
+  String get settingsAccentSlate;
+
+  /// No description provided for @settingsPreviewTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Preview'**
+  String get settingsPreviewTitle;
+
+  /// No description provided for @settingsPreviewMetric.
+  ///
+  /// In en, this message translates to:
+  /// **'Revenue'**
+  String get settingsPreviewMetric;
+
+  /// No description provided for @settingsPreviewAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Primary action'**
+  String get settingsPreviewAction;
+
+  /// No description provided for @settingsPreviewPositive.
+  ///
+  /// In en, this message translates to:
+  /// **'Up 12%'**
+  String get settingsPreviewPositive;
+
   /// No description provided for @settingsAboutSection.
   ///
   /// In en, this message translates to:

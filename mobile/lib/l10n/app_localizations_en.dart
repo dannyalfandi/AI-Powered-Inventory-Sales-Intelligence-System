@@ -106,6 +106,67 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsLanguageIndonesian => 'Bahasa Indonesia';
 
   @override
+  String get settingsAppearanceSection => 'Appearance';
+
+  @override
+  String get settingsThemeMode => 'Theme';
+
+  @override
+  String get settingsThemeSystem => 'System';
+
+  @override
+  String get settingsThemeLight => 'Light';
+
+  @override
+  String get settingsThemeDark => 'Dark';
+
+  @override
+  String get settingsThemeSubtitle =>
+      'System follows your phone\'s light and dark setting.';
+
+  @override
+  String get settingsAccent => 'Accent colour';
+
+  @override
+  String get settingsAccentSubtitle =>
+      'Colours the buttons, charts and highlights. Status colours stay the same so a falling trend always reads as falling.';
+
+  @override
+  String settingsAccentSelected(String name) {
+    return '$name selected';
+  }
+
+  @override
+  String get settingsAccentTeal => 'Teal';
+
+  @override
+  String get settingsAccentIndigo => 'Indigo';
+
+  @override
+  String get settingsAccentViolet => 'Violet';
+
+  @override
+  String get settingsAccentMagenta => 'Magenta';
+
+  @override
+  String get settingsAccentAmber => 'Amber';
+
+  @override
+  String get settingsAccentSlate => 'Slate';
+
+  @override
+  String get settingsPreviewTitle => 'Preview';
+
+  @override
+  String get settingsPreviewMetric => 'Revenue';
+
+  @override
+  String get settingsPreviewAction => 'Primary action';
+
+  @override
+  String get settingsPreviewPositive => 'Up 12%';
+
+  @override
   String get settingsAboutSection => 'About';
 
   @override

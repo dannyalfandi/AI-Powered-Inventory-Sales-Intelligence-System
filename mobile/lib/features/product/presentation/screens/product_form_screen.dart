@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +8,8 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/error/failure.dart';
 import '../../../../core/l10n/field_issue_text.dart';
 import '../../../../core/l10n/l10n.dart';
+import '../../../../shared/theme/app_spacing.dart';
+import '../../../../shared/widgets/skeleton.dart';
 import '../../../../shared/widgets/state_views.dart';
 import '../../../category/presentation/providers/category_list_provider.dart';
 import '../../domain/entities/product.dart';
@@ -30,7 +34,7 @@ class ProductFormScreen extends ConsumerWidget {
         // Only the initial load; after a save the form keeps showing.
         skipLoadingOnRefresh: true,
         skipLoadingOnReload: true,
-        loading: () => const LoadingView(),
+        loading: () => const SkeletonForm(fields: 5),
         error: (e, _) => ErrorView(
           message: errorMessage(context, e),
           onRetry: () => ref.invalidate(productFormProvider(productId)),
@@ -106,6 +110,7 @@ class _ProductFormState extends ConsumerState<_ProductForm> {
             ),
           );
       if (!mounted) return;
+      unawaited(HapticFeedback.lightImpact());
       messenger.showSnackBar(
         SnackBar(content: Text(_isEdit ? l10n.productUpdated : l10n.productCreated)),
       );
@@ -132,7 +137,7 @@ class _ProductFormState extends ConsumerState<_ProductForm> {
     return Form(
       key: _formKey,
       child: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         children: [
           TextFormField(
             key: const Key('product_form_sku'),
@@ -144,7 +149,7 @@ class _ProductFormState extends ConsumerState<_ProductForm> {
             onChanged: (_) => _clearServerError('sku'),
             validator: (v) => context.messageFor(ProductRules.validateSku(v ?? '')) ?? _serverErrors['sku'],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.lg),
           TextFormField(
             key: const Key('product_form_name'),
             controller: _name,
@@ -155,7 +160,7 @@ class _ProductFormState extends ConsumerState<_ProductForm> {
             onChanged: (_) => _clearServerError('name'),
             validator: (v) => context.messageFor(ProductRules.validateName(v ?? '')) ?? _serverErrors['name'],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.lg),
           TextFormField(
             key: const Key('product_form_description'),
             controller: _description,
@@ -165,7 +170,7 @@ class _ProductFormState extends ConsumerState<_ProductForm> {
             onChanged: (_) => _clearServerError('description'),
             validator: (_) => _serverErrors['description'],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.lg),
           TextFormField(
             key: const Key('product_form_price'),
             controller: _price,
@@ -181,7 +186,7 @@ class _ProductFormState extends ConsumerState<_ProductForm> {
                 context.messageFor(ProductRules.validatePrice(int.tryParse(v ?? ''))) ?? _serverErrors['price'],
             onFieldSubmitted: (_) => _submit(),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.lg),
           _CategoryField(
             value: _categoryId,
             current: widget.initial?.category,
@@ -192,7 +197,7 @@ class _ProductFormState extends ConsumerState<_ProductForm> {
               setState(() => _categoryId = id);
             },
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: AppSpacing.xl),
           FilledButton(
             key: const Key('product_form_submit'),
             onPressed: _submitting ? null : _submit,
@@ -252,7 +257,7 @@ class _CategoryField extends ConsumerWidget {
         helperText: options.hasError ? context.l10n.productCategoryLoadFailed : null,
         suffixIcon: options.isLoading
             ? const Padding(
-                padding: EdgeInsets.all(12),
+                padding: EdgeInsets.all(AppSpacing.md),
                 child: SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2)),
               )
             : options.hasError

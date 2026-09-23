@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../../core/l10n/l10n.dart';
 import '../../core/pagination/paged.dart';
+import '../theme/app_spacing.dart';
+import 'app_refresh_indicator.dart';
+import 'skeleton.dart';
 import 'state_views.dart';
 
 /// Last row of an infinite-scroll list: spinner while loading the next page,
@@ -24,7 +27,9 @@ class PagedListFooter extends StatelessWidget {
   Widget build(BuildContext context) {
     final Widget child;
     if (state.isLoadingMore) {
-      child = const SizedBox.square(dimension: 24, child: CircularProgressIndicator(strokeWidth: 2));
+      // A row-shaped placeholder, not a spinner: what is arriving is one more
+      // row, and the skeleton says so.
+      return const SkeletonList(rows: 1, padding: EdgeInsets.zero);
     } else if (state.loadMoreError != null) {
       child = TextButton.icon(
         onPressed: onLoadMore,
@@ -36,7 +41,7 @@ class PagedListFooter extends StatelessWidget {
     } else {
       child = Text(totalLabel(state.total), style: Theme.of(context).textTheme.bodySmall);
     }
-    return Padding(padding: const EdgeInsets.all(16), child: Center(child: child));
+    return Padding(padding: const EdgeInsets.all(AppSpacing.lg), child: Center(child: child));
   }
 }
 
@@ -49,7 +54,7 @@ class RefreshableView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return RefreshIndicator(
+    return AppRefreshIndicator(
       onRefresh: onRefresh,
       child: LayoutBuilder(
         builder: (context, constraints) => SingleChildScrollView(
