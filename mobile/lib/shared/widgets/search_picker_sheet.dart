@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart';
 
 import '../../core/l10n/l10n.dart';
+import '../theme/app_spacing.dart';
+import 'skeleton.dart';
 import 'state_views.dart';
 
 /// Opens a bottom sheet with a search field and results from
@@ -91,11 +93,11 @@ class _SearchPickerSheetState<T> extends ConsumerState<_SearchPickerSheet<T>> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.md),
           child: Text(widget.title, style: Theme.of(context).textTheme.titleLarge),
         ),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
           child: SearchBar(
             key: const Key('search_picker_field'),
             hintText: widget.searchHint,
@@ -104,11 +106,11 @@ class _SearchPickerSheetState<T> extends ConsumerState<_SearchPickerSheet<T>> {
             onChanged: _onChanged,
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppSpacing.sm),
         Expanded(
           child: results.when(
             skipLoadingOnReload: true,
-            loading: () => const LoadingView(),
+            loading: () => const SkeletonList(),
             error: (e, _) => ErrorView(
               message: errorMessage(context, e),
               onRetry: () => ref.invalidate(widget.resultsFor(_query)),

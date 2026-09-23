@@ -14,7 +14,8 @@ Conventions (Riverpod, per-feature clean architecture) are in [`CLAUDE.md`](CLAU
 | Lints | `flutter_lints` + `riverpod_lint` (as an `analysis_options.yaml` plugin) |
 | Charts | `fl_chart` (dashboard line + pie charts) |
 | i18n | `flutter_localizations` + `intl`, ARB files compiled by `flutter gen-l10n` |
-| Storage | `shared_preferences` (the language choice) |
+| Storage | `shared_preferences` (language, theme mode, accent colour) |
+| Theming / motion | Material 3 `ColorScheme.fromSeed` + a `ThemeExtension` for status colours; no animation package — see [Theming & Motion](#theming--motion) |
 | Tests | `flutter_test` + `mocktail` |
 
 `riverpod_lint` 3.x is an `analysis_server_plugin`. It no longer uses `custom_lint`, which is why `custom_lint` isn't a dependency (the two versions can't be resolved together).
@@ -33,6 +34,7 @@ lib/
     l10n/l10n.dart                context.l10n shorthand, re-exports AppLocalizations
     l10n/field_issue_text.dart    context.messageFor(FieldIssue) → the sentence for a form field
     locale/locale_provider.dart   AppLanguage, LanguageController, appLocaleProvider
+    theme/appearance_provider.dart ThemeModeController, AccentController (both persisted)
     validation/field_issue.dart   FieldIssue/FieldIssueKind — what domain rules return instead of text
   l10n/app_en.arb, app_id.arb     every UI string, English is the template
     error/guard.dart              guardApiCall(): any exception → Failure (used by repositories)
@@ -217,6 +219,136 @@ API contract and are never translated — but the sentence beside them is only e
 2. `flutter gen-l10n`
 3. Use it as `context.l10n.<key>`, and commit the regenerated `app_localizations*.dart`.
 
+## Theming & Motion
+
+Everything visual comes from `lib/shared/theme/`. A screen should never write a
+colour, a radius, a font size or a duration of its own — if it needs one that
+does not exist yet, the token belongs in the theme.
+
+| File | What it owns |
+|---|---|
+| `app_spacing.dart` | `AppSpacing` (4/8/12/16/24/32) and `AppRadius` (8 badge, 12 card, 20 sheet) |
+| `app_typography.dart` | The type scale, plus `textTheme.metric` / `.metricLabel` |
+| `app_status_colors.dart` | The five semantic status colours, as a `ThemeExtension` |
+| `app_accent.dart` | The six accent presets a user can choose between |
+| `app_motion.dart` | Durations, curves, and the single reduce-motion check |
+| `app_theme.dart` | Assembles all of the above into the light and dark `ThemeData` |
+
+### Design tokens
+
+**Spacing** is a 4pt grid that doubles. A value that fits none of the six steps
+usually means the layout needs rethinking, not a seventh step.
+
+**Radius** has three steps and they carry meaning: the bigger the surface, the
+softer the corner, so size reads as hierarchy instead of everything sharing one
+rounded look.
+
+**Type** stays on the platform UI font. A display face was considered and
+rejected: this app is read in a warehouse on a cheap phone, where a bundled
+font costs startup and a network-loaded one risks a flash of unstyled text. The
+personality comes from the scale instead — a wider spread between levels,
+tracking that tightens as text grows, and only two weights (600 and 400) doing
+the work so "bold" always means one thing. The rule that shapes screens: **a
+number outranks its label.** A figure is `textTheme.metric`; the word beside it
+is a quiet `metricLabel`. Flutter's defaults give both nearly the same weight.
+
+**Status colours** are five roles — `positive`, `negative`, `warning`, `info`,
+`neutral` — and each is a triple: a `container` fill, the `onContainer` text
+that sits on it, and an `accent` for the same status drawn straight onto the
+page (a chart line, an arrow). They are shared by everything that reports a
+state, so a rising trend, a shipped order, a healthy stock level and a stock-in
+row are all the same green.
+
+They are deliberately **not** derived from the accent colour. The accent is the
+user's choice; "sales are down" has to read as down whichever of the six they
+picked.
+
+`test/shared/theme/status_contrast_test.dart` computes WCAG 2.1 contrast over
+every pairing in both modes and fails the build if an edit drops one below AA
+(4.5:1). It also checks that each accent preset produces a readable
+`ColorScheme`. Editing a colour by eye is therefore safe: the test will say so.
+
+### Dark mode and accent
+
+`ThemeModeController` (System/Light/Dark) and `AccentController` live in
+`lib/core/theme/appearance_provider.dart`, built the same way as
+`LanguageController`: state is read straight out of `SharedPreferences` in
+`build`, so the first frame is already right, and `main.dart` loads preferences
+before `runApp`.
+
+Both controls are in **Settings**, under the language picker, and apply
+instantly. There is no "Apply" button on purpose — nothing here is destructive
+or costly to undo, so a confirmation step would only put a tap between the user
+and the thing they are trying to look at. The preview card above the controls
+shows a metric, a filled button and a status badge together, which also makes
+the point that the green badge is *not* part of the accent.
+
+**To add an accent preset:** add a value to `AppAccent` with a stable `code`
+(that string lands in storage) and a mid-tone `seed`, add a
+`settingsAccent<Name>` key to both ARB files, and extend the `switch` in
+`SettingsScreen._accentLabel`. The contrast test picks it up automatically —
+if the seed produces an unreadable button, it fails. Keep new hues away from
+the greens and reds the status palette uses.
+
+The set is fixed rather than a free colour picker so that guarantee can hold:
+an open picker lets someone land on a yellow that makes white-on-primary
+buttons unreadable, and no amount of runtime clamping makes that pleasant.
+
+### Motion
+
+Two rules, both enforced in code:
+
+1. **Nothing animates for longer than it takes to read it.** Durations run
+   120–600ms (`AppMotion.fast` / `normal` / `page` / `counter`), and no
+   animation gates content: data is laid out at its final value on frame one
+   and the motion plays over the top.
+2. **Reduce motion is honoured everywhere.** Widgets never read `MediaQuery`
+   themselves; they ask `AppMotion.durationOf(context, …)`, which returns
+   `Duration.zero` when the platform setting is on. Zero rather than "shorter",
+   because a 60ms slide is a flicker — exactly the sensation the setting exists
+   to prevent.
+
+What moves, and why:
+
+| Where | Motion | Why it earns its place |
+|---|---|---|
+| Route pushes | Fade + 16px drift, 280ms | The stock Android slide makes every push feel like a journey on a five-tab app |
+| Tab switches | 120ms cross-fade | Marks that the page changed without re-animating a whole screen |
+| Dashboard figures | Count up, 520ms | Changing the date range silently rewrites four numbers at once; this says which ones moved |
+| Charts | fl_chart tween, 520ms | Same reason — a swapped series is otherwise indistinguishable from a redraw |
+| Loading | Shimmer skeletons | See below |
+| List rows | 0.985 scale while pressed | The ink splash is easy to miss outdoors; scale reads at a glance |
+| Empty states | Icon eases in, 240ms | An empty screen arriving as a hard cut reads as a failed load |
+
+The count-up starts at **72% of the target**, not zero. "Rp 0" racing upward
+reads for a moment as *no sales today*, which is a different and alarming fact;
+starting partway keeps every frame the right order of magnitude while still
+clearly moving. Its semantics label is the finished number throughout, so a
+screen reader is never handed a half-counted value.
+
+Haptics (`HapticFeedback.lightImpact`) fire at four decision points only:
+confirming/shipping/cancelling an order, deleting a record, a successful form
+submit, and a recorded stock movement. They are fire-and-forget, never awaited
+— awaiting a platform channel just delays the navigation that follows.
+
+### Skeletons
+
+`lib/shared/widgets/skeleton.dart` replaces every full-screen spinner.
+`SkeletonList`, `SkeletonSummaryGrid`, `SkeletonChart`, `SkeletonLines`,
+`SkeletonForm` and `SkeletonDetail` each mirror the real layout's box sizes, so
+nothing shifts when the data lands — which is the whole point. One `Skeleton`
+wrapper sweeps a single highlight across all the boxes below it, so a loading
+area reads as one object rather than a dozen blinking rectangles, and the
+subtree is wrapped in `ExcludeSemantics` so a screen reader hears the loading
+announcement instead of a description of grey boxes.
+
+On the dashboard, `AsyncSection` takes a `skeleton:` shaped like that section's
+own content. A section that is *refreshing* keeps its old data on screen under
+a hairline progress bar; only a first load shows a skeleton.
+
+Under reduce motion the shimmer stops and the boxes stay flat — the shape still
+says what is loading, which is most of the benefit.
+
 ## Prerequisites
 
 - Flutter 3.47+ (Dart 3.13+)
@@ -317,10 +449,15 @@ flutter analyze              # lints incl. riverpod_lint
 - `test/features/dashboard/`: providers (default 30-day range, date change reloads all range-based sections, granularity reloads only the trend, one failing endpoint leaves the others with data) and widget tests (per-section spinner, data, per-section retry, low-stock navigation, preset chip).
   `forecast_presentation_test.dart` covers the two ML-backed sections: providers (both follow the date range, an unavailable report is data rather than an AsyncError, partial failure stays available, a transport failure is still an error) and widgets (data, unavailable, partial failure, empty, and the two sections degrading independently)
 - `test/core/`: backend error envelope → `Failure`, pagination helpers, `AppLanguage`/`LanguageController`
-  (default English, a stored choice, an unsupported stored code, persistence across a restart) and the
-  `Accept-Language` header on every request
-- `test/features/settings/`: the Settings page — both options offered, the page retitles itself immediately
-  on switching, and the choice is written to storage
+  (default English, a stored choice, an unsupported stored code, persistence across a restart), the
+  `Accept-Language` header on every request, and `ThemeModeController`/`AccentController` (defaults,
+  switching, persistence across a restart, an accent the app no longer ships)
+- `test/features/settings/`: the Settings page — every option offered, the page retitles and re-themes
+  itself immediately on switching, and each choice is written to storage
+- `test/shared/theme/`: WCAG 2.1 contrast over every status pairing and every accent preset in both
+  light and dark mode, and reduce-motion behaviour for each animated widget
+- `test/shared/widgets/`: skeletons appear while loading, vanish when data lands, hold still under
+  reduce motion, and stay out of the semantics tree
 - `test/helpers/l10n_harness.dart`: `localizedApp()` for widget tests, `l10nOf(tester)` and `withL10n()`.
   Tests assert *which ARB key* a screen shows, not one language's wording, so neither language can drift:
   the delete-conflict and order-error helpers run over both locales.

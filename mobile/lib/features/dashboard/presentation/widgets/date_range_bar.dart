@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/l10n/l10n.dart';
-
 import '../../../../core/utils/date_formatter.dart';
+import '../../../../shared/theme/app_spacing.dart';
 import '../../domain/entities/dashboard.dart';
 import '../providers/dashboard_filter_provider.dart';
 
@@ -20,14 +20,14 @@ class DateRangeBar extends StatelessWidget {
     final theme = Theme.of(context);
     final today = DateTime.now();
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+      padding: const EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.sm, AppSpacing.md, AppSpacing.md),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               Icon(Icons.event_outlined, size: 18, color: theme.colorScheme.onSurfaceVariant),
-              const SizedBox(width: 6),
+              const SizedBox(width: AppSpacing.sm),
               Expanded(child: Text(formatDateRange(range.from, range.to), style: theme.textTheme.bodyMedium)),
               Text(
                 context.l10n.dashboardRangeDays(range.dayCount),
@@ -35,7 +35,7 @@ class DateRangeBar extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.sm),
           Wrap(
             spacing: 8,
             children: [

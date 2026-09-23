@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../core/error/failure.dart';
 import '../../core/l10n/l10n.dart';
+import '../theme/app_motion.dart';
+import '../theme/app_spacing.dart';
 
 /// User-facing message for any error that reaches the UI.
 ///
@@ -31,12 +33,7 @@ String errorMessage(BuildContext context, Object error) {
   return l10n.commonUnexpectedError;
 }
 
-class LoadingView extends StatelessWidget {
-  const LoadingView({super.key});
 
-  @override
-  Widget build(BuildContext context) => const Center(child: CircularProgressIndicator());
-}
 
 class ErrorView extends StatelessWidget {
   const ErrorView({super.key, required this.message, this.onRetry});
@@ -49,15 +46,15 @@ class ErrorView extends StatelessWidget {
     final theme = Theme.of(context);
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: AppSpacing.allXl,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.cloud_off_outlined, size: 48, color: theme.colorScheme.error),
-            const SizedBox(height: 12),
+            const SizedBox(height: AppSpacing.md),
             Text(message, textAlign: TextAlign.center, style: theme.textTheme.bodyLarge),
             if (onRetry != null) ...[
-              const SizedBox(height: 16),
+              const SizedBox(height: AppSpacing.lg),
               FilledButton.tonalIcon(
                 onPressed: onRetry,
                 icon: const Icon(Icons.refresh),
@@ -83,17 +80,44 @@ class EmptyView extends StatelessWidget {
     final theme = Theme.of(context);
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: AppSpacing.allXl,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 48, color: theme.colorScheme.outline),
-            const SizedBox(height: 12),
+            _EmptyIcon(icon: icon),
+            const SizedBox(height: AppSpacing.md),
             Text(message, textAlign: TextAlign.center, style: theme.textTheme.bodyLarge),
-            if (action != null) ...[const SizedBox(height: 16), action!],
+            if (action != null) ...[const SizedBox(height: AppSpacing.lg), action!],
           ],
         ),
       ),
+    );
+  }
+}
+
+/// The icon of an empty state, easing up to full size as the state appears.
+///
+/// An empty screen arriving with a hard cut reads as a failed load. A short
+/// settle says "there is genuinely nothing here" — so the motion is doing a
+/// job, not decorating. The text next to it is not animated: the sentence that
+/// explains what to do must be readable on the first frame.
+class _EmptyIcon extends StatelessWidget {
+  const _EmptyIcon({required this.icon});
+
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.outline;
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: AppMotion.durationOf(context, AppMotion.normal),
+      curve: AppMotion.enter,
+      builder: (context, t, child) => Opacity(
+        opacity: t,
+        child: Transform.scale(scale: 0.88 + 0.12 * t, child: child),
+      ),
+      child: Icon(icon, size: 48, color: color),
     );
   }
 }

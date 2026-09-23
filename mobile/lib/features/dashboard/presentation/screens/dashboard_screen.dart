@@ -4,6 +4,9 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/router/app_router.dart';
+import '../../../../shared/theme/app_spacing.dart';
+import '../../../../shared/widgets/app_refresh_indicator.dart';
+import '../../../../shared/widgets/skeleton.dart';
 import '../../domain/entities/dashboard.dart';
 import '../../domain/entities/forecast.dart';
 import '../providers/dashboard_data_providers.dart';
@@ -57,10 +60,10 @@ class DashboardScreen extends ConsumerWidget {
           ),
         ],
       ),
-      body: RefreshIndicator(
+      body: AppRefreshIndicator(
         onRefresh: () async => _refreshAll(ref),
         child: ListView(
-          padding: const EdgeInsets.only(bottom: 24),
+          padding: const EdgeInsets.only(bottom: AppSpacing.xl),
           children: const [
             _DateRangeSection(),
             _SummarySection(),
@@ -110,6 +113,7 @@ class _SummarySection extends ConsumerWidget {
         value: summary,
         onRetry: () => ref.invalidate(dashboardSummaryProvider),
         placeholderHeight: 160,
+        skeleton: const SkeletonSummaryGrid(),
         builder: (context, data) => SummaryCards(summary: data),
       ),
     );
@@ -152,6 +156,7 @@ class _SalesTrendSection extends ConsumerWidget {
         value: trend,
         onRetry: () => ref.invalidate(dashboardSalesTrendProvider),
         placeholderHeight: 220,
+        skeleton: const SkeletonChart(height: 200),
         builder: (context, data) => SalesTrendChart(trend: data),
       ),
     );
@@ -169,6 +174,7 @@ class _TopProductsSection extends ConsumerWidget {
       child: AsyncSection<List<TopProduct>>(
         value: products,
         onRetry: () => ref.invalidate(dashboardTopProductsProvider),
+        skeleton: const SkeletonList(rows: 4, padding: EdgeInsets.zero),
         builder: (context, data) => TopProductsSection(products: data),
       ),
     );
@@ -187,6 +193,7 @@ class _CategorySection extends ConsumerWidget {
         value: categories,
         onRetry: () => ref.invalidate(dashboardCategoryBreakdownProvider),
         placeholderHeight: 180,
+        skeleton: const SkeletonChart(height: 160),
         builder: (context, data) => CategoryBreakdownChart(categories: data),
       ),
     );
@@ -205,6 +212,7 @@ class _InsightsSection extends ConsumerWidget {
         value: insights,
         onRetry: () => ref.invalidate(dashboardInsightsProvider),
         placeholderHeight: 160,
+        skeleton: const SkeletonLines(lines: 3, hasLeading: true),
         builder: (context, data) =>
             InsightsSection(report: data, onRetry: () => ref.invalidate(dashboardInsightsProvider)),
       ),
@@ -224,6 +232,7 @@ class _ForecastSection extends ConsumerWidget {
         value: forecast,
         onRetry: () => ref.invalidate(dashboardForecastProvider),
         placeholderHeight: 160,
+        skeleton: const SkeletonList(rows: 3, padding: EdgeInsets.zero),
         builder: (context, data) =>
             ForecastSection(report: data, onRetry: () => ref.invalidate(dashboardForecastProvider)),
       ),

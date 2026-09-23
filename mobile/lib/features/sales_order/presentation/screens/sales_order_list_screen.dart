@@ -7,7 +7,11 @@ import '../../../../core/l10n/l10n.dart';
 import '../../../../core/router/app_router.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../core/utils/date_formatter.dart';
+import '../../../../shared/theme/app_spacing.dart';
+import '../../../../shared/widgets/app_refresh_indicator.dart';
 import '../../../../shared/widgets/paged_list.dart';
+import '../../../../shared/widgets/press_effect.dart';
+import '../../../../shared/widgets/skeleton.dart';
 import '../../../../shared/widgets/state_views.dart';
 import '../../../customer/presentation/widgets/customer_picker.dart';
 import '../../domain/entities/sales_order.dart';
@@ -66,7 +70,7 @@ class _SalesOrderListScreenState extends ConsumerState<SalesOrderListScreen> {
             height: 56,
             child: ListView(
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+              padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.xs, AppSpacing.lg, AppSpacing.md),
               children: [
                 if (filter.customerId == null)
                   ActionChip(
@@ -83,7 +87,7 @@ class _SalesOrderListScreenState extends ConsumerState<SalesOrderListScreen> {
                     onPressed: _pickCustomerFilter,
                     onDeleted: () => ref.read(salesOrderFiltersProvider.notifier).clearCustomer(),
                   ),
-                const SizedBox(width: 8),
+                const SizedBox(width: AppSpacing.sm),
                 ChoiceChip(
                   key: const Key('order_filter_status_all'),
                   label: Text(l10n.ordersFilterStatusAll),
@@ -91,7 +95,7 @@ class _SalesOrderListScreenState extends ConsumerState<SalesOrderListScreen> {
                   onSelected: (_) => ref.read(salesOrderFiltersProvider.notifier).setStatus(null),
                 ),
                 for (final s in OrderStatus.values) ...[
-                  const SizedBox(width: 8),
+                  const SizedBox(width: AppSpacing.sm),
                   ChoiceChip(
                     key: Key('order_filter_status_${s.name}'),
                     avatar: Icon(s.icon, size: 18),
@@ -113,7 +117,7 @@ class _SalesOrderListScreenState extends ConsumerState<SalesOrderListScreen> {
       ),
       body: orders.when(
         skipLoadingOnReload: true,
-        loading: () => const LoadingView(),
+        loading: () => const SkeletonList(),
         error: (e, _) => RefreshableView(
           onRefresh: _refresh,
           child: ErrorView(message: errorMessage(context, e), onRetry: () => ref.invalidate(salesOrderListProvider)),
@@ -128,7 +132,7 @@ class _SalesOrderListScreenState extends ConsumerState<SalesOrderListScreen> {
               ),
             );
           }
-          return RefreshIndicator(
+          return AppRefreshIndicator(
             onRefresh: _refresh,
             child: ListView.separated(
               controller: _scrollController,
@@ -145,9 +149,12 @@ class _SalesOrderListScreenState extends ConsumerState<SalesOrderListScreen> {
                   );
                 }
                 final o = state.items[i];
-                return SalesOrderTile(
-                  order: o,
-                  onTap: () => context.pushNamed(AppRoutes.salesOrderDetail, pathParameters: {'id': '${o.id}'}),
+                return PressEffect(
+                  child: SalesOrderTile(
+                    order: o,
+                    onTap: () =>
+                        context.pushNamed(AppRoutes.salesOrderDetail, pathParameters: {'id': '${o.id}'}),
+                  ),
                 );
               },
             ),
@@ -181,7 +188,7 @@ class SalesOrderTile extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           Text(formatRupiah(order.totalAmount), style: theme.textTheme.titleSmall),
-          const SizedBox(height: 4),
+          const SizedBox(height: AppSpacing.xs),
           OrderStatusBadge(status: order.status),
         ],
       ),

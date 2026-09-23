@@ -2,9 +2,10 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../core/l10n/l10n.dart';
-
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../core/utils/date_formatter.dart';
+import '../../../../shared/theme/app_motion.dart';
+import '../../../../shared/theme/app_spacing.dart';
 import '../../../../shared/widgets/state_views.dart';
 import '../../domain/entities/dashboard.dart';
 
@@ -44,8 +45,12 @@ class SalesTrendChart extends StatelessWidget {
       // Right padding: the label of the last point is centred on it and would
       // otherwise be clipped by the card edge.
       child: Padding(
-        padding: const EdgeInsets.only(right: 12),
+        padding: const EdgeInsets.only(right: AppSpacing.md),
         child: LineChart(
+          // fl_chart tweens between the old and new series, which makes a
+          // date-range change legible instead of an instant swap.
+          duration: AppMotion.durationOf(context, AppMotion.counter),
+          curve: AppMotion.emphasized,
           LineChartData(
             minY: 0,
             maxY: maxY,
@@ -67,7 +72,7 @@ class SalesTrendChart extends StatelessWidget {
                   interval: step,
                   reservedSize: 58,
                   getTitlesWidget: (value, meta) => Padding(
-                    padding: const EdgeInsets.only(right: 6),
+                    padding: const EdgeInsets.only(right: AppSpacing.sm),
                     child: Text(
                       formatRupiahCompact(value.round()),
                       style: theme.textTheme.labelSmall,
@@ -86,7 +91,7 @@ class SalesTrendChart extends StatelessWidget {
                     if (i < 0 || i >= points.length) return const SizedBox.shrink();
                     if (i % labelEvery != 0 && i != points.length - 1) return const SizedBox.shrink();
                     return Padding(
-                      padding: const EdgeInsets.only(top: 6),
+                      padding: const EdgeInsets.only(top: AppSpacing.sm),
                       child: Text(formatDayMonth(points[i].periodStart), style: theme.textTheme.labelSmall),
                     );
                   },

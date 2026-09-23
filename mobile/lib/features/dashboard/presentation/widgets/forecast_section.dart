@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../core/utils/date_formatter.dart';
+import '../../../../shared/theme/app_motion.dart';
+import '../../../../shared/theme/app_spacing.dart';
 import '../../../../shared/widgets/state_views.dart';
 import '../../domain/entities/forecast.dart';
 import 'unavailable_view.dart';
@@ -49,7 +51,7 @@ class ForecastSection extends StatelessWidget {
           context.l10n.dashboardForecastHorizon(report.horizonDays),
           style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: AppSpacing.md),
         for (final product in report.products) _ForecastRow(product: product),
       ],
     );
@@ -68,7 +70,7 @@ class _ForecastRow extends StatelessWidget {
     final titleColor = failed ? theme.colorScheme.onSurfaceVariant : theme.colorScheme.onSurface;
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: AppSpacing.md),
       child: Opacity(
         // A failed product stays in the list (its name is still useful), but
         // reads as inactive rather than as an alarm.
@@ -94,12 +96,12 @@ class _ForecastRow extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: AppSpacing.md),
             if (failed)
               Icon(Icons.remove, color: theme.colorScheme.onSurfaceVariant)
             else ...[
               SizedBox(width: 64, height: 28, child: _Sparkline(product: product)),
-              const SizedBox(width: 12),
+              const SizedBox(width: AppSpacing.md),
               _Total(product: product),
             ],
           ],
@@ -160,6 +162,8 @@ class _Sparkline extends StatelessWidget {
     return Semantics(
       label: context.l10n.dashboardForecastSemantics(product.productName, formatDayMonth(points.last.date)),
       child: LineChart(
+        duration: AppMotion.durationOf(context, AppMotion.counter),
+        curve: AppMotion.emphasized,
         LineChartData(
           minY: 0,
           maxY: maxY,

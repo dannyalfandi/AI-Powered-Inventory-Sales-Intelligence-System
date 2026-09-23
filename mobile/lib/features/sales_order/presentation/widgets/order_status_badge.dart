@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/l10n/l10n.dart';
+import '../../../../shared/theme/app_spacing.dart';
+import '../../../../shared/theme/app_status_colors.dart';
 import '../../domain/entities/sales_order.dart';
 
 extension OrderStatusText on OrderStatus {
@@ -18,6 +20,16 @@ extension OrderStatusText on OrderStatus {
         OrderStatus.confirmed => Icons.inventory_2_outlined,
         OrderStatus.shipped => Icons.local_shipping_outlined,
         OrderStatus.cancelled => Icons.cancel_outlined,
+      };
+
+  /// Which of the five semantic statuses this order state belongs to, so the
+  /// badge is coloured from the same palette as trends and stock levels
+  /// instead of its own private set of greens.
+  StatusPalette palette(AppStatusColors colors) => switch (this) {
+        OrderStatus.pending => colors.warning,
+        OrderStatus.confirmed => colors.info,
+        OrderStatus.shipped => colors.positive,
+        OrderStatus.cancelled => colors.neutral,
       };
 
   /// Button text for moving an order *to* this status.
@@ -38,27 +50,21 @@ class OrderStatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final (bg, fg) = switch (status) {
-      OrderStatus.pending => (scheme.tertiaryContainer, scheme.onTertiaryContainer),
-      OrderStatus.confirmed => (scheme.primaryContainer, scheme.onPrimaryContainer),
-      OrderStatus.shipped => dark
-          ? (const Color(0xFF1B5E20), const Color(0xFFC8E6C9))
-          : (const Color(0xFFD7F2DA), const Color(0xFF1B5E20)),
-      OrderStatus.cancelled => (scheme.surfaceContainerHighest, scheme.onSurfaceVariant),
-    };
+    final palette = status.palette(AppStatusColors.of(context));
 
     return Container(
       key: ValueKey('status_badge_${status.name}'),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8)),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
+      decoration: BoxDecoration(color: palette.container, borderRadius: AppRadius.smAll),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(status.icon, size: 14, color: fg),
-          const SizedBox(width: 4),
-          Text(status.label(context), style: Theme.of(context).textTheme.labelMedium?.copyWith(color: fg)),
+          Icon(status.icon, size: 14, color: palette.onContainer),
+          const SizedBox(width: AppSpacing.xs),
+          Text(
+            status.label(context),
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(color: palette.onContainer),
+          ),
         ],
       ),
     );

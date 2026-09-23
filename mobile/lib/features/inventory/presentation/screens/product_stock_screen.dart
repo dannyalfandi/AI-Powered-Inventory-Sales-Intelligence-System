@@ -6,7 +6,10 @@ import '../../../../core/error/failure.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/router/app_router.dart';
 import '../../../../core/utils/currency_formatter.dart';
+import '../../../../shared/theme/app_spacing.dart';
+import '../../../../shared/widgets/app_refresh_indicator.dart';
 import '../../../../shared/widgets/paged_list.dart';
+import '../../../../shared/widgets/skeleton.dart';
 import '../../../../shared/widgets/state_views.dart';
 import '../../../product/domain/entities/product.dart';
 import '../../../product/presentation/providers/product_form_provider.dart';
@@ -87,7 +90,7 @@ class _ProductStockScreenState extends ConsumerState<ProductStockScreen> {
                 message: errorMessage(context, product.error!),
                 onRetry: () => ref.invalidate(productDetailProvider(_id)),
               )
-            : const LoadingView(),
+            : const SkeletonDetail(),
       );
     }
 
@@ -109,22 +112,22 @@ class _ProductStockScreenState extends ConsumerState<ProductStockScreen> {
         icon: const Icon(Icons.swap_vert),
         label: Text(context.l10n.productStockRecordMovement),
       ),
-      body: RefreshIndicator(
+      body: AppRefreshIndicator(
         onRefresh: _refresh,
         child: CustomScrollView(
           controller: _scrollController,
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 0),
               sliver: SliverList.list(
                 children: [
                   _ProductHeader(product: p),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: AppSpacing.lg),
                   _StockSection(productId: _id),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: AppSpacing.xl),
                   Text(context.l10n.productStockHistory, style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: AppSpacing.xs),
                 ],
               ),
             ),
@@ -150,14 +153,14 @@ class _ProductHeader extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(product.sku, style: theme.textTheme.labelLarge),
-        const SizedBox(height: 4),
+        const SizedBox(height: AppSpacing.xs),
         Row(
           children: [
             Text(
               formatRupiah(product.price),
               style: theme.textTheme.titleMedium?.copyWith(color: theme.colorScheme.primary),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: AppSpacing.md),
             Chip(
               key: const Key('product_category_chip'),
               avatar: const Icon(Icons.label_outline, size: 18),
@@ -167,7 +170,7 @@ class _ProductHeader extends StatelessWidget {
           ],
         ),
         if (product.description.isNotEmpty) ...[
-          const SizedBox(height: 4),
+          const SizedBox(height: AppSpacing.xs),
           Text(product.description, style: theme.textTheme.bodyMedium),
         ],
       ],
@@ -185,7 +188,7 @@ class _StockSection extends ConsumerWidget {
     final inventory = ref.watch(productInventoryProvider(productId));
     return inventory.when(
       skipLoadingOnRefresh: true,
-      loading: () => const SizedBox(height: 120, child: LoadingView()),
+      loading: () => const SkeletonLines(lines: 2),
       error: (e, _) => Card(
         margin: EdgeInsets.zero,
         child: SizedBox(
@@ -212,7 +215,7 @@ class _MovementHistory extends ConsumerWidget {
     return movements.when(
       skipLoadingOnRefresh: true,
       loading: () => const SliverToBoxAdapter(
-        child: Padding(padding: EdgeInsets.all(24), child: LoadingView()),
+        child: SkeletonList(rows: 3, hasLeading: false),
       ),
       error: (e, _) => SliverToBoxAdapter(
         child: ErrorView(

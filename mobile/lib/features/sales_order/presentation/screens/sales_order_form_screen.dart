@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,9 +8,10 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/error/failure.dart';
 import '../../../../core/l10n/field_issue_text.dart';
 import '../../../../core/l10n/l10n.dart';
-import '../../../../shared/widgets/state_views.dart';
 import '../../../../core/router/app_router.dart';
 import '../../../../core/utils/currency_formatter.dart';
+import '../../../../shared/theme/app_spacing.dart';
+import '../../../../shared/widgets/state_views.dart';
 import '../../../customer/presentation/widgets/customer_picker.dart';
 import '../../../product/presentation/widgets/product_picker.dart';
 import '../../domain/entities/sales_order.dart';
@@ -65,6 +68,7 @@ class _SalesOrderFormScreenState extends ConsumerState<SalesOrderFormScreen> {
     try {
       final order = await ref.read(orderFormProvider.notifier).submit();
       if (!mounted) return;
+      unawaited(HapticFeedback.lightImpact());
       messenger.showSnackBar(SnackBar(content: Text(l10n.orderCreated(order.orderNumber))));
       context.pushReplacementNamed(AppRoutes.salesOrderDetail, pathParameters: {'id': '${order.id}'});
     } on ValidationFailure catch (f) {
@@ -92,17 +96,17 @@ class _SalesOrderFormScreenState extends ConsumerState<SalesOrderFormScreen> {
     return Scaffold(
       appBar: AppBar(title: Text(l10n.orderFormTitle)),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+        padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.xl),
         children: [
           Text(l10n.orderFormCustomer, style: theme.textTheme.titleMedium),
-          const SizedBox(height: 4),
+          const SizedBox(height: AppSpacing.xs),
           Card(
             margin: EdgeInsets.zero,
             shape: _errors['customer_id'] == null
                 ? null
                 : RoundedRectangleBorder(
                     side: BorderSide(color: theme.colorScheme.error),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(AppRadius.md),
                   ),
             child: ListTile(
               key: const Key('order_form_customer'),
@@ -116,7 +120,7 @@ class _SalesOrderFormScreenState extends ConsumerState<SalesOrderFormScreen> {
             ),
           ),
           _ErrorText(_errors['customer_id']),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.lg),
           Row(
             children: [
               Expanded(child: Text(l10n.orderFormItemsHeading(form.lines.length), style: theme.textTheme.titleMedium)),
@@ -130,7 +134,7 @@ class _SalesOrderFormScreenState extends ConsumerState<SalesOrderFormScreen> {
           ),
           if (form.lines.isEmpty)
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
+              padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
               child: Text(l10n.orderFormNoItems, style: theme.textTheme.bodyMedium),
             ),
           for (final (i, line) in form.lines.indexed)
@@ -151,7 +155,7 @@ class _SalesOrderFormScreenState extends ConsumerState<SalesOrderFormScreen> {
               },
             ),
           _ErrorText(_errors['items']),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.lg),
           TextFormField(
             key: const Key('order_form_notes'),
             decoration: InputDecoration(labelText: l10n.orderFormNotesOptional, errorText: _errors['notes']),
@@ -165,7 +169,7 @@ class _SalesOrderFormScreenState extends ConsumerState<SalesOrderFormScreen> {
       ),
       bottomNavigationBar: SafeArea(
         child: Container(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.md),
           decoration: BoxDecoration(border: Border(top: BorderSide(color: theme.dividerColor))),
           child: Row(
             children: [
@@ -221,9 +225,9 @@ class _LineCard extends StatelessWidget {
     final theme = Theme.of(context);
     final p = line.product;
     return Card(
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: const EdgeInsets.only(bottom: AppSpacing.sm),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
+        padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.xs, AppSpacing.sm),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -233,7 +237,7 @@ class _LineCard extends StatelessWidget {
                 children: [
                   Text(p.name, style: theme.textTheme.titleSmall),
                   Text('${p.sku} · ${formatRupiah(p.price)}', style: theme.textTheme.bodySmall),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: AppSpacing.xs),
                   Text(
                     context.l10n.orderFormSubtotal(formatRupiah(line.subtotal)),
                     style: theme.textTheme.bodyMedium,
@@ -282,7 +286,7 @@ class _ErrorText extends StatelessWidget {
     if (message == null) return const SizedBox.shrink();
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.only(top: 4, left: 12),
+      padding: const EdgeInsets.only(top: AppSpacing.xs, left: AppSpacing.md),
       child: Text(message!, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error)),
     );
   }

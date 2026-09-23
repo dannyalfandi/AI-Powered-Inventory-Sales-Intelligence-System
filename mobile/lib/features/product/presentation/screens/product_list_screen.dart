@@ -1,12 +1,17 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/error/failure.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/router/app_router.dart';
+import '../../../../shared/theme/app_spacing.dart';
+import '../../../../shared/widgets/app_refresh_indicator.dart';
+import '../../../../shared/widgets/press_effect.dart';
+import '../../../../shared/widgets/skeleton.dart';
 import '../../../../shared/widgets/state_views.dart';
 import '../../domain/entities/product.dart';
 import '../providers/product_list_provider.dart';
@@ -85,6 +90,7 @@ class _ProductListScreenState extends ConsumerState<ProductListScreen> {
     final deleted = l10n.productDeleted(p.name);
     try {
       await ref.read(productListProvider.notifier).delete(p.id);
+      unawaited(HapticFeedback.lightImpact());
       messenger.showSnackBar(SnackBar(content: Text(deleted)));
     } on Failure catch (f) {
       if (!mounted) return;
@@ -102,7 +108,7 @@ class _ProductListScreenState extends ConsumerState<ProductListScreen> {
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(64),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.md),
             child: SearchBar(
               controller: _searchController,
               hintText: l10n.productsSearchHint,
@@ -134,7 +140,7 @@ class _ProductListScreenState extends ConsumerState<ProductListScreen> {
         label: Text(l10n.productsTitle),
       ),
       body: products.when(
-        loading: () => const LoadingView(),
+        loading: () => const SkeletonList(),
         error: (e, _) => _Refreshable(
           onRefresh: _refresh,
           child: ErrorView(
@@ -154,7 +160,7 @@ class _ProductListScreenState extends ConsumerState<ProductListScreen> {
               ),
             );
           }
-          return RefreshIndicator(
+          return AppRefreshIndicator(
             onRefresh: _refresh,
             child: ListView.separated(
               controller: _scrollController,
@@ -171,16 +177,18 @@ class _ProductListScreenState extends ConsumerState<ProductListScreen> {
                   background: Container(
                     color: Theme.of(context).colorScheme.errorContainer,
                     alignment: Alignment.centerRight,
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
                     child: const Icon(Icons.delete_outline),
                   ),
                   confirmDismiss: (_) => _confirmDelete(p),
                   onDismissed: (_) => _delete(p),
-                  child: ProductTile(
-                    product: p,
-                    onTap: () => context.pushNamed(
-                      AppRoutes.productDetail,
-                      pathParameters: {'id': '${p.id}'},
+                  child: PressEffect(
+                    child: ProductTile(
+                      product: p,
+                      onTap: () => context.pushNamed(
+                        AppRoutes.productDetail,
+                        pathParameters: {'id': '${p.id}'},
+                      ),
                     ),
                   ),
                 );
@@ -203,7 +211,7 @@ class _ListFooter extends ConsumerWidget {
     final theme = Theme.of(context);
     final Widget child;
     if (state.isLoadingMore) {
-      child = const SizedBox.square(dimension: 24, child: CircularProgressIndicator(strokeWidth: 2));
+      return const SkeletonList(rows: 1, padding: EdgeInsets.zero);
     } else if (state.loadMoreError != null) {
       child = TextButton.icon(
         onPressed: () => ref.read(productListProvider.notifier).loadMore(),
@@ -218,7 +226,7 @@ class _ListFooter extends ConsumerWidget {
     } else {
       child = Text(context.l10n.productsCount(state.total), style: theme.textTheme.bodySmall);
     }
-    return Padding(padding: const EdgeInsets.all(16), child: Center(child: child));
+    return Padding(padding: const EdgeInsets.all(AppSpacing.lg), child: Center(child: child));
   }
 }
 
@@ -231,7 +239,7 @@ class _Refreshable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return RefreshIndicator(
+    return AppRefreshIndicator(
       onRefresh: onRefresh,
       child: LayoutBuilder(
         builder: (context, constraints) => SingleChildScrollView(

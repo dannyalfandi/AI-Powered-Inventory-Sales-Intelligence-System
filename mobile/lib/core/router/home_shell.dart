@@ -3,8 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/dashboard/presentation/providers/dashboard_data_providers.dart';
-import '../l10n/l10n.dart';
 import '../../features/sales_order/presentation/providers/sales_order_list_provider.dart';
+import '../../shared/theme/app_motion.dart';
+import '../l10n/l10n.dart';
 
 /// Main screen with bottom navigation: Dashboard, Produk, Kategori, Pelanggan,
 /// Pesanan. Each tab keeps its own navigation stack and scroll position.
@@ -21,7 +22,13 @@ class HomeShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
-      body: shell,
+      // Tabs cross-fade rather than cutting. `StatefulNavigationShell` keeps
+      // each branch's state, so the key is the branch index — without it the
+      // switcher would treat every tab as the same child and not animate.
+      body: AnimatedSwitcher(
+        duration: AppMotion.durationOf(context, AppMotion.fast),
+        child: KeyedSubtree(key: ValueKey(shell.currentIndex), child: shell),
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: shell.currentIndex,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,

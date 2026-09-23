@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -5,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/error/failure.dart';
 import '../../../../core/l10n/field_issue_text.dart';
 import '../../../../core/l10n/l10n.dart';
+import '../../../../shared/theme/app_spacing.dart';
 import '../../../../shared/widgets/state_views.dart';
 import '../../domain/entities/inventory.dart';
 import '../providers/inventory_provider.dart';
@@ -76,6 +79,7 @@ class _MovementFormSheetState extends ConsumerState<MovementFormSheet> {
       final result = await ref.read(productInventoryProvider(widget.productId).notifier).recordMovement(
             MovementInput(type: _type, quantity: int.tryParse(_quantity.text), reason: _reason.text),
           );
+      unawaited(HapticFeedback.lightImpact());
       if (mounted) Navigator.of(context).pop(result);
     } on ValidationFailure catch (f) {
       setState(() {
@@ -114,7 +118,7 @@ class _MovementFormSheetState extends ConsumerState<MovementFormSheet> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(l10n.movementFormTitle, style: theme.textTheme.titleLarge),
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpacing.lg),
             SegmentedButton<MovementType>(
               key: const Key('movement_form_type'),
               segments: [
@@ -128,7 +132,7 @@ class _MovementFormSheetState extends ConsumerState<MovementFormSheet> {
                 _clearServerError('quantity');
               },
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpacing.lg),
             TextFormField(
               key: const Key('movement_form_quantity'),
               controller: _quantity,
@@ -147,7 +151,7 @@ class _MovementFormSheetState extends ConsumerState<MovementFormSheet> {
               validator: (v) =>
                   context.messageFor(MovementRules.validateQuantity(_type, int.tryParse(v ?? ''))) ?? _serverErrors['quantity'],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpacing.lg),
             TextFormField(
               key: const Key('movement_form_reason'),
               controller: _reason,
@@ -161,7 +165,7 @@ class _MovementFormSheetState extends ConsumerState<MovementFormSheet> {
               validator: (v) => context.messageFor(MovementRules.validateReason(v ?? '')) ?? _serverErrors['reason'],
             ),
             if (_generalError != null) ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: AppSpacing.md),
               Text(
                 _generalError!,
                 key: const Key('movement_form_error'),

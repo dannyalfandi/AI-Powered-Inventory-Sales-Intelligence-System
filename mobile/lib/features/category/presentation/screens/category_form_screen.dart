@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +8,8 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/error/failure.dart';
 import '../../../../core/l10n/field_issue_text.dart';
 import '../../../../core/l10n/l10n.dart';
+import '../../../../shared/theme/app_spacing.dart';
+import '../../../../shared/widgets/skeleton.dart';
 import '../../../../shared/widgets/state_views.dart';
 import '../../domain/entities/category.dart';
 import '../providers/category_form_provider.dart';
@@ -26,7 +30,7 @@ class CategoryFormScreen extends ConsumerWidget {
         // Only the initial load; after a save the form keeps showing.
         skipLoadingOnRefresh: true,
         skipLoadingOnReload: true,
-        loading: () => const LoadingView(),
+        loading: () => const SkeletonForm(fields: 2),
         error: (e, _) => ErrorView(
           message: errorMessage(context, e),
           onRetry: () => ref.invalidate(categoryFormProvider(categoryId)),
@@ -89,6 +93,7 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
           .read(categoryFormProvider(widget.categoryId).notifier)
           .save(CategoryInput(name: _name.text, description: _description.text));
       if (!mounted) return;
+      unawaited(HapticFeedback.lightImpact());
       messenger.showSnackBar(
         SnackBar(content: Text(_isEdit ? l10n.categoryUpdated : l10n.categoryCreated)),
       );
@@ -115,7 +120,7 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
     return Form(
       key: _formKey,
       child: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         children: [
           TextFormField(
             key: const Key('category_form_name'),
@@ -127,7 +132,7 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
             onChanged: (_) => _clearServerError('name'),
             validator: (v) => context.messageFor(CategoryRules.validateName(v ?? '')) ?? _serverErrors['name'],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.lg),
           TextFormField(
             key: const Key('category_form_description'),
             controller: _description,
@@ -137,7 +142,7 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
             onChanged: (_) => _clearServerError('description'),
             validator: (_) => _serverErrors['description'],
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: AppSpacing.xl),
           FilledButton(
             key: const Key('category_form_submit'),
             onPressed: _submitting ? null : _submit,

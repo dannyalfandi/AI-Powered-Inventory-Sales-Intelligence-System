@@ -2,8 +2,9 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../core/l10n/l10n.dart';
-
 import '../../../../core/utils/currency_formatter.dart';
+import '../../../../shared/theme/app_motion.dart';
+import '../../../../shared/theme/app_spacing.dart';
 import '../../../../shared/widgets/state_views.dart';
 import '../../domain/entities/dashboard.dart';
 
@@ -57,6 +58,8 @@ class CategoryBreakdownChart extends StatelessWidget {
         SizedBox(
           height: 180,
           child: PieChart(
+            duration: AppMotion.durationOf(context, AppMotion.counter),
+            curve: AppMotion.emphasized,
             PieChartData(
               sectionsSpace: 2,
               centerSpaceRadius: 44,
@@ -73,7 +76,7 @@ class CategoryBreakdownChart extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: AppSpacing.md),
         for (var i = 0; i < withRevenue.length; i++)
           _LegendRow(category: withRevenue[i], color: colors[i], total: total),
       ],
@@ -99,7 +102,7 @@ class _LegendRow extends StatelessWidget {
     final theme = Theme.of(context);
     final share = (category.revenue / total * 100).toStringAsFixed(1);
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
       child: Row(
         children: [
           Container(
@@ -107,7 +110,7 @@ class _LegendRow extends StatelessWidget {
             height: 12,
             decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(3)),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: AppSpacing.sm),
           Expanded(
             child: Text(
               category.categoryName,
@@ -118,9 +121,9 @@ class _LegendRow extends StatelessWidget {
                   : theme.textTheme.bodyMedium,
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: AppSpacing.sm),
           Text('$share%', style: theme.textTheme.bodySmall),
-          const SizedBox(width: 12),
+          const SizedBox(width: AppSpacing.md),
           Text(
             formatRupiah(category.revenue),
             style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
