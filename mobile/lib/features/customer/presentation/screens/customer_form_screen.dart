@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +8,8 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/error/failure.dart';
 import '../../../../core/l10n/field_issue_text.dart';
 import '../../../../core/l10n/l10n.dart';
+import '../../../../shared/theme/app_spacing.dart';
+import '../../../../shared/widgets/skeleton.dart';
 import '../../../../shared/widgets/state_views.dart';
 import '../../domain/entities/customer.dart';
 import '../providers/customer_form_provider.dart';
@@ -25,7 +29,7 @@ class CustomerFormScreen extends ConsumerWidget {
       body: customer.when(
         skipLoadingOnRefresh: true,
         skipLoadingOnReload: true,
-        loading: () => const LoadingView(),
+        loading: () => const SkeletonForm(),
         error: (e, _) => ErrorView(
           message: errorMessage(context, e),
           onRetry: () => ref.invalidate(customerFormProvider(customerId)),
@@ -93,6 +97,7 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
             CustomerInput(name: _name.text, email: _email.text, phone: _phone.text, address: _address.text),
           );
       if (!mounted) return;
+      unawaited(HapticFeedback.lightImpact());
       messenger.showSnackBar(SnackBar(content: Text(_isEdit ? l10n.customerUpdated : l10n.customerCreated)));
       context.pop(true);
     } on ValidationFailure catch (f) {
@@ -118,7 +123,7 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
     return Form(
       key: _formKey,
       child: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         children: [
           TextFormField(
             key: const Key('customer_form_name'),
@@ -130,7 +135,7 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
             onChanged: (_) => _clearServerError('name'),
             validator: (v) => context.messageFor(CustomerRules.validateName(v ?? '')) ?? _serverErrors['name'],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.lg),
           TextFormField(
             key: const Key('customer_form_email'),
             controller: _email,
@@ -141,7 +146,7 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
             onChanged: (_) => _clearServerError('email'),
             validator: (v) => context.messageFor(CustomerRules.validateEmail(v ?? '')) ?? _serverErrors['email'],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.lg),
           TextFormField(
             key: const Key('customer_form_phone'),
             controller: _phone,
@@ -155,7 +160,7 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
             onChanged: (_) => _clearServerError('phone'),
             validator: (v) => context.messageFor(CustomerRules.validatePhone(v ?? '')) ?? _serverErrors['phone'],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.lg),
           TextFormField(
             key: const Key('customer_form_address'),
             controller: _address,
@@ -166,7 +171,7 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
             onChanged: (_) => _clearServerError('address'),
             validator: (v) => context.messageFor(CustomerRules.validateAddress(v ?? '')) ?? _serverErrors['address'],
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: AppSpacing.xl),
           FilledButton(
             key: const Key('customer_form_submit'),
             onPressed: _submitting ? null : _submit,

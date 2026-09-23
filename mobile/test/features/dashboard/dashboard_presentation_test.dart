@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:inventory_intel/core/error/failure.dart';
 import 'package:inventory_intel/core/router/app_router.dart';
 import 'package:inventory_intel/features/dashboard/domain/entities/dashboard.dart';
+import 'package:inventory_intel/shared/theme/app_motion.dart';
 import 'package:inventory_intel/features/dashboard/presentation/providers/dashboard_data_providers.dart';
 import 'package:inventory_intel/features/dashboard/presentation/providers/dashboard_filter_provider.dart';
 import 'package:inventory_intel/features/dashboard/presentation/providers/dashboard_providers.dart';
@@ -150,26 +151,27 @@ void main() {
       );
     }
 
-    testWidgets('a slow section keeps its own spinner while the others already show data', (tester) async {
+    testWidgets('a slow section keeps its own skeleton while the others already show data', (tester) async {
       stubDashboard(repo);
       final slowTopProducts = Completer<List<TopProduct>>();
       when(() => repo.getTopProducts(any(), limit: any(named: 'limit'))).thenAnswer((_) => slowTopProducts.future);
       useTallSurface(tester);
       await tester.pumpWidget(app());
-      // Not pumpAndSettle: the spinner of the slow section never settles.
+      // Not pumpAndSettle: the slow section's shimmer loops forever.
       await tester.pump();
-      await tester.pump();
+      await tester.pump(AppMotion.counter);
 
-      // The four finished sections render; only the slow one is still loading.
+      // The four finished sections render; only the slow one is still loading,
+      // and it is the list-shaped skeleton rather than a bare spinner.
       expect(find.text('Rp 928.000'), findsOneWidget);
       expect(find.text('11'), findsOneWidget);
-      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.byKey(const Key('skeleton_list')), findsOneWidget);
 
       slowTopProducts.complete(topProducts);
       await tester.pumpAndSettle();
 
       expect(find.text('Kopi Arabica'), findsOneWidget);
-      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.byKey(const Key('skeleton_list')), findsNothing);
     });
 
     testWidgets('data: summary in Rupiah, top products, categories and the low-stock badge', (tester) async {

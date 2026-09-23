@@ -1,13 +1,18 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/error/failure.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/router/app_router.dart';
+import '../../../../shared/theme/app_spacing.dart';
+import '../../../../shared/widgets/app_refresh_indicator.dart';
 import '../../../../shared/widgets/paged_list.dart';
+import '../../../../shared/widgets/press_effect.dart';
+import '../../../../shared/widgets/skeleton.dart';
 import '../../../../shared/widgets/state_views.dart';
 import '../../domain/entities/category.dart';
 import '../providers/category_list_provider.dart';
@@ -83,6 +88,7 @@ class _CategoryListScreenState extends ConsumerState<CategoryListScreen> {
     final deleted = l10n.categoryDeleted(c.name);
     try {
       await ref.read(categoryListProvider.notifier).delete(c.id);
+      unawaited(HapticFeedback.lightImpact());
       messenger.showSnackBar(SnackBar(content: Text(deleted)));
       return true;
     } on Failure catch (f) {
@@ -119,7 +125,7 @@ class _CategoryListScreenState extends ConsumerState<CategoryListScreen> {
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(64),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.md),
             child: SearchBar(
               controller: _searchController,
               hintText: l10n.categoriesSearchHint,
@@ -149,7 +155,7 @@ class _CategoryListScreenState extends ConsumerState<CategoryListScreen> {
         label: Text(l10n.categoriesTitle),
       ),
       body: categories.when(
-        loading: () => const LoadingView(),
+        loading: () => const SkeletonList(),
         error: (e, _) => RefreshableView(
           onRefresh: _refresh,
           child: ErrorView(
@@ -169,7 +175,7 @@ class _CategoryListScreenState extends ConsumerState<CategoryListScreen> {
               ),
             );
           }
-          return RefreshIndicator(
+          return AppRefreshIndicator(
             onRefresh: _refresh,
             child: ListView.separated(
               controller: _scrollController,
@@ -192,20 +198,22 @@ class _CategoryListScreenState extends ConsumerState<CategoryListScreen> {
                   background: Container(
                     color: Theme.of(context).colorScheme.errorContainer,
                     alignment: Alignment.centerRight,
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
                     child: const Icon(Icons.delete_outline),
                   ),
                   // The provider already removed the row once the server confirmed.
                   confirmDismiss: (_) => _confirmAndDelete(c),
-                  child: ListTile(
-                    leading: const Icon(Icons.label_outline),
-                    title: Text(c.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-                    subtitle: c.description.isEmpty
-                        ? null
-                        : Text(c.description, maxLines: 1, overflow: TextOverflow.ellipsis),
-                    onTap: () => context.pushNamed(
-                      AppRoutes.categoryEdit,
-                      pathParameters: {'id': '${c.id}'},
+                  child: PressEffect(
+                    child: ListTile(
+                      leading: const Icon(Icons.label_outline),
+                      title: Text(c.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      subtitle: c.description.isEmpty
+                          ? null
+                          : Text(c.description, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      onTap: () => context.pushNamed(
+                        AppRoutes.categoryEdit,
+                        pathParameters: {'id': '${c.id}'},
+                      ),
                     ),
                   ),
                 );

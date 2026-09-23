@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/l10n/l10n.dart';
+import '../../../../shared/theme/app_spacing.dart';
 
 /// Shown when the ML service is down (`forecast_available: false`).
 ///
@@ -29,23 +30,23 @@ class UnavailableView extends StatelessWidget {
     final muted = theme.colorScheme.onSurfaceVariant;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.xl),
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppRadius.md),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 32, color: muted),
-          const SizedBox(height: 10),
+          const SizedBox(height: AppSpacing.md),
           Text(
             message,
             textAlign: TextAlign.center,
             style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurface),
           ),
           if (detail != null) ...[
-            const SizedBox(height: 4),
+            const SizedBox(height: AppSpacing.xs),
             Text(
               detail!,
               textAlign: TextAlign.center,
@@ -53,7 +54,7 @@ class UnavailableView extends StatelessWidget {
             ),
           ],
           if (onRetry != null) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.sm),
             TextButton(onPressed: onRetry, child: Text(context.l10n.commonRetry)),
           ],
         ],

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/utils/date_formatter.dart';
+import '../../../../shared/theme/app_status_colors.dart';
 import '../../domain/entities/inventory.dart';
 
 extension MovementTypeLabel on MovementType {
@@ -36,10 +37,13 @@ class MovementTile extends StatelessWidget {
       MovementType.stockOut => '−${m.quantity}',
       MovementType.adjustment => '= ${m.quantity}',
     };
+    // Stock arriving is positive, stock leaving is negative, a correction is
+    // neither — the same three meanings the rest of the app uses.
+    final colors = AppStatusColors.of(context);
     final color = switch (m.type) {
-      MovementType.stockIn => theme.colorScheme.primary,
-      MovementType.stockOut => theme.colorScheme.error,
-      MovementType.adjustment => theme.colorScheme.tertiary,
+      MovementType.stockIn => colors.positive.accent,
+      MovementType.stockOut => colors.negative.accent,
+      MovementType.adjustment => colors.info.accent,
     };
     final when = formatDateTime(m.createdAt);
 

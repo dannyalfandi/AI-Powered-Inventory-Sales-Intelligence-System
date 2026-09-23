@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/l10n/l10n.dart';
+import '../../../../shared/theme/app_spacing.dart';
+import '../../../../shared/theme/app_status_colors.dart';
+import '../../../../shared/widgets/skeleton.dart';
 
 /// Badge for the number of products at or below their low-stock threshold.
 ///
@@ -17,14 +20,14 @@ class LowStockCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final value = count.value;
     final alerting = (value ?? 0) > 0;
-    final color = alerting ? theme.colorScheme.error : theme.colorScheme.primary;
+    final colors = AppStatusColors.of(context);
+    final color = alerting ? colors.warning.accent : colors.positive.accent;
 
     final l10n = context.l10n;
     return Card(
-      margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      margin: const EdgeInsets.fromLTRB(AppSpacing.md, 0, AppSpacing.md, AppSpacing.md),
       child: ListTile(
         onTap: onTap,
         leading: Icon(alerting ? Icons.warning_amber : Icons.check_circle_outline, color: color),
@@ -41,7 +44,7 @@ class LowStockCard extends StatelessWidget {
             if (count.hasError)
               IconButton(onPressed: onRetry, icon: const Icon(Icons.refresh), tooltip: l10n.dashboardLowStockReload)
             else if (!count.hasValue)
-              const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+              const SkeletonBox(width: 34, height: 22, radius: 999)
             else
               _CountBadge(count: value!, color: color),
             const Icon(Icons.chevron_right),
@@ -62,7 +65,7 @@ class _CountBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.xs),
       decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(999)),
       child: Text(
         '$count',

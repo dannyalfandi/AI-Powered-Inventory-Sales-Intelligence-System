@@ -5,7 +5,11 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/error/failure.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/router/app_router.dart';
+import '../../../../shared/theme/app_status_colors.dart';
+import '../../../../shared/widgets/app_refresh_indicator.dart';
 import '../../../../shared/widgets/paged_list.dart';
+import '../../../../shared/widgets/press_effect.dart';
+import '../../../../shared/widgets/skeleton.dart';
 import '../../../../shared/widgets/state_views.dart';
 import '../../domain/entities/inventory.dart';
 import '../providers/low_stock_list_provider.dart';
@@ -49,7 +53,7 @@ class _LowStockScreenState extends ConsumerState<LowStockScreen> {
     return Scaffold(
       appBar: AppBar(title: Text(context.l10n.inventoryLowStockTitle)),
       body: items.when(
-        loading: () => const LoadingView(),
+        loading: () => const SkeletonList(),
         error: (e, _) => RefreshableView(
           onRefresh: _refresh,
           child: ErrorView(
@@ -67,7 +71,7 @@ class _LowStockScreenState extends ConsumerState<LowStockScreen> {
               ),
             );
           }
-          return RefreshIndicator(
+          return AppRefreshIndicator(
             onRefresh: _refresh,
             child: ListView.separated(
               controller: _scrollController,
@@ -83,11 +87,13 @@ class _LowStockScreenState extends ConsumerState<LowStockScreen> {
                   );
                 }
                 final item = state.items[i];
-                return _LowStockTile(
-                  item: item,
-                  onTap: () => context.pushNamed(
-                    AppRoutes.productDetail,
-                    pathParameters: {'id': '${item.productId}'},
+                return PressEffect(
+                  child: _LowStockTile(
+                    item: item,
+                    onTap: () => context.pushNamed(
+                      AppRoutes.productDetail,
+                      pathParameters: {'id': '${item.productId}'},
+                    ),
                   ),
                 );
               },
@@ -109,17 +115,19 @@ class _LowStockTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final empty = item.quantity == 0;
+    final colors = AppStatusColors.of(context);
+    final palette = empty ? colors.negative : colors.warning;
     return ListTile(
       onTap: onTap,
       leading: Icon(
         empty ? Icons.remove_shopping_cart_outlined : Icons.warning_amber_rounded,
-        color: theme.colorScheme.error,
+        color: palette.accent,
       ),
       title: Text(item.name, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text('${item.sku} · ${context.l10n.inventoryThresholdShort(item.lowStockThreshold)}'),
       trailing: Text(
         empty ? context.l10n.inventoryOutOfStock : context.l10n.inventoryRemaining(item.quantity),
-        style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.error),
+        style: theme.textTheme.titleSmall?.copyWith(color: palette.accent),
       ),
     );
   }

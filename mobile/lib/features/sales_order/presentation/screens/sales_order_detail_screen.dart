@@ -1,10 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/error/failure.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../core/utils/date_formatter.dart';
+import '../../../../shared/theme/app_spacing.dart';
+import '../../../../shared/widgets/app_refresh_indicator.dart';
+import '../../../../shared/widgets/skeleton.dart';
 import '../../../../shared/widgets/state_views.dart';
 import '../../domain/entities/sales_order.dart';
 import '../providers/sales_order_detail_provider.dart';
@@ -37,6 +43,10 @@ class _SalesOrderDetailScreenState extends ConsumerState<SalesOrderDetailScreen>
     try {
       final updated = await ref.read(salesOrderDetailProvider(widget.orderId).notifier).changeStatus(target);
       if (!mounted) return;
+      // Confirming or shipping an order moves real stock. A single light tap
+      // marks that it went through, so the user does not have to re-read the
+      // badge to be sure.
+      unawaited(HapticFeedback.lightImpact());
       messenger.showSnackBar(
         SnackBar(
           content: Text(l10n.orderStatusChanged(updated.orderNumber, updated.status.label(context))),
@@ -62,10 +72,10 @@ class _SalesOrderDetailScreenState extends ConsumerState<SalesOrderDetailScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (stockProblem) Text(l10n.orderStockProblemBody),
-                const SizedBox(height: 8),
+                const SizedBox(height: AppSpacing.sm),
                 for (final line in lines)
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
+                    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [const Text('•  '), Expanded(child: Text(line))],
@@ -129,12 +139,12 @@ class _SalesOrderDetailScreenState extends ConsumerState<SalesOrderDetailScreen>
       body: order.when(
         skipLoadingOnRefresh: true,
         skipLoadingOnReload: true,
-        loading: () => const LoadingView(),
+        loading: () => const SkeletonDetail(rows: 4),
         error: (e, _) => ErrorView(
           message: errorMessage(context, e),
           onRetry: () => ref.invalidate(salesOrderDetailProvider(widget.orderId)),
         ),
-        data: (o) => RefreshIndicator(
+        data: (o) => AppRefreshIndicator(
           onRefresh: () => ref.refresh(salesOrderDetailProvider(widget.orderId).future),
           child: _OrderBody(order: o),
         ),
@@ -160,7 +170,7 @@ class _ActionBar extends StatelessWidget {
     final next = order.status.next;
     return SafeArea(
       child: Container(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.md),
         decoration: BoxDecoration(border: Border(top: BorderSide(color: theme.dividerColor))),
         child: next.isEmpty
             ? Text(
@@ -172,7 +182,7 @@ class _ActionBar extends StatelessWidget {
             : Row(
                 children: [
                   for (final (i, target) in next.indexed) ...[
-                    if (i > 0) const SizedBox(width: 12),
+                    if (i > 0) const SizedBox(width: AppSpacing.md),
                     Expanded(child: _actionButton(context, target)),
                   ],
                 ],
@@ -213,7 +223,7 @@ class _OrderBody extends StatelessWidget {
     final c = order.customer;
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(AppSpacing.lg),
       children: [
         Row(
           children: [
@@ -221,11 +231,11 @@ class _OrderBody extends StatelessWidget {
             OrderStatusBadge(status: order.status),
           ],
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppSpacing.sm),
         _Timeline(order: order),
-        const SizedBox(height: 16),
+        const SizedBox(height: AppSpacing.lg),
         Text(l10n.orderDetailCustomer, style: theme.textTheme.titleMedium),
-        const SizedBox(height: 4),
+        const SizedBox(height: AppSpacing.xs),
         Card(
           margin: EdgeInsets.zero,
           child: ListTile(
@@ -240,9 +250,9 @@ class _OrderBody extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: AppSpacing.lg),
         Text(l10n.orderDetailItemsHeading(order.items.length), style: theme.textTheme.titleMedium),
-        const SizedBox(height: 4),
+        const SizedBox(height: AppSpacing.xs),
         Card(
           margin: EdgeInsets.zero,
           child: Column(
@@ -271,12 +281,12 @@ class _OrderBody extends StatelessWidget {
           ),
         ),
         if (order.notes.isNotEmpty) ...[
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.lg),
           Text(l10n.orderDetailNotes, style: theme.textTheme.titleMedium),
-          const SizedBox(height: 4),
+          const SizedBox(height: AppSpacing.xs),
           Text(order.notes),
         ],
-        const SizedBox(height: 8),
+        const SizedBox(height: AppSpacing.sm),
         Text(
           l10n.orderDetailPriceNote,
           style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),

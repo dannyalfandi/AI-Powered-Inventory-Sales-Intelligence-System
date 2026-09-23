@@ -1,13 +1,18 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/error/failure.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/router/app_router.dart';
+import '../../../../shared/theme/app_spacing.dart';
+import '../../../../shared/widgets/app_refresh_indicator.dart';
 import '../../../../shared/widgets/paged_list.dart';
+import '../../../../shared/widgets/press_effect.dart';
+import '../../../../shared/widgets/skeleton.dart';
 import '../../../../shared/widgets/state_views.dart';
 import '../../domain/entities/customer.dart';
 import '../providers/customer_list_provider.dart';
@@ -82,6 +87,7 @@ class _CustomerListScreenState extends ConsumerState<CustomerListScreen> {
     final messenger = ScaffoldMessenger.of(context);
     try {
       await ref.read(customerListProvider.notifier).delete(c.id);
+      unawaited(HapticFeedback.lightImpact());
       messenger.showSnackBar(SnackBar(content: Text(l10n.customerDeleted(c.name))));
       return true;
     } on Failure catch (f) {
@@ -117,7 +123,7 @@ class _CustomerListScreenState extends ConsumerState<CustomerListScreen> {
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(64),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.md),
             child: SearchBar(
               controller: _searchController,
               hintText: l10n.customersSearchHint,
@@ -147,7 +153,7 @@ class _CustomerListScreenState extends ConsumerState<CustomerListScreen> {
         label: Text(l10n.customersTitle),
       ),
       body: customers.when(
-        loading: () => const LoadingView(),
+        loading: () => const SkeletonList(),
         error: (e, _) => RefreshableView(
           onRefresh: _refresh,
           child: ErrorView(message: errorMessage(context, e), onRetry: () => ref.invalidate(customerListProvider)),
@@ -164,7 +170,7 @@ class _CustomerListScreenState extends ConsumerState<CustomerListScreen> {
               ),
             );
           }
-          return RefreshIndicator(
+          return AppRefreshIndicator(
             onRefresh: _refresh,
             child: ListView.separated(
               controller: _scrollController,
@@ -187,14 +193,17 @@ class _CustomerListScreenState extends ConsumerState<CustomerListScreen> {
                   background: Container(
                     color: Theme.of(context).colorScheme.errorContainer,
                     alignment: Alignment.centerRight,
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
                     child: const Icon(Icons.delete_outline),
                   ),
                   // The provider already removed the row once the server confirmed.
                   confirmDismiss: (_) => _confirmAndDelete(c),
-                  child: CustomerTile(
-                    customer: c,
-                    onTap: () => context.pushNamed(AppRoutes.customerEdit, pathParameters: {'id': '${c.id}'}),
+                  child: PressEffect(
+                    child: CustomerTile(
+                      customer: c,
+                      onTap: () =>
+                          context.pushNamed(AppRoutes.customerEdit, pathParameters: {'id': '${c.id}'}),
+                    ),
                   ),
                 );
               },

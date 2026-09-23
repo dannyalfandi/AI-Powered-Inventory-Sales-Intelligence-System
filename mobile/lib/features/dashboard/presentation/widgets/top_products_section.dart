@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/l10n/l10n.dart';
-
 import '../../../../core/utils/currency_formatter.dart';
+import '../../../../shared/theme/app_spacing.dart';
 import '../../../../shared/widgets/state_views.dart';
 import '../../domain/entities/dashboard.dart';
 
@@ -46,7 +46,7 @@ class _TopProductRow extends StatelessWidget {
     final theme = Theme.of(context);
     final fraction = maxRevenue == 0 ? 0.0 : product.revenue / maxRevenue;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: AppSpacing.md),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -66,14 +66,14 @@ class _TopProductRow extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: AppSpacing.sm),
               Text(
                 formatRupiah(product.revenue),
                 style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
               ),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: AppSpacing.sm),
           ClipRRect(
             borderRadius: BorderRadius.circular(4),
             child: LinearProgressIndicator(

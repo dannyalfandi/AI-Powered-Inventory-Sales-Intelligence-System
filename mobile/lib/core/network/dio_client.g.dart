@@ -9,15 +9,27 @@ part of 'dio_client.dart';
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // ignore_for_file: type=lint, type=warning
 /// Single shared Dio instance for the whole app.
+///
+/// It watches the language: the backend localizes its messages from
+/// `Accept-Language`, so switching language in Settings must change what the
+/// server writes too, not only the app's own labels.
 
 @ProviderFor(dio)
 final dioProvider = DioProvider._();
 
 /// Single shared Dio instance for the whole app.
+///
+/// It watches the language: the backend localizes its messages from
+/// `Accept-Language`, so switching language in Settings must change what the
+/// server writes too, not only the app's own labels.
 
 final class DioProvider extends $FunctionalProvider<Dio, Dio, Dio>
     with $Provider<Dio> {
   /// Single shared Dio instance for the whole app.
+  ///
+  /// It watches the language: the backend localizes its messages from
+  /// `Accept-Language`, so switching language in Settings must change what the
+  /// server writes too, not only the app's own labels.
   DioProvider._()
     : super(
         from: null,
@@ -51,4 +63,4 @@ final class DioProvider extends $FunctionalProvider<Dio, Dio, Dio>
   }
 }
 
-String _$dioHash() => r'85923adcc22c25604fcf90bf70724927efaaee1f';
+String _$dioHash() => r'a5bb59349a67188b8d641272c0a0789a9bf601d9';
