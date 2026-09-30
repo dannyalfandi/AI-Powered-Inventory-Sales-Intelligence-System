@@ -2,6 +2,8 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:inventory_intel/core/error/failure.dart';
 import 'package:inventory_intel/core/error/failure_mapper.dart';
+import 'package:inventory_intel/features/auth/data/models/auth_models.dart';
+import 'package:inventory_intel/features/auth/domain/entities/auth_user.dart';
 import 'package:inventory_intel/features/category/data/models/category_model.dart';
 import 'package:inventory_intel/features/customer/data/models/customer_model.dart';
 import 'package:inventory_intel/features/dashboard/data/models/dashboard_models.dart';
@@ -663,6 +665,120 @@ void main() {
       expect(TrendDirectionCodec.decode('stable'), TrendDirection.stable);
       expect(TrendDirectionCodec.encode(TrendDirection.decreasing), 'decreasing');
       expect(() => TrendDirectionCodec.decode('sideways'), throwsFormatException);
+    });
+  });
+
+  // Captured from the running API (staff@example.com and admin@example.com
+  // from `go run ./cmd/seed`); only the JWTs are shortened.
+  group('auth', () {
+    test('POST /auth/login: token pair + a user without permissions', () {
+      final body = {
+        'data': {
+          'access_token': 'eyJ.access',
+          'refresh_token': 'eyJ.refresh',
+          'token_type': 'Bearer',
+          'expires_in': 900,
+          'user': {
+            'id': 2,
+            'email': 'staff@example.com',
+            'name': 'Staf Demo',
+            'role': {'id': 2, 'name': 'Staff', 'is_system': false},
+          },
+        },
+      };
+      final pair = TokenPairModel.fromJson(body['data']!);
+
+      expect(pair.accessToken, 'eyJ.access');
+      expect(pair.refreshToken, 'eyJ.refresh');
+      expect(pair.tokenType, 'Bearer');
+      expect(pair.expiresIn, 900);
+      // The login `user` carries no `permissions` key: the app must call
+      // /auth/me after logging in to know what to show.
+      expect(((body['data']!)['user']! as Map).containsKey('permissions'), isFalse);
+    });
+
+    test('GET /auth/me (Staff): role + the permission keys it grants', () {
+      final user = MeModel.fromJson({
+        'id': 2,
+        'email': 'staff@example.com',
+        'name': 'Staf Demo',
+        'is_active': true,
+        'role': {'id': 2, 'name': 'Staff', 'is_system': false},
+        'permissions': [
+          'products.view',
+          'categories.view',
+          'inventory.view',
+          'customers.view',
+          'sales_orders.view',
+          'sales_orders.create',
+          'sales_orders.confirm',
+          'sales_orders.ship',
+          'sales_orders.cancel',
+          'analytics.view',
+          'analytics.forecast',
+          'analytics.insights',
+        ],
+      }).toEntity();
+
+      expect(user.name, 'Staf Demo');
+      expect(user.role, const AuthRole(id: 2, name: 'Staff', isSystem: false));
+      expect(user.permissions, hasLength(12));
+      expect(user.can('sales_orders.confirm'), isTrue);
+      expect(user.can('products.delete'), isFalse);
+    });
+
+    test('GET /auth/me (Super Admin): is_system, every catalog key', () {
+      final user = MeModel.fromJson({
+        'id': 1,
+        'email': 'admin@example.com',
+        'name': 'Super Admin',
+        'is_active': true,
+        'role': {'id': 1, 'name': 'Super Admin', 'is_system': true},
+        'permissions': ['products.view', 'products.delete', 'users.delete', 'roles.assign_permissions'],
+      }).toEntity();
+
+      expect(user.role.isSystem, isTrue);
+      expect(user.can('users.delete'), isTrue);
+      expect(user.can('a.key.the.app.does.not.know'), isTrue, reason: 'a system role passes every check');
+    });
+
+    Failure map(int status, Map<String, dynamic> body) {
+      final req = RequestOptions(path: '/api/v1/auth/login');
+      return mapDioException(
+        DioException.badResponse(
+          statusCode: status,
+          requestOptions: req,
+          response: Response(requestOptions: req, statusCode: status, data: body),
+        ),
+      );
+    }
+
+    test('wrong email or password: 401 invalid_credentials', () {
+      final f = map(401, {
+        'error': {'code': 'invalid_credentials', 'message': 'invalid email or password'},
+      });
+      expect(f, isA<ServerFailure>());
+      expect((f as ServerFailure).statusCode, 401);
+      expect(f.code, 'invalid_credentials');
+    });
+
+    test('empty login form: 422 on email and password', () {
+      final f = map(422, {
+        'error': {
+          'code': 'validation_failed',
+          'message': 'request validation failed',
+          'details': [
+            {'field': 'email', 'message': 'is required'},
+            {'field': 'password', 'message': 'is required'},
+          ],
+        },
+      });
+      expect((f as ValidationFailure).messages, {'email': 'is required', 'password': 'is required'});
+    });
+
+    test('POST /auth/logout: 204, no body; request is {"refresh_token"}', () {
+      expect(const RefreshTokenRequest(refreshToken: 'r').toJson(), {'refresh_token': 'r'});
+      expect(const LoginRequest(email: 'a@b.c', password: 'p').toJson(), {'email': 'a@b.c', 'password': 'p'});
     });
   });
 }

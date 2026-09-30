@@ -10,6 +10,7 @@ import 'package:inventory_intel/features/product/presentation/screens/product_fo
 import 'package:inventory_intel/features/product/presentation/screens/product_list_screen.dart';
 import 'package:mocktail/mocktail.dart';
 
+import '../../../../helpers/auth_fixtures.dart';
 import '../../../../helpers/category_fixtures.dart';
 import '../../../../helpers/product_fixtures.dart';
 import '../../../../helpers/l10n_harness.dart';
@@ -30,6 +31,7 @@ void main() {
         overrides: [
           productRepositoryProvider.overrideWithValue(repo),
           categoryRepositoryProvider.overrideWithValue(categories),
+          signedInAs(superAdmin),
         ],
         retry: (_, _) => null,
         child: localizedApp(home: home),

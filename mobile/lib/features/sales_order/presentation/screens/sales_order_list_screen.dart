@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/auth/permissions.dart';
 import '../../../../core/error/failure.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/router/app_router.dart';
@@ -14,6 +15,7 @@ import '../../../../shared/widgets/press_effect.dart';
 import '../../../../shared/widgets/skeleton.dart';
 import '../../../../shared/widgets/state_views.dart';
 import '../../../customer/presentation/widgets/customer_picker.dart';
+import '../../../auth/presentation/providers/auth_controller.dart';
 import '../../domain/entities/sales_order.dart';
 import '../providers/sales_order_list_provider.dart';
 import '../widgets/order_status_badge.dart';
@@ -109,12 +111,14 @@ class _SalesOrderListScreenState extends ConsumerState<SalesOrderListScreen> {
           ),
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        heroTag: 'order_fab',
-        onPressed: () => context.pushNamed(AppRoutes.salesOrderCreate),
-        icon: const Icon(Icons.add_shopping_cart),
-        label: Text(l10n.ordersTitle),
-      ),
+      floatingActionButton: ref.hasPermission(Permissions.salesOrdersCreate)
+          ? FloatingActionButton.extended(
+              heroTag: 'order_fab',
+              onPressed: () => context.pushNamed(AppRoutes.salesOrderCreate),
+              icon: const Icon(Icons.add_shopping_cart),
+              label: Text(l10n.ordersTitle),
+            )
+          : null,
       body: orders.when(
         skipLoadingOnReload: true,
         loading: () => const SkeletonList(),

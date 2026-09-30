@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/auth/permissions.dart';
 import '../../../../core/error/failure.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/utils/currency_formatter.dart';
@@ -12,6 +13,7 @@ import '../../../../shared/theme/app_spacing.dart';
 import '../../../../shared/widgets/app_refresh_indicator.dart';
 import '../../../../shared/widgets/skeleton.dart';
 import '../../../../shared/widgets/state_views.dart';
+import '../../../auth/presentation/providers/auth_controller.dart';
 import '../../domain/entities/sales_order.dart';
 import '../providers/sales_order_detail_provider.dart';
 import '../widgets/order_status_badge.dart';
@@ -150,24 +152,48 @@ class _SalesOrderDetailScreenState extends ConsumerState<SalesOrderDetailScreen>
         ),
       ),
       bottomNavigationBar: switch (order.value) {
-        final o? => _ActionBar(order: o, pending: _pending, onAction: (t) => _change(o, t)),
+        final o? => _actionBar(o),
         null => null,
       },
     );
   }
+
+  /// The transitions the state machine allows *and* the user may perform.
+  /// A final order still says so; an order this user can't move on shows no
+  /// bar at all rather than buttons that would only earn a 403.
+  Widget? _actionBar(SalesOrder o) {
+    final allowed = [
+      for (final target in o.status.next)
+        if (ref.hasPermission(_permissionFor(target))) target,
+    ];
+    if (o.status.next.isNotEmpty && allowed.isEmpty) return null;
+    return _ActionBar(order: o, actions: allowed, pending: _pending, onAction: (t) => _change(o, t));
+  }
+
+  /// Mirrors the backend's RequireStatusPermission.
+  static String _permissionFor(OrderStatus target) => switch (target) {
+    OrderStatus.confirmed => Permissions.salesOrdersConfirm,
+    OrderStatus.shipped => Permissions.salesOrdersShip,
+    OrderStatus.cancelled => Permissions.salesOrdersCancel,
+    // Never a target of the state machine; no permission unlocks it.
+    OrderStatus.pending => '',
+  };
 }
 
 class _ActionBar extends StatelessWidget {
-  const _ActionBar({required this.order, required this.pending, required this.onAction});
+  const _ActionBar({required this.order, required this.actions, required this.pending, required this.onAction});
 
   final SalesOrder order;
+
+  /// The transitions to offer: `order.status.next`, filtered by permission.
+  final List<OrderStatus> actions;
   final OrderStatus? pending;
   final ValueChanged<OrderStatus> onAction;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final next = order.status.next;
+    final next = actions;
     return SafeArea(
       child: Container(
         padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.md),
