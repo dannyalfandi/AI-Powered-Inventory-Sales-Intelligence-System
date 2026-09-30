@@ -30,7 +30,21 @@ type Config struct {
 	AnalyticsCacheTTL time.Duration
 	// ML holds the connection settings of the Python forecasting service.
 	ML MLServiceConfig
+	// JWT signs and times the access and refresh tokens.
+	JWT JWTConfig
 }
+
+// JWTConfig configures authentication tokens. Secret signs both token types
+// (HS256), so it must be long, random, and never committed.
+type JWTConfig struct {
+	Secret     string
+	AccessTTL  time.Duration
+	RefreshTTL time.Duration
+}
+
+// minJWTSecretLength mirrors auth.MinSecretLength; config does not import
+// the internal packages it configures.
+const minJWTSecretLength = 32
 
 // MLServiceConfig points at the FastAPI service in /ml-service. It is called
 // synchronously, so Timeout is what bounds a dashboard request when that
@@ -47,6 +61,16 @@ type RedisConfig struct {
 	Addr     string
 	Password string
 	DB       int
+}
+
+// RequireJWT fails unless a JWT secret is configured. The API calls it at
+// startup: it can't authenticate anyone without one.
+func (c *Config) RequireJWT() error {
+	if c.JWT.Secret == "" {
+		return errors.New("invalid configuration: JWT_SECRET is required to run the API " +
+			"(at least 32 characters, e.g. `openssl rand -base64 48`)")
+	}
+	return nil
 }
 
 // Load reads .env (optional) and then the process environment.
@@ -118,6 +142,27 @@ func FromLookup(lookup func(string) (string, bool)) (*Config, error) {
 		problems = append(problems, "FORECAST_CACHE_TTL must be a non-negative duration, e.g. 10m or 0")
 	} else {
 		cfg.ML.CacheTTL = ttl
+	}
+
+	// Optional here because cmd/migrate and cmd/seed share this loader and
+	// never sign a token; the API calls RequireJWT at startup. A value that
+	// is set must be valid everywhere, though.
+	cfg.JWT.Secret = optional("JWT_SECRET", "")
+	if cfg.JWT.Secret != "" && len(cfg.JWT.Secret) < minJWTSecretLength {
+		problems = append(problems, fmt.Sprintf("JWT_SECRET must be at least %d characters", minJWTSecretLength))
+	}
+	if ttl, err := time.ParseDuration(optional("JWT_ACCESS_TTL", "15m")); err != nil || ttl <= 0 {
+		problems = append(problems, "JWT_ACCESS_TTL must be a positive duration, e.g. 15m")
+	} else {
+		cfg.JWT.AccessTTL = ttl
+	}
+	if ttl, err := time.ParseDuration(optional("JWT_REFRESH_TTL", "168h")); err != nil || ttl <= 0 {
+		problems = append(problems, "JWT_REFRESH_TTL must be a positive duration, e.g. 168h")
+	} else {
+		cfg.JWT.RefreshTTL = ttl
+	}
+	if cfg.JWT.AccessTTL > 0 && cfg.JWT.RefreshTTL > 0 && cfg.JWT.RefreshTTL <= cfg.JWT.AccessTTL {
+		problems = append(problems, "JWT_REFRESH_TTL must be longer than JWT_ACCESS_TTL")
 	}
 
 	cfg.Timezone = optional("APP_TIMEZONE", "Asia/Jakarta")

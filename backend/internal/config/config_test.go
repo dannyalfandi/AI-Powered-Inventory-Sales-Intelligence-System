@@ -8,6 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testSecret = "0123456789abcdef0123456789abcdef"
+
 func lookupFrom(env map[string]string) func(string) (string, bool) {
 	return func(key string) (string, bool) {
 		v, ok := env[key]
@@ -29,6 +31,9 @@ func TestFromLookup(t *testing.T) {
 		"ML_SERVICE_URL":              "http://ml-service:8000/",
 		"ML_SERVICE_TIMEOUT":          "3s",
 		"FORECAST_CACHE_TTL":          "15m",
+		"JWT_SECRET":                  testSecret,
+		"JWT_ACCESS_TTL":              "10m",
+		"JWT_REFRESH_TTL":             "72h",
 	}
 
 	with := func(overrides map[string]string) map[string]string {
@@ -64,7 +69,8 @@ func TestFromLookup(t *testing.T) {
 				Timezone:                 "Asia/Makassar",
 				AnalyticsCacheTTL:        90 * time.Second,
 				// The trailing slash is trimmed, so paths never double up.
-				ML: MLServiceConfig{URL: "http://ml-service:8000", Timeout: 3 * time.Second, CacheTTL: 15 * time.Minute},
+				ML:  MLServiceConfig{URL: "http://ml-service:8000", Timeout: 3 * time.Second, CacheTTL: 15 * time.Minute},
+				JWT: JWTConfig{Secret: testSecret, AccessTTL: 10 * time.Minute, RefreshTTL: 72 * time.Hour},
 			},
 		},
 		{
@@ -73,6 +79,7 @@ func TestFromLookup(t *testing.T) {
 				"PORT": "<unset>", "REDIS_DB": "<unset>", "REDIS_PASSWORD": "<unset>",
 				"LOW_STOCK_DEFAULT_THRESHOLD": "<unset>", "APP_TIMEZONE": "<unset>", "ANALYTICS_CACHE_TTL": "<unset>",
 				"ML_SERVICE_URL": "<unset>", "ML_SERVICE_TIMEOUT": "<unset>", "FORECAST_CACHE_TTL": "<unset>",
+				"JWT_ACCESS_TTL": "<unset>", "JWT_REFRESH_TTL": "<unset>",
 			}),
 			want: &Config{
 				Port:        "8080",
@@ -83,6 +90,7 @@ func TestFromLookup(t *testing.T) {
 				Timezone:                 "Asia/Jakarta",
 				AnalyticsCacheTTL:        5 * time.Minute,
 				ML:                       MLServiceConfig{URL: "http://localhost:8000", Timeout: 5 * time.Second, CacheTTL: 10 * time.Minute},
+				JWT:                      JWTConfig{Secret: testSecret, AccessTTL: 15 * time.Minute, RefreshTTL: 168 * time.Hour},
 			},
 		},
 		{
@@ -126,6 +134,26 @@ func TestFromLookup(t *testing.T) {
 			wantErr: []string{"FORECAST_CACHE_TTL must be a non-negative duration"},
 		},
 		{
+			name:    "short JWT_SECRET",
+			env:     with(map[string]string{"JWT_SECRET": "too-short"}),
+			wantErr: []string{"JWT_SECRET must be at least 32 characters"},
+		},
+		{
+			name:    "invalid JWT_ACCESS_TTL",
+			env:     with(map[string]string{"JWT_ACCESS_TTL": "0"}),
+			wantErr: []string{"JWT_ACCESS_TTL must be a positive duration"},
+		},
+		{
+			name:    "invalid JWT_REFRESH_TTL",
+			env:     with(map[string]string{"JWT_REFRESH_TTL": "a week"}),
+			wantErr: []string{"JWT_REFRESH_TTL must be a positive duration"},
+		},
+		{
+			name:    "refresh TTL not longer than access TTL",
+			env:     with(map[string]string{"JWT_ACCESS_TTL": "2h", "JWT_REFRESH_TTL": "1h"}),
+			wantErr: []string{"JWT_REFRESH_TTL must be longer than JWT_ACCESS_TTL"},
+		},
+		{
 			name:    "unknown APP_TIMEZONE",
 			env:     with(map[string]string{"APP_TIMEZONE": "Mars/Olympus"}),
 			wantErr: []string{"APP_TIMEZONE must be an IANA time zone name"},
@@ -146,4 +174,25 @@ func TestFromLookup(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+// JWT_SECRET is optional for the loader (cmd/migrate and cmd/seed share it
+// and never sign tokens) but required by the API, which calls RequireJWT.
+func TestRequireJWT(t *testing.T) {
+	env := map[string]string{
+		"DATABASE_URL": "postgres://u:p@localhost:5432/db?sslmode=disable",
+		"REDIS_ADDR":   "localhost:6379",
+	}
+
+	cfg, err := FromLookup(lookupFrom(env))
+	require.NoError(t, err, "migrate and seed run without a JWT secret")
+	assert.Empty(t, cfg.JWT.Secret)
+	err = cfg.RequireJWT()
+	require.Error(t, err, "the API does not")
+	assert.Contains(t, err.Error(), "JWT_SECRET is required")
+
+	env["JWT_SECRET"] = testSecret
+	cfg, err = FromLookup(lookupFrom(env))
+	require.NoError(t, err)
+	assert.NoError(t, cfg.RequireJWT())
 }

@@ -7,6 +7,7 @@
 //
 //	go run ./cmd/seed --clean    # remove test/demo leftovers (explicit, never automatic)
 //	go run ./cmd/seed            # create the demo data (safe to re-run)
+//	go run ./cmd/seed --auth-only  # only roles + the Super Admin/Staff accounts
 //
 // Orders go through the same service layer the API uses, so stock movements,
 // order numbers and every invariant are produced by the real business logic.
@@ -35,17 +36,18 @@ import (
 
 func main() {
 	clean := flag.Bool("clean", false, "delete test/demo leftovers instead of seeding")
+	authOnly := flag.Bool("auth-only", false, "create only the roles and the Super Admin/Staff accounts, no demo data")
 	days := flag.Int("days", 75, "how many days of sales history to generate")
 	randomSeed := flag.Uint64("seed", 20260920, "PRNG seed; the same seed always produces the same data")
 	flag.Parse()
 
-	if err := run(*clean, *days, *randomSeed); err != nil {
+	if err := run(*clean, *authOnly, *days, *randomSeed); err != nil {
 		slog.Error("seed failed", "error", err)
 		os.Exit(1)
 	}
 }
 
-func run(clean bool, days int, randomSeed uint64) error {
+func run(clean, authOnly bool, days int, randomSeed uint64) error {
 	ctx := context.Background()
 
 	cfg, err := config.Load()
@@ -66,6 +68,13 @@ func run(clean bool, days int, randomSeed uint64) error {
 
 	if clean {
 		return cleanTestData(ctx, db)
+	}
+	// Accounts first: without them nobody can log in to look at the demo.
+	if err := accounts(ctx, db); err != nil {
+		return err
+	}
+	if authOnly {
+		return nil
 	}
 	if days < 14 {
 		return fmt.Errorf("--days must be at least 14 so the trend comparison has two periods, got %d", days)
@@ -135,6 +144,23 @@ func cleanTestData(ctx context.Context, db *gorm.DB) error {
 			return err
 		}
 
+		// Accounts and roles that scripts/e2e.sh creates. The seeded Super
+		// Admin and Staff are not touched: --clean then seed must leave you
+		// able to log in with the same credentials.
+		userIDs, err := idsOf(tx, "users", func(q *gorm.DB) *gorm.DB {
+			return q.Where("email LIKE ?", testUserEmails)
+		})
+		if err != nil {
+			return err
+		}
+		roleIDs, err := idsOf(tx, "roles", func(q *gorm.DB) *gorm.DB {
+			return q.Where("name LIKE ? AND NOT is_system", testRoleNames).
+				Where("id NOT IN (SELECT role_id FROM users WHERE email NOT LIKE ?)", testUserEmails)
+		})
+		if err != nil {
+			return err
+		}
+
 		deleted := map[string]int64{}
 		// Order matters: children first, then parents (the FKs are RESTRICT).
 		steps := []struct {
@@ -162,6 +188,10 @@ func cleanTestData(ctx context.Context, db *gorm.DB) error {
 			{"products", func() (int64, error) { return deleteWhere(tx, "products", "id IN ?", productIDs) }},
 			{"categories", func() (int64, error) { return deleteWhere(tx, "categories", "id IN ?", categoryIDs) }},
 			{"customers", func() (int64, error) { return deleteWhere(tx, "customers", "id IN ?", customerIDs) }},
+			{"refresh_tokens", func() (int64, error) { return deleteWhere(tx, "refresh_tokens", "user_id IN ?", userIDs) }},
+			{"users", func() (int64, error) { return deleteWhere(tx, "users", "id IN ?", userIDs) }},
+			{"role_permissions", func() (int64, error) { return deleteWhere(tx, "role_permissions", "role_id IN ?", roleIDs) }},
+			{"roles", func() (int64, error) { return deleteWhere(tx, "roles", "id IN ?", roleIDs) }},
 		}
 		for _, step := range steps {
 			n, err := step.run()
@@ -182,6 +212,7 @@ func cleanTestData(ctx context.Context, db *gorm.DB) error {
 
 		slog.Info("cleaned test/demo data",
 			"products", len(productIDs), "categories", len(categoryIDs), "customers", len(customerIDs),
+			"users", len(userIDs), "roles", len(roleIDs),
 			"sales_orders", len(orderIDs), "rows", deleted)
 		return nil
 	})
