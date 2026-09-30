@@ -7,7 +7,9 @@ Go REST API for the Inventory & Sales Intelligence Platform (Gin + GORM + Postgr
 ```
 cmd/api            entrypoint: loads config, connects DB/Redis, starts HTTP server
 cmd/migrate        runs GORM AutoMigrate for every model in model.All()
-cmd/seed           dev-only: demo dataset with ~3 months of back-dated sales (--clean to wipe it)
+cmd/seed           dev-only: demo dataset with ~3 months of back-dated sales (--clean to wipe it),
+                   plus the Super Admin / Staff roles and accounts (--auth-only for just those)
+internal/auth      permission catalog, JWT issue/parse, bcrypt, the caller in the request context
 internal/config    env-var config loader (godotenv for local dev, fail-fast on missing vars)
 internal/model     GORM entities + input/param types
 internal/repository data access (GORM) — returns ErrNotFound / ErrDuplicateKey
@@ -50,10 +52,14 @@ Edit `.env` so the credentials match `../infra/.env`:
 | `ML_SERVICE_URL` | base URL of the Python forecasting service in `/ml-service` (default `http://localhost:8000`) |
 | `ML_SERVICE_TIMEOUT` | per-call timeout for that service (default `5s`) — it is called while a request is open |
 | `FORECAST_CACHE_TTL` | how long a complete forecast/insight report stays cached (default `10m`; `0` disables) |
+| `JWT_SECRET` | **required by the API**: signs access and refresh tokens (HS256), at least 32 characters. Generate one with `openssl rand -base64 48`. Changing it logs everyone out |
+| `JWT_ACCESS_TTL` | access token lifetime (default `15m`) |
+| `JWT_REFRESH_TTL` | refresh token lifetime (default `168h` = 7 days); must be longer than the access TTL |
+| `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` | read by `cmd/seed` only: the first Super Admin. Empty → `admin@example.com` / `admin12345` and a WARNING in the log |
 
 If the password contains special characters (`@ : / ? #`), URL-encode them in `DATABASE_URL`.
 
-Real environment variables override `.env`. The app refuses to start if `DATABASE_URL` or `REDIS_ADDR` is missing.
+Real environment variables override `.env`. The app refuses to start if `DATABASE_URL` or `REDIS_ADDR` is missing, and the API also refuses to start without `JWT_SECRET`. `cmd/migrate` and `cmd/seed` don't need `JWT_SECRET`, but if it is set it must be valid.
 
 ## Migration
 
@@ -61,7 +67,9 @@ Real environment variables override `.env`. The app refuses to start if `DATABAS
 go run ./cmd/migrate
 ```
 
-Creates/updates tables for every model listed in `internal/model/models.go` (currently `categories`, `products`, `inventories`, `customers`, `sales_orders`, `sales_order_items`, `sales_order_counters`, `stock_movements`). It is additive only — it never drops tables or columns. Run it again after adding a model or a field.
+Creates/updates tables for every model listed in `internal/model/models.go` (currently `categories`, `products`, `inventories`, `customers`, `sales_orders`, `sales_order_items`, `sales_order_counters`, `stock_movements`, `roles`, `permissions`, `role_permissions`, `users`, `refresh_tokens`). It is additive only — it never drops tables or columns. Run it again after adding a model or a field.
+
+It then **syncs the permission catalog**: the `permissions` table is made to match `auth.Catalog` in `internal/auth/permissions.go` exactly. New keys are inserted, descriptions updated, and keys removed from code are deleted (their role links cascade). Run it after every deploy that changes the catalog.
 
 Schema:
 
@@ -75,6 +83,11 @@ Schema:
 | `sales_orders` | `id`, `order_number`, `customer_id`, `status`, `total_amount`, `notes`, `confirmed_at`/`shipped_at`/`cancelled_at` (nullable), timestamps | `order_number` unique; FK → `customers.id` (`RESTRICT`); `CHECK status IN (...)`, `CHECK total_amount >= 0`; indexes on `status`, `customer_id`, `created_at` |
 | `sales_order_items` | `id`, `sales_order_id`, `product_id`, `product_sku`, `product_name`, `quantity`, `unit_price`, `subtotal` | FK → `sales_orders.id`, `products.id` (`RESTRICT`); `CHECK quantity > 0`, prices `>= 0` |
 | `sales_order_counters` | `day` (PK, `YYYYMMDD`), `last_value` | per-day sequence for order numbers |
+| `roles` | `id`, `name`, `description`, `is_system`, timestamps | `name` unique. `is_system` = the Super Admin role |
+| `permissions` | `id`, `key` (`products.create`), `description`, `resource_group` | `key` unique. Synced from code by `cmd/migrate`, never created through the API |
+| `role_permissions` | `role_id`, `permission_id` (composite PK) | FKs `ON DELETE CASCADE` on both sides |
+| `users` | `id`, `email` (lowercase), `password_hash` (bcrypt), `name`, `role_id`, `is_active`, timestamps, `deleted_at` | `email` unique among non-deleted rows; FK → `roles.id` (`RESTRICT`) |
+| `refresh_tokens` | `id`, `user_id`, `token_hash` (SHA-256), `expires_at`, `revoked_at` (nullable), `created_at` | `token_hash` unique; FK → `users.id` (`CASCADE`) |
 
 Analytics adds no table. It does add one index, `idx_sales_orders_status_confirmed_at` on `sales_orders (status, confirmed_at)`, because every analytics query filters exactly that pair (`status IN ('CONFIRMED','SHIPPED') AND confirmed_at` in range). It is declared with GORM tags on the model, so `go run ./cmd/migrate` creates it like any other index.
 
@@ -92,14 +105,17 @@ with a small Indonesian grocery wholesaler so the dashboard, the forecast and
 the insights have something convincing to show.
 
 ```bash
-go run ./cmd/seed --clean    # remove test/demo leftovers — explicit, never automatic
-go run ./cmd/seed            # create the demo data (safe to re-run)
+go run ./cmd/seed --clean      # remove test/demo leftovers — explicit, never automatic
+go run ./cmd/seed              # create the accounts + the demo data (safe to re-run)
+go run ./cmd/seed --auth-only  # only the roles and accounts, no demo data
 ```
 
-Running both, in that order, gives a demo database from scratch. What you get:
+Running the first two, in that order, gives a demo database from scratch. What you get:
 
 | | |
 |---|---|
+| 2 roles | **Super Admin** (`is_system`, every permission) and **Staff** (12 permissions, see [Roles](#roles)) |
+| 2 accounts | the Super Admin from `SEED_ADMIN_EMAIL`/`SEED_ADMIN_PASSWORD` (default `admin@example.com` / `admin12345`, with a WARNING in the log), and `staff@example.com` / `staff12345` |
 | 5 categories | Minuman, Makanan Ringan, Sembako, Perawatan Diri, Rumah Tangga |
 | 26 products | SKUs `MNM-001`…`RTG-004`, realistic Rupiah prices (Rp 4.000 – Rp 120.000) |
 | 10 customers | the warungs and kiosks the shop supplies |
@@ -130,8 +146,13 @@ Notes:
   is none, so a second `go run ./cmd/seed` changes nothing. Use `--clean`
   first to regenerate it.
 - `--clean` deletes rows it can identify: the `E2E-*`, `SMOKE-*`, `SHAPE-*`,
-  `CACHE-*` leftovers from `scripts/e2e.sh` and from manual testing, plus
-  everything this seeder created. Anything else in the database is left alone.
+  `CACHE-*` leftovers from `scripts/e2e.sh` and from manual testing (including
+  its `e2e.*@example.test` users and `E2E *` roles), plus the demo data this
+  seeder created. **The seeded accounts and roles are kept**, so you can still
+  log in after `--clean` + seed. Anything else in the database is left alone.
+- Accounts are created only if the email doesn't exist yet: a re-run never
+  resets a password you changed. The Staff role gets its permissions only
+  when it is created, so edits made through the API survive a re-seed.
   Running `scripts/e2e.sh` after seeding adds its own test rows back — clean
   and re-seed before a demo.
 - Flags: `--days` (default 75, minimum 14) and `--seed` (PRNG seed; the same
@@ -151,6 +172,138 @@ curl -i http://localhost:8080/health
 # 503 {"status":"degraded","checks":{..."redis":"down: ..."}} if a dependency is unreachable
 ```
 
+## Authentication & access control
+
+Every endpoint under `/api/v1` requires a login, except `/auth/login`, `/auth/refresh` and `/auth/logout`. `/health` stays public for probes.
+
+### Login, refresh, logout
+
+```bash
+# 1. Log in → an access token (15 min) and a refresh token (7 days)
+curl -s -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@example.com","password":"admin12345"}'
+# 200 {"data":{"access_token":"eyJ…","refresh_token":"eyJ…","token_type":"Bearer","expires_in":900,
+#   "user":{"id":1,"email":"admin@example.com","name":"Super Admin",
+#           "role":{"id":1,"name":"Super Admin","is_system":true}}}}
+
+TOKEN=eyJ…            # the access_token
+AUTH="Authorization: Bearer $TOKEN"
+
+# 2. Call the API with the access token
+curl -s -H "$AUTH" http://localhost:8080/api/v1/auth/me
+# 200 {"data":{"id":1,"email":"admin@example.com","name":"Super Admin","is_active":true,
+#   "role":{"id":1,"name":"Super Admin","is_system":true},
+#   "permissions":["products.view","products.create",…,"roles.assign_permissions"]}}
+
+# 3. When the access token expires (401 "token_expired"), exchange the refresh token.
+#    You get a NEW pair; the refresh token you sent is revoked (rotation).
+curl -s -X POST http://localhost:8080/api/v1/auth/refresh \
+  -H "Content-Type: application/json" -d '{"refresh_token":"eyJ…"}'
+# 200 {"data":{"access_token":"eyJ…(new)","refresh_token":"eyJ…(new)",…}}
+# Sending the same refresh token again → 401: each one works exactly once.
+
+# 4. Log out: revokes the refresh token. 204 (also if it was already revoked).
+curl -s -X POST http://localhost:8080/api/v1/auth/logout \
+  -H "Content-Type: application/json" -d '{"refresh_token":"eyJ…"}'
+```
+
+**401 and 403.** The `code` says what the client should do; the `message` is translated.
+
+| Status | `code` | When | Client reaction |
+|---|---|---|---|
+| 401 | `invalid_credentials` | wrong email or password, or the account is inactive (one answer for all three, so the endpoint can't be used to probe accounts) | show the message |
+| 401 | `token_expired` | the access token expired | call `/auth/refresh`, retry once |
+| 401 | `unauthorized` | no token, a malformed/forged token, a refresh token used as an access token, a revoked/expired/reused refresh token, or a user deactivated or deleted since login | go to the login screen |
+| 403 | `forbidden` | logged in, but the role lacks the permission (`"anda tidak punya izin products.delete"`) | hide or disable the action |
+
+Every 401 carries `WWW-Authenticate: Bearer realm="api"`.
+
+**Design notes.**
+
+- **Tokens.** Both are HS256 JWTs signed with `JWT_SECRET`. The claims are minimal: `uid`, `rid` (role id), `typ` (`access`/`refresh`), `exp`, `iat`, and a random `jti`. `typ` stops a 7-day refresh token from being accepted as an access token. Permissions are never in the token.
+- **Refresh tokens live in the database as a SHA-256 hash**, never in clear text. SHA-256 rather than bcrypt: the token is a signed JWT with 128 random bits, so there is nothing to brute-force, and a deterministic hash is what lets `/auth/refresh` find the row. A refresh token is honoured only if its signature is valid **and** its hash is in `refresh_tokens`, not revoked and not expired.
+- **Rotation under a row lock.** `/auth/refresh` locks the token row (`SELECT … FOR UPDATE`), revokes it and inserts the new one in one transaction. Five parallel refreshes with the same token give exactly one 200 and four 401s (`scripts/e2e.sh` checks this).
+- **Passwords** are bcrypt (cost 10), 8–72 bytes. bcrypt ignores everything after byte 72, so longer passwords are rejected rather than silently truncated. Login spends the same bcrypt time for an unknown email as for a wrong password.
+- **Refresh-token reuse detection.** Every refresh token works exactly once, so a *revoked* one presented again (rotated away, or logged out) means two parties hold it: the user and whoever copied it. The server can't tell which one is asking, so it **revokes every refresh token of that user**. That ends the thief's session (whatever it rotated to) and all of the user's own devices, and the user logs in again with their password.
+  - The reply is the same 401 (`unauthorized`, same message) as any other failed refresh, byte for byte, so the caller can't tell the reuse was noticed. The detection only shows in the server log: `WARN refresh token reuse detected; revoked every session of the user user_id=… sessions_revoked=…`.
+  - Only a revoked token counts. A forged, expired, unknown or wrong-type token is refused without touching the user's sessions, otherwise anyone could log a user out everywhere by sending garbage.
+  - Access tokens already issued are not revoked (they are not stored). They expire within `JWT_ACCESS_TTL`.
+  - **Client contract (for the Flutter app):** refresh one request at a time (single-flight), and never blindly retry a refresh whose response was lost. A retried refresh looks exactly like reuse and logs the user out on every device.
+- **Deactivating a user, deleting them, or changing their password revokes all their refresh tokens** in the same transaction.
+- **Logout doesn't kill the access token.** It stays valid until it expires (at most `JWT_ACCESS_TTL`), and the client discards it. The exception is a deactivated or deleted user: the permission check reads `users.is_active` on every request, so their live access token stops working immediately.
+
+### Permission checks are not cached
+
+`RequirePermission(key)` runs one query per request, joining `users → roles → role_permissions → permissions` by primary key and unique index. It reads the user's **current** role from `users.role_id`, not the role id in the token. So:
+
+- removing a permission from a role applies **on the next request**, even for a token issued earlier;
+- moving a user to another role applies on the next request;
+- deactivating or deleting a user blocks their next request (401).
+
+This is deliberate. For an access-control decision, being right on the next request is worth one indexed query. A cache would make every revocation take effect only after its TTL. If this ever needs optimising, that is a separate decision (see `service.Authorizer`).
+
+A role with `is_system = true` (Super Admin) passes every check without reading `role_permissions`.
+
+### Permissions
+
+The catalog is fixed in code (`internal/auth/permissions.go`) and synced into `permissions` by `cmd/migrate`. The API only arranges these keys into roles; it never creates new ones. `GET /api/v1/permissions` returns them with descriptions in the request's language.
+
+| Group | Permissions |
+|---|---|
+| `products` | `products.view`, `products.create`, `products.update`, `products.delete` |
+| `categories` | `categories.view`, `categories.create`, `categories.update`, `categories.delete` |
+| `inventory` | `inventory.view` (stock, movements, low stock), `inventory.update` (low-stock threshold), `inventory.record_movement` (IN/OUT/ADJUSTMENT) |
+| `customers` | `customers.view`, `customers.create`, `customers.update`, `customers.delete` |
+| `sales_orders` | `sales_orders.view`, `sales_orders.create`, `sales_orders.confirm` (deducts stock), `sales_orders.ship`, `sales_orders.cancel` |
+| `analytics` | `analytics.view` (summary, trend, top products, categories, low-stock count), `analytics.forecast`, `analytics.insights` |
+| `users` | `users.view`, `users.create`, `users.update` (includes role and `is_active`), `users.delete` |
+| `roles` | `roles.view` (also `GET /permissions`), `roles.create`, `roles.update` (name/description), `roles.delete`, `roles.assign_permissions` |
+
+32 permissions in total.
+
+### Roles
+
+| Role | Permissions |
+|---|---|
+| **Super Admin** (`is_system`) | all, by bypass. Can't be deleted, renamed or given a permission list |
+| **Staff** (seeded) | `products.view`, `categories.view`, `inventory.view`, `customers.view`, `sales_orders.view`, `sales_orders.create`, `sales_orders.confirm`, `sales_orders.ship`, `sales_orders.cancel`, `analytics.view`, `analytics.forecast`, `analytics.insights`. So: sees everything, takes and processes orders; can't delete anything, edit the catalogue or stock, or manage users and roles |
+
+**One role per user** is a deliberate simplification for this version. Multi-role would turn `users.role_id` into a join table and the permission check into a union over roles. The catalog, the middleware and the endpoints would stay the same.
+
+Managing roles (as a Super Admin):
+
+```bash
+# a role for the warehouse: stock only
+curl -s -X POST -H "$AUTH" -H "Content-Type: application/json" \
+  http://localhost:8080/api/v1/roles -d '{"name":"Gudang","description":"Staf gudang"}'
+# 201 {"data":{"id":3,"name":"Gudang","is_system":false,"permissions":[],…}}
+
+# set its permissions — REPLACES the list (send [] to clear it)
+curl -s -X PUT -H "$AUTH" -H "Content-Type: application/json" \
+  http://localhost:8080/api/v1/roles/3/permissions \
+  -d '{"permission_keys":["inventory.view","inventory.record_movement","products.view"]}'
+# 200 {"data":{"id":3,…,"permissions":["products.view","inventory.view","inventory.record_movement"]}}
+# An unknown key → 422 on "permission_keys[i]". Duplicates are ignored.
+
+# give a user that role
+curl -s -X POST -H "$AUTH" -H "Content-Type: application/json" \
+  http://localhost:8080/api/v1/users \
+  -d '{"email":"gudang@example.com","password":"rahasia123","name":"Budi Gudang","role_id":3}'
+```
+
+Rules the service enforces:
+
+| Rule | Response |
+|---|---|
+| The Super Admin role can't be deleted, renamed or given a permission list | 409 |
+| A role can't be deleted while any user has it, including soft-deleted users (they keep `role_id` as history) | 409 |
+| Nobody can deactivate, delete, or change the role of **their own** account | 409 |
+| At least one active Super Admin must remain. Enforced under a lock on every Super Admin row, so two admins demoting each other at once can't both succeed | 409 |
+| Only a Super Admin can grant the Super Admin role, or change or delete a Super Admin account | 403 |
+| Someone with `roles.assign_permissions` who is not a Super Admin can only grant permissions they hold themselves | 403 |
+| Roles created through the API are never system roles | — |
+
 ## Languages (`Accept-Language`)
 
 Every sentence this API sends back â€” validation messages, conflict and
@@ -159,11 +312,11 @@ from the ML service â€” is available in **Indonesian (`id`)** and **English
 (`en`)**.
 
 ```bash
-curl -i http://localhost:8080/api/v1/products/999999
+curl -H "$AUTH" -i http://localhost:8080/api/v1/products/999999
 # Content-Language: id
 # 404 {"error":{"code":"not_found","message":"produk 999999 tidak ditemukan"}}
 
-curl -i -H 'Accept-Language: en' http://localhost:8080/api/v1/products/999999
+curl -H "$AUTH" -i -H 'Accept-Language: en' http://localhost:8080/api/v1/products/999999
 # Content-Language: en
 # 404 {"error":{"code":"not_found","message":"product 999999 not found"}}
 ```
@@ -194,7 +347,7 @@ pass the resolved language on as `"lang"` in the request body, so the sentence
 in `summary` comes back in the same language as the rest of the response.
 
 ```bash
-curl -H 'Accept-Language: en' "http://localhost:8080/api/v1/analytics/insights?limit=1"
+curl -H "$AUTH" -H 'Accept-Language: en' "http://localhost:8080/api/v1/analytics/insights?limit=1"
 # {"data":{...,"products":[{"product_name":"Kopi Bubuk Robusta 200g","trend":"increasing",
 #  "change_percent":61.9,
 #  "summary":"Sales increased 61.9% over the last 4 weeks (102 units vs 63 units in the previous period)."}]}}
@@ -202,40 +355,64 @@ curl -H 'Accept-Language: en' "http://localhost:8080/api/v1/analytics/insights?l
 
 ## Endpoints
 
-| Method | Path | Body / query | Success |
-|---|---|---|---|
-| GET | `/health` | – | 200 / 503 |
-| POST | `/api/v1/products` | `{"sku","name","description","price","category_id"}` | 201 |
-| GET | `/api/v1/products` | `?page=1&page_size=20&search=kopi` | 200 + `meta` |
-| GET | `/api/v1/products/:id` | – | 200 |
-| PATCH | `/api/v1/products/:id` | any subset of create fields | 200 |
-| DELETE | `/api/v1/products/:id` | – | 204 (soft delete) |
-| POST | `/api/v1/categories` | `{"name","description"}` | 201 |
-| GET | `/api/v1/categories` | `?page=1&page_size=20&search=minum` | 200 + `meta` |
-| GET | `/api/v1/categories/:id` | – | 200 |
-| PATCH | `/api/v1/categories/:id` | any subset of create fields | 200 |
-| DELETE | `/api/v1/categories/:id` | – | 204 (soft delete), **409 while products use it** |
-| GET | `/api/v1/inventory/low-stock` | `?page=1&page_size=20` | 200 + `meta` |
-| GET | `/api/v1/inventory/:product_id` | – | 200 |
-| PATCH | `/api/v1/inventory/:product_id` | `{"low_stock_threshold"}` | 200 |
-| POST | `/api/v1/inventory/:product_id/movements` | `{"type","quantity","reason"}` | 201 |
-| GET | `/api/v1/inventory/:product_id/movements` | `?page=1&page_size=20` | 200 + `meta` |
-| POST | `/api/v1/customers` | `{"name","email","phone","address"}` | 201 |
-| GET | `/api/v1/customers` | `?page=1&page_size=20&search=budi` (name, email or phone) | 200 + `meta` |
-| GET | `/api/v1/customers/:id` | – | 200 |
-| PATCH | `/api/v1/customers/:id` | any subset of create fields | 200 |
-| DELETE | `/api/v1/customers/:id` | – | 204 (soft delete), **409 while it has orders that are not CANCELLED** |
-| POST | `/api/v1/sales-orders` | `{"customer_id","items":[{"product_id","quantity"}],"notes"}` | 201 (status `PENDING`) |
-| GET | `/api/v1/sales-orders` | `?page=1&page_size=20&status=PENDING&customer_id=3` | 200 + `meta` (with `customer`, without `items`) |
-| GET | `/api/v1/sales-orders/:id` | – | 200 (with `customer` and `items`) |
-| PATCH | `/api/v1/sales-orders/:id/status` | `{"status":"CONFIRMED"}` | 200 |
-| GET | `/api/v1/analytics/summary` | `?from=&to=` | 200 |
-| GET | `/api/v1/analytics/sales-trend` | `?from=&to=&granularity=daily\|weekly` | 200 |
-| GET | `/api/v1/analytics/top-products` | `?from=&to=&limit=10` | 200 |
-| GET | `/api/v1/analytics/category-breakdown` | `?from=&to=` | 200 |
-| GET | `/api/v1/analytics/low-stock-alert-count` | – | 200 |
-| GET | `/api/v1/analytics/forecast` | `?from=&to=&limit=10&horizon_days=7` | 200 |
-| GET | `/api/v1/analytics/insights` | `?from=&to=&limit=10` | 200 |
+This table is also the **endpoint → permission map**. "public" needs no token. "login" needs a valid access token but no permission. Anything else needs a token *and* the listed permission (a Super Admin always passes). The same table is asserted route by route in `internal/router/router_test.go`, and that test fails if a route is added without an entry.
+
+| Method | Path | Body / query | Success | Permission |
+|---|---|---|---|---|
+| GET | `/health` | – | 200 / 503 | public |
+| POST | `/api/v1/auth/login` | `{"email","password"}` | 200 (token pair + user) | public |
+| POST | `/api/v1/auth/refresh` | `{"refresh_token"}` | 200 (new pair; the old refresh token is revoked) | public |
+| POST | `/api/v1/auth/logout` | `{"refresh_token"}` | 204 | public |
+| GET | `/api/v1/auth/me` | – | 200 (user, role, permission keys) | login |
+| POST | `/api/v1/products` | `{"sku","name","description","price","category_id"}` | 201 | `products.create` |
+| GET | `/api/v1/products` | `?page=1&page_size=20&search=kopi` | 200 + `meta` | `products.view` |
+| GET | `/api/v1/products/:id` | – | 200 | `products.view` |
+| PATCH | `/api/v1/products/:id` | any subset of create fields | 200 | `products.update` |
+| DELETE | `/api/v1/products/:id` | – | 204 (soft delete) | `products.delete` |
+| POST | `/api/v1/categories` | `{"name","description"}` | 201 | `categories.create` |
+| GET | `/api/v1/categories` | `?page=1&page_size=20&search=minum` | 200 + `meta` | `categories.view` |
+| GET | `/api/v1/categories/:id` | – | 200 | `categories.view` |
+| PATCH | `/api/v1/categories/:id` | any subset of create fields | 200 | `categories.update` |
+| DELETE | `/api/v1/categories/:id` | – | 204 (soft delete), **409 while products use it** | `categories.delete` |
+| GET | `/api/v1/inventory/low-stock` | `?page=1&page_size=20` | 200 + `meta` | `inventory.view` |
+| GET | `/api/v1/inventory/:product_id` | – | 200 | `inventory.view` |
+| PATCH | `/api/v1/inventory/:product_id` | `{"low_stock_threshold"}` | 200 | `inventory.update` |
+| POST | `/api/v1/inventory/:product_id/movements` | `{"type","quantity","reason"}` | 201 | `inventory.record_movement` |
+| GET | `/api/v1/inventory/:product_id/movements` | `?page=1&page_size=20` | 200 + `meta` | `inventory.view` |
+| POST | `/api/v1/customers` | `{"name","email","phone","address"}` | 201 | `customers.create` |
+| GET | `/api/v1/customers` | `?page=1&page_size=20&search=budi` (name, email or phone) | 200 + `meta` | `customers.view` |
+| GET | `/api/v1/customers/:id` | – | 200 | `customers.view` |
+| PATCH | `/api/v1/customers/:id` | any subset of create fields | 200 | `customers.update` |
+| DELETE | `/api/v1/customers/:id` | – | 204 (soft delete), **409 while it has orders that are not CANCELLED** | `customers.delete` |
+| POST | `/api/v1/sales-orders` | `{"customer_id","items":[{"product_id","quantity"}],"notes"}` | 201 (status `PENDING`) | `sales_orders.create` |
+| GET | `/api/v1/sales-orders` | `?page=1&page_size=20&status=PENDING&customer_id=3` | 200 + `meta` (with `customer`, without `items`) | `sales_orders.view` |
+| GET | `/api/v1/sales-orders/:id` | – | 200 (with `customer` and `items`) | `sales_orders.view` |
+| PATCH | `/api/v1/sales-orders/:id/status` | `{"status":"CONFIRMED"}` | 200 | by target status: `CONFIRMED` → `sales_orders.confirm`, `SHIPPED` → `sales_orders.ship`, `CANCELLED` → `sales_orders.cancel`; any other value → any one of the three (the handler then rejects it) |
+| GET | `/api/v1/analytics/summary` | `?from=&to=` | 200 | `analytics.view` |
+| GET | `/api/v1/analytics/sales-trend` | `?from=&to=&granularity=daily\|weekly` | 200 | `analytics.view` |
+| GET | `/api/v1/analytics/top-products` | `?from=&to=&limit=10` | 200 | `analytics.view` |
+| GET | `/api/v1/analytics/category-breakdown` | `?from=&to=` | 200 | `analytics.view` |
+| GET | `/api/v1/analytics/low-stock-alert-count` | – | 200 | `analytics.view` |
+| GET | `/api/v1/analytics/forecast` | `?from=&to=&limit=10&horizon_days=7` | 200 | `analytics.forecast` |
+| GET | `/api/v1/analytics/insights` | `?from=&to=&limit=10` | 200 | `analytics.insights` |
+| POST | `/api/v1/users` | `{"email","password","name","role_id","is_active"}` (`is_active` defaults to true) | 201 | `users.create` |
+| GET | `/api/v1/users` | `?page=1&page_size=20&search=budi&role_id=2` (name or email) | 200 + `meta` (with `role`) | `users.view` |
+| GET | `/api/v1/users/:id` | – | 200 | `users.view` |
+| PATCH | `/api/v1/users/:id` | any subset of `{"email","password","name","role_id","is_active"}` | 200 | `users.update` |
+| DELETE | `/api/v1/users/:id` | – | 204 (soft delete + deactivate + revoke sessions), **409 for yourself** | `users.delete` |
+| GET | `/api/v1/roles` | `?page=1&page_size=20&search=staff` | 200 + `meta` (with `permissions`) | `roles.view` |
+| GET | `/api/v1/roles/:id` | – | 200 (with `permissions`) | `roles.view` |
+| POST | `/api/v1/roles` | `{"name","description"}` | 201 | `roles.create` |
+| PATCH | `/api/v1/roles/:id` | `{"name","description"}` | 200 | `roles.update` |
+| DELETE | `/api/v1/roles/:id` | – | 204, **409 for the system role or while users have it** | `roles.delete` |
+| PUT | `/api/v1/roles/:id/permissions` | `{"permission_keys":[...]}` (replaces the list) | 200 | `roles.assign_permissions` |
+| GET | `/api/v1/permissions` | – | 200 (the whole catalog) | `roles.view` |
+
+The status route checks the permission in `RequireStatusPermission`, which reads `status` from the body before the handler runs. The route is one endpoint for three actions, and "may confirm" (takes stock) is not "may cancel".
+
+A user is never returned with its `password_hash`: the field is `json:"-"`.
+
+**Every example below needs a token.** Log in first (see [Authentication](#authentication--access-control)) and add `-H "$AUTH"` with `AUTH="Authorization: Bearer <access_token>"`.
 
 `price` is an integer in whole Rupiah. Responses use `{"data": ...}`; errors use
 `{"error": {"code", "message", "details"}}` with status 400 (bad JSON/ID/query), 404, 409 (duplicate SKU/category name/email, category or customer in use), 422 (validation, invalid status transition, insufficient stock), 500.
@@ -314,49 +491,49 @@ Analytics (read-only; there is no analytics table):
 - `low-stock-alert-count` calls the same inventory service as `GET /inventory/low-stock`, so the number can't drift from the list.
 
 ```bash
-curl "http://localhost:8080/api/v1/analytics/summary?from=2026-09-01&to=2026-09-20"
+curl -H "$AUTH" "http://localhost:8080/api/v1/analytics/summary?from=2026-09-01&to=2026-09-20"
 # {"data":{"range":{"from":"2026-09-01","to":"2026-09-20"},
 #          "total_revenue":673000,"total_orders":10,"total_items_sold":30,"average_order_value":67300}}
 
-curl "http://localhost:8080/api/v1/analytics/sales-trend?from=2026-09-18&to=2026-09-20&granularity=daily"
+curl -H "$AUTH" "http://localhost:8080/api/v1/analytics/sales-trend?from=2026-09-18&to=2026-09-20&granularity=daily"
 # {"data":{"range":{"from":"2026-09-18","to":"2026-09-20"},"granularity":"daily","points":[
 #   {"period_start":"2026-09-18","period_end":"2026-09-18","revenue":0,"orders":0},
 #   {"period_start":"2026-09-19","period_end":"2026-09-19","revenue":0,"orders":0},
 #   {"period_start":"2026-09-20","period_end":"2026-09-20","revenue":928000,"orders":13}]}}
 # weekly buckets start on Monday: {"period_start":"2026-09-14","period_end":"2026-09-20",...}
 
-curl "http://localhost:8080/api/v1/analytics/top-products?from=2026-09-20&to=2026-09-20&limit=3"
+curl -H "$AUTH" "http://localhost:8080/api/v1/analytics/top-products?from=2026-09-20&to=2026-09-20&limit=3"
 # {"data":{"range":{...},"products":[
 #   {"product_id":17,"sku":"KOPI-001","name":"Kopi Arabica","quantity_sold":3,"revenue":135000}]}}
 
-curl "http://localhost:8080/api/v1/analytics/category-breakdown?from=2026-09-20&to=2026-09-20"
+curl -H "$AUTH" "http://localhost:8080/api/v1/analytics/category-breakdown?from=2026-09-20&to=2026-09-20"
 # {"data":{"range":{...},"categories":[
 #   {"category_id":null,"category_name":"Tanpa Kategori","quantity_sold":34,"revenue":778000},
 #   {"category_id":8,"category_name":"Minuman","quantity_sold":2,"revenue":90000}]}}
 
-curl http://localhost:8080/api/v1/analytics/low-stock-alert-count
+curl -H "$AUTH" http://localhost:8080/api/v1/analytics/low-stock-alert-count
 # {"data":{"count":11}}
 
 # Forecasting — needs ../ml-service running (uvicorn app.main:app --port 8000)
-curl "http://localhost:8080/api/v1/analytics/forecast?limit=2&horizon_days=3"
+curl -H "$AUTH" "http://localhost:8080/api/v1/analytics/forecast?limit=2&horizon_days=3"
 # {"data":{"range":{"from":"2026-08-22","to":"2026-09-20"},"horizon_days":3,"forecast_available":true,"products":[
 #   {"product_id":17,"product_name":"Kopi Arabica","sku":"KOPI-001","method":"moving_average",
 #    "forecast":[{"date":"2026-09-21","predicted_quantity":0.43},
 #                {"date":"2026-09-22","predicted_quantity":0.43},
 #                {"date":"2026-09-23","predicted_quantity":0.43}]}]}}
 
-curl "http://localhost:8080/api/v1/analytics/insights?limit=2"
+curl -H "$AUTH" "http://localhost:8080/api/v1/analytics/insights?limit=2"
 # {"data":{"range":{...},"insights_available":true,"products":[
 #   {"product_id":17,"product_name":"Kopi Arabica","sku":"KOPI-001","trend":"increasing","change_percent":32,
 #    "summary":"Penjualan naik 32,0% dalam 4 minggu terakhir (1848 unit vs 1400 unit periode sebelumnya)."}]}}
 
 # Same call with the ML service stopped: still 200, degraded per product.
-curl "http://localhost:8080/api/v1/analytics/forecast?limit=2"
+curl -H "$AUTH" "http://localhost:8080/api/v1/analytics/forecast?limit=2"
 # {"data":{"range":{...},"horizon_days":7,"forecast_available":false,"products":[
 #   {"product_id":17,"product_name":"Kopi Arabica","sku":"KOPI-001",
 #    "error":"layanan forecasting sedang tidak tersedia"}]}}
 
-curl "http://localhost:8080/api/v1/analytics/summary?from=2020-01-01&to=2026-09-20"
+curl -H "$AUTH" "http://localhost:8080/api/v1/analytics/summary?from=2020-01-01&to=2026-09-20"
 # 422 {"error":{"code":"validation_failed","message":"request validation failed",
 #      "details":[{"field":"to","message":"range must be at most 366 days"}]}}
 ```
@@ -379,29 +556,29 @@ Forecasting and insights (`/analytics/forecast`, `/analytics/insights`) — **ne
 Examples:
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/categories \
+curl -H "$AUTH" -X POST http://localhost:8080/api/v1/categories \
   -H "Content-Type: application/json" \
   -d '{"name":"Minuman","description":"Kopi, teh"}'
 
-curl -X POST http://localhost:8080/api/v1/products \
+curl -H "$AUTH" -X POST http://localhost:8080/api/v1/products \
   -H "Content-Type: application/json" \
   -d '{"sku":"KOPI-001","name":"Kopi Arabica 250g","price":45000,"category_id":1}'
 
-curl -X POST http://localhost:8080/api/v1/inventory/1/movements \
+curl -H "$AUTH" -X POST http://localhost:8080/api/v1/inventory/1/movements \
   -H "Content-Type: application/json" \
   -d '{"type":"IN","quantity":50,"reason":"restock"}'
 
-curl http://localhost:8080/api/v1/inventory/low-stock
+curl -H "$AUTH" http://localhost:8080/api/v1/inventory/low-stock
 
-curl -X POST http://localhost:8080/api/v1/customers \
+curl -H "$AUTH" -X POST http://localhost:8080/api/v1/customers \
   -H "Content-Type: application/json" \
   -d '{"name":"Budi Santoso","email":"budi@example.com","phone":"+62 812-3456-7890"}'
 
-curl -X POST http://localhost:8080/api/v1/sales-orders \
+curl -H "$AUTH" -X POST http://localhost:8080/api/v1/sales-orders \
   -H "Content-Type: application/json" \
   -d '{"customer_id":1,"items":[{"product_id":1,"quantity":3}],"notes":"kirim sore"}'
 
-curl -X PATCH http://localhost:8080/api/v1/sales-orders/1/status \
+curl -H "$AUTH" -X PATCH http://localhost:8080/api/v1/sales-orders/1/status \
   -H "Content-Type: application/json" \
   -d '{"status":"CONFIRMED"}'
 ```
@@ -417,15 +594,25 @@ go test -run 'TestCustomerService|TestSalesOrderService' ./internal/service -v
 go test -run TestAnalyticsService ./internal/service -v
 go test -run 'TestForecast|TestInsights' ./internal/service -v   # ML integration, with a fake client
 go test ./internal/client -v                                     # the ML HTTP client (httptest)
+go test ./internal/auth -v                                       # JWT issue/parse/expiry/tampering, bcrypt, the catalog
+go test -run 'TestAuthService|TestUserService|TestRoleService' ./internal/service -v
+go test ./internal/handler -run 'TestAuthenticate|TestRequire' -v  # the middleware
+go test ./internal/router -v                                     # every route → its permission
 ```
 
-Smoke test against a real API, which needs Postgres, migrations and `go run ./cmd/api`. It needs bash and curl; on Windows, use Git Bash:
+Smoke test against a real API. It needs Postgres, migrations, the seeded accounts and `go run ./cmd/api`, plus bash and curl (on Windows, use Git Bash):
 
 ```bash
-bash scripts/e2e.sh          # exit 1 on any failure
+go run ./cmd/seed --auth-only    # once: roles + the Super Admin the script logs in as
+bash scripts/e2e.sh              # exit 1 on any failure
+ADMIN_EMAIL=... ADMIN_PASSWORD=... bash scripts/e2e.sh   # if you changed the admin credentials
 ```
 
-The script covers:
+The script logs in as the Super Admin first and sends that token on every request. It covers:
+- auth: 401 without or with a garbage token, wrong password vs. unknown email (same answer), refresh rotation (the old refresh token is single-use), logout then refresh (401), access and refresh tokens not interchangeable, and 5 parallel refreshes with one token (exactly one wins)
+- reuse detection, with a dedicated user and two sessions (phone, laptop): (a) the phone's refresh token works once, and its rotated successor works too (normal use never trips detection); (b) the phone's first token sent again gets a 401 that is byte-for-byte the answer to an ordinary failed refresh, **and** afterwards the laptop's refresh token and the phone's latest token are both refused, because every session of that user was revoked. The user can then log in again and refresh normally. Earlier sections trip the detection too (reusing a rotated or logged-out token, the losers of the parallel refresh race); they expect 401 either way, and the server log shows each detection
+- RBAC: a Staff user gets 403 on deletes, product creation and user/role management, but may create and confirm orders; a custom role whose permission list is replaced mid-session applies on the **same access token** at once (proof that nothing is cached); the Super Admin role can't be deleted, renamed or re-permissioned; nobody can deactivate, delete or re-role themselves; a deactivated user's live token and refresh token stop working immediately
+- guardrails: a user manager (all `users.*`, not a Super Admin) can create Staff users but gets 403 when creating or promoting a Super Admin, or when changing, deactivating or deleting one, and 409 when promoting themselves. A role manager (holds `roles.assign_permissions`) can grant what it holds, but gets 403 for anything else, on another role or its own, and the role is unchanged afterwards. A role whose only user is soft-deleted still can't be deleted. Two Super Admins demote each other in parallel for 5 rounds, and each round must end with exactly one winner and one Super Admin. At the HTTP level the loser is almost always stopped by its own permission check (403) before reaching the lock; the lock itself is proven by the `Guardrail` integration test below
 - Category, Product↔Category and Inventory, including 20 concurrent OUTs
 - Customers
 - the full sales order flow: create → confirm (stock down) → cancel (stock back) → ship, invalid transitions, and a rollback when one item is short
@@ -440,12 +627,33 @@ The analytics SQL has its own tests against a real Postgres, because "only CONFI
 
 ```bash
 TEST_DATABASE_URL="postgres://inventory:...@localhost:5432/inventory_intel?sslmode=disable" \
-  go test ./internal/repository -run Analytics -v
+  go test ./internal/repository -run 'Analytics|Guardrail' -v
 ```
 
+The `Guardrail` tests cover the two access-control rules that live in the database, where a mock proves nothing. They need two connections that really commit, so instead of a rolled-back transaction each test creates a throwaway schema (`itest_guardrail_<nanos>`), migrates it, and drops it at the end.
+
+- `TwoSuperAdminsDemotingEachOther`: A's demotion of B is held open inside its transaction. B's demotion of A must then **wait** on the lock, and after A commits it must count one Super Admin (not two) and be refused. Removing `FOR UPDATE OF u` from `lockUser` makes this test fail.
+- `SuperAdminCountIgnoresInactiveAndDeleted`: inactive and soft-deleted Super Admins don't count toward "at least one remains".
+- `RoleOfSoftDeletedUserCantBeDeleted`: a soft-deleted user still counts in `CountUsers`, and the foreign key refuses the delete even without the service check.
+- `RevokeAllForUser` (reuse detection): revokes exactly the victim's live tokens and reports how many. An already revoked token keeps its original `revoked_at`, and another user's session is untouched.
+
 Unit tests need no database. The service layer is tested with testify mocks of the repository interfaces.
+- Refresh-token rotation is tested against an in-memory store with the repository's semantics (`fakeSessions`), so the tests check behaviour: after a refresh, the old token is refused and the new one works exactly once.
+- Reuse detection (`TestAuthService_RefreshReuseRevokesEverySession`): two sessions of one user plus another user's session. The first use succeeds. Reusing the token returns an error identical to an ordinary failed refresh. Both other sessions of that user (including the rotated one) are then refused, the other user's session survives, and a fresh login works. `TestAuthService_RefreshFailuresThatAreNotReuse` checks that garbage, an access token, an unknown token and an expired token do **not** revoke anything. Replacing the revoke-all call with a no-op makes the first test fail.
+- The user mock's `Mutate`/`Delete` run the service's mutation on a copy with a given Super Admin count, and record whether the sessions were revoked.
+- The route→permission contract is a table in `internal/router/router_test.go`. It builds the real router with an authorizer that refuses everything and records what it was asked, then checks 401 without a token and the exact permission key for every route. A route with no entry fails the test.
 - The inventory mock's `Mutate` runs the service's mutation against an in-memory row, the same way the real repository does inside its transaction.
 - The sales order tests use an in-memory store whose `InTx` runs the callback on a copy and commits it only on success. That lets the tests check that a failed confirm (short stock, or a write error half way) leaves stock, movements and status untouched.
+
+## Auth follow-ups
+
+Items deferred when authentication was added, and where they stand.
+
+| Item | Status |
+|---|---|
+| Refresh-token reuse detection (a revoked token used again revokes every session of the user) | ✅ **Done**: see [Design notes](#authentication--access-control) and the tests above |
+| Periodic cleanup of expired/revoked rows in `refresh_tokens` (they accumulate; harmless but unbounded) | ⏳ open |
+| Change-own-password endpoint (today only `PATCH /users/:id` with `users.update`) | ⏳ open |
 
 ## Adding a new resource
 
@@ -456,5 +664,6 @@ Category is the simplest copy; it follows the Product slice exactly.
 2. `internal/repository/category_repository.go`: interface + GORM implementation, use `translate(err)`.
 3. `internal/service/category_service.go`: validation + `mapRepoError`; table-driven tests with a mock repo.
 4. `internal/handler/category_handler.go`: bind JSON, call service, `writeError` on failure.
-5. Register routes in `internal/router/router.go` and wire dependencies in `cmd/api/main.go`.
-6. `go run ./cmd/migrate`.
+5. Permissions: add `<resource>.view/create/...` to `auth.Catalog` (`internal/auth/permissions.go`) and a `permission.<key>` description in both languages to `internal/i18n/catalog.go`.
+6. Register routes in `internal/router/router.go` inside the authenticated group, each with `can(auth.<Permission>)`, and add them to the table in `internal/router/router_test.go` (the test fails until you do). Wire dependencies in `cmd/api/main.go`.
+7. `go run ./cmd/migrate` (creates the table and syncs the new permission keys). Grant the keys to the roles that need them with `PUT /api/v1/roles/:id/permissions`; a Super Admin has them automatically.
