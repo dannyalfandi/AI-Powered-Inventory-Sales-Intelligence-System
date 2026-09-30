@@ -10,6 +10,7 @@ import 'package:inventory_intel/features/customer/presentation/screens/customer_
 import 'package:inventory_intel/features/customer/presentation/screens/customer_list_screen.dart';
 import 'package:mocktail/mocktail.dart';
 
+import '../../../helpers/auth_fixtures.dart';
 import '../../../helpers/customer_fixtures.dart';
 import '../../../helpers/l10n_harness.dart';
 
@@ -120,7 +121,7 @@ void main() {
 
   group('screens', () {
     Widget app(Widget home) => ProviderScope(
-          overrides: [customerRepositoryProvider.overrideWithValue(repo)],
+          overrides: [customerRepositoryProvider.overrideWithValue(repo), signedInAs(superAdmin)],
           retry: (_, _) => null,
           child: localizedApp(home: home),
         );

@@ -7,6 +7,13 @@ abstract final class ApiConstants {
   static const connectTimeout = Duration(seconds: 10);
   static const receiveTimeout = Duration(seconds: 15);
 
+  static const authLoginPath = '/api/v1/auth/login';
+  static const authRefreshPath = '/api/v1/auth/refresh';
+  static const authLogoutPath = '/api/v1/auth/logout';
+  static const authMePath = '/api/v1/auth/me';
+  static const rolesPath = '/api/v1/roles';
+  static const permissionsPath = '/api/v1/permissions';
+  static const usersPath = '/api/v1/users';
   static const productsPath = '/api/v1/products';
   static const categoriesPath = '/api/v1/categories';
   static const inventoryPath = '/api/v1/inventory';

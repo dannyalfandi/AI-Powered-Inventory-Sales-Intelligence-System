@@ -1,6 +1,11 @@
+import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../../features/auth/domain/entities/auth_user.dart';
+import '../../features/auth/presentation/providers/auth_controller.dart';
+import '../../features/auth/presentation/screens/login_screen.dart';
+import '../../features/auth/presentation/screens/splash_screen.dart';
 import '../../features/category/presentation/screens/category_form_screen.dart';
 import '../../features/category/presentation/screens/category_list_screen.dart';
 import '../../features/customer/presentation/screens/customer_form_screen.dart';
@@ -14,12 +19,20 @@ import '../../features/settings/presentation/screens/settings_screen.dart';
 import '../../features/sales_order/presentation/screens/sales_order_detail_screen.dart';
 import '../../features/sales_order/presentation/screens/sales_order_form_screen.dart';
 import '../../features/sales_order/presentation/screens/sales_order_list_screen.dart';
+import '../../features/role_management/presentation/screens/role_form_screen.dart';
+import '../../features/role_management/presentation/screens/role_list_screen.dart';
+import '../../features/role_management/presentation/screens/role_permission_editor_screen.dart';
+import '../../features/user_management/presentation/screens/user_form_screen.dart';
+import '../../features/user_management/presentation/screens/user_list_screen.dart';
+import '../auth/permissions.dart';
 import 'home_shell.dart';
 
 part 'app_router.g.dart';
 
 /// Route names — navigate with `context.pushNamed(AppRoutes.x)`, never raw paths.
 abstract final class AppRoutes {
+  static const login = 'login';
+  static const splash = 'splash';
   static const dashboard = 'dashboard';
   static const settings = 'settings';
   static const products = 'products';
@@ -36,6 +49,13 @@ abstract final class AppRoutes {
   static const salesOrders = 'sales-orders';
   static const salesOrderCreate = 'sales-order-create';
   static const salesOrderDetail = 'sales-order-detail';
+  static const roles = 'roles';
+  static const roleCreate = 'role-create';
+  static const roleEdit = 'role-edit';
+  static const rolePermissions = 'role-permissions';
+  static const users = 'users';
+  static const userCreate = 'user-create';
+  static const userEdit = 'user-edit';
 }
 
 /// Parses a positive integer path parameter, or returns null.
@@ -44,11 +64,49 @@ int? _positiveId(GoRouterState state) {
   return id == null || id <= 0 ? null : id;
 }
 
+/// The auth guard, as a pure function of the auth state and the location.
+///
+/// - While the stored session is being checked at start-up: /splash.
+/// - Nobody logged in: /login, from anywhere. At /login already: stay — no
+///   redirect loop, however many requests report the session ended.
+/// - Logged in but on /login or /splash: the Dashboard.
+/// - Otherwise: no redirect.
+String? authRedirect(AsyncValue<AuthUser?> auth, String location) {
+  const login = '/login';
+  const splash = '/splash';
+  if (auth.isLoading && !auth.hasValue) {
+    return location == splash ? null : splash;
+  }
+  final loggedIn = auth.value != null;
+  if (!loggedIn) {
+    return location == login ? null : login;
+  }
+  if (location == login || location == splash) return '/';
+  return null;
+}
+
 @Riverpod(keepAlive: true)
 GoRouter appRouter(Ref ref) {
+  // The router is built once (keepAlive) and never rebuilt, so it doesn't
+  // lose its navigation stack; it re-runs the guard whenever the auth state
+  // changes — login, logout, or a session ended by any request.
+  final auth = ValueNotifier<AsyncValue<AuthUser?>>(ref.read(authControllerProvider));
+  ref.listen(authControllerProvider, (_, next) => auth.value = next);
+  ref.onDispose(auth.dispose);
+
+  /// Route-level permission gate: null (allowed) if the current user holds
+  /// any of [anyOf], else back to Settings — where the entry points live.
+  String? requireAny(List<String> anyOf) =>
+      (ref.read(currentUserProvider)?.canAny(anyOf) ?? false) ? null : '/settings';
+
   final router = GoRouter(
     initialLocation: '/',
+    refreshListenable: auth,
+    redirect: (context, state) => authRedirect(auth.value, state.matchedLocation),
     routes: [
+      GoRoute(path: '/login', name: AppRoutes.login, builder: (context, state) => const LoginScreen()),
+      GoRoute(path: '/splash', name: AppRoutes.splash, builder: (context, state) => const SplashScreen()),
+
       // Tabs (bottom navigation). Each branch keeps its own stack.
       StatefulShellRoute.indexedStack(
         builder: (context, state, shell) => HomeShell(shell: shell),
@@ -103,6 +161,58 @@ GoRouter appRouter(Ref ref) {
         name: AppRoutes.settings,
         builder: (context, state) => const SettingsScreen(),
       ),
+
+      // Administration, reached from Settings. Each route also checks the
+      // permission itself, so a deep link can't open a screen whose entry
+      // point is hidden: without it, back to Settings.
+      GoRoute(
+        path: '/admin/roles',
+        name: AppRoutes.roles,
+        redirect: (context, state) => requireAny(Permissions.roleManagement),
+        builder: (context, state) => const RoleListScreen(),
+      ),
+      // `roles/new` must come before `roles/:id`.
+      GoRoute(
+        path: '/admin/roles/new',
+        name: AppRoutes.roleCreate,
+        redirect: (context, state) => requireAny(const [Permissions.rolesCreate]),
+        builder: (context, state) => const RoleFormScreen(),
+      ),
+      GoRoute(
+        path: '/admin/roles/:id',
+        name: AppRoutes.roleEdit,
+        redirect: (context, state) =>
+            _positiveId(state) == null ? '/admin/roles' : requireAny(Permissions.roleManagement),
+        builder: (context, state) => RoleFormScreen(roleId: _positiveId(state)),
+        routes: [
+          GoRoute(
+            path: 'permissions',
+            name: AppRoutes.rolePermissions,
+            redirect: (context, state) => requireAny(const [Permissions.rolesAssignPermissions]),
+            builder: (context, state) => RolePermissionEditorScreen(roleId: _positiveId(state)!),
+          ),
+        ],
+      ),
+      GoRoute(
+        path: '/admin/users',
+        name: AppRoutes.users,
+        redirect: (context, state) => requireAny(Permissions.userManagement),
+        builder: (context, state) => const UserListScreen(),
+      ),
+      GoRoute(
+        path: '/admin/users/new',
+        name: AppRoutes.userCreate,
+        redirect: (context, state) => requireAny(const [Permissions.usersCreate]),
+        builder: (context, state) => const UserFormScreen(),
+      ),
+      GoRoute(
+        path: '/admin/users/:id',
+        name: AppRoutes.userEdit,
+        redirect: (context, state) =>
+            _positiveId(state) == null ? '/admin/users' : requireAny(Permissions.userManagement),
+        builder: (context, state) => UserFormScreen(userId: _positiveId(state)),
+      ),
+
       // Low stock is reached from the low-stock card on the dashboard.
       GoRoute(path: '/low-stock', name: AppRoutes.lowStock, builder: (context, state) => const LowStockScreen()),
       // `products/new` must come before `products/:id`.

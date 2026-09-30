@@ -320,7 +320,13 @@ class AppLocalizationsId extends AppLocalizations {
   String get validationPriceTooLarge => 'Harga terlalu besar';
 
   @override
+  String get validationEmailRequired => 'Email wajib diisi';
+
+  @override
   String get validationEmailInvalid => 'Format email tidak valid';
+
+  @override
+  String get validationPasswordRequired => 'Kata sandi wajib diisi';
 
   @override
   String validationEmailTooLong(int max) {
@@ -1054,5 +1060,332 @@ class AppLocalizationsId extends AppLocalizations {
   @override
   String trendDownPercent(int percent) {
     return 'Turun $percent%';
+  }
+
+  @override
+  String get loginTitle => 'Masuk';
+
+  @override
+  String get loginSubtitle => 'Gunakan akun yang diberikan administrator kamu.';
+
+  @override
+  String get loginEmail => 'Email';
+
+  @override
+  String get loginPassword => 'Kata sandi';
+
+  @override
+  String get loginSubmit => 'Masuk';
+
+  @override
+  String get loginShowPassword => 'Tampilkan kata sandi';
+
+  @override
+  String get loginHidePassword => 'Sembunyikan kata sandi';
+
+  @override
+  String get loginInvalidCredentials =>
+      'Email atau kata sandi salah. Periksa keduanya lalu coba lagi.';
+
+  @override
+  String loginFailed(String message) {
+    return 'Gagal masuk: $message';
+  }
+
+  @override
+  String get splashCheckingSession => 'Memeriksa sesi…';
+
+  @override
+  String get settingsAccountSection => 'Akun';
+
+  @override
+  String settingsAccountRole(String role) {
+    return 'Role: $role';
+  }
+
+  @override
+  String get settingsLogout => 'Keluar';
+
+  @override
+  String validationPasswordTooShort(int min) {
+    return 'Kata sandi minimal $min karakter';
+  }
+
+  @override
+  String validationPasswordTooLong(int max) {
+    return 'Kata sandi maksimal $max byte';
+  }
+
+  @override
+  String get validationRoleRequired => 'Pilih role';
+
+  @override
+  String get settingsAdminSection => 'Administrasi';
+
+  @override
+  String get settingsAdminRoles => 'Role & izin';
+
+  @override
+  String get settingsAdminRolesSubtitle => 'Atur siapa boleh melakukan apa';
+
+  @override
+  String get settingsAdminUsers => 'Pengguna';
+
+  @override
+  String get settingsAdminUsersSubtitle => 'Akun, role, dan aksesnya';
+
+  @override
+  String get rolesTitle => 'Role & izin';
+
+  @override
+  String get rolesAdd => 'Tambah role';
+
+  @override
+  String get rolesEmpty => 'Belum ada role.';
+
+  @override
+  String get roleSystemBadge => 'Sistem';
+
+  @override
+  String rolePermissionCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count izin',
+      zero: 'Belum ada izin',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get roleAllPermissions => 'Semua izin';
+
+  @override
+  String roleUserCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count pengguna',
+      zero: 'Belum ada pengguna',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get roleNew => 'Role baru';
+
+  @override
+  String get roleEdit => 'Role';
+
+  @override
+  String get roleFieldName => 'Nama';
+
+  @override
+  String get roleFieldDescription => 'Deskripsi (opsional)';
+
+  @override
+  String get roleSystemNote =>
+      'Ini role sistem. Role ini selalu punya semua izin, dan tidak bisa diganti nama, dihapus, atau diatur izinnya.';
+
+  @override
+  String roleCreated(String name) {
+    return 'Role \"$name\" dibuat';
+  }
+
+  @override
+  String get roleUpdated => 'Role disimpan';
+
+  @override
+  String roleSaveFailed(String message) {
+    return 'Gagal menyimpan role: $message';
+  }
+
+  @override
+  String get rolePermissionsSection => 'Izin';
+
+  @override
+  String get roleEditPermissions => 'Atur izin';
+
+  @override
+  String get roleNoPermissionsYet => 'Role ini belum punya izin.';
+
+  @override
+  String get roleDeleteConfirmTitle => 'Hapus role?';
+
+  @override
+  String roleDeleteConfirmBody(String name) {
+    return 'Role \"$name\" akan dihapus.';
+  }
+
+  @override
+  String roleDeleted(String name) {
+    return 'Role \"$name\" dihapus';
+  }
+
+  @override
+  String get roleDeleteBlockedTitle => 'Role tidak bisa dihapus';
+
+  @override
+  String roleDeleteFailed(String message) {
+    return 'Gagal menghapus role: $message';
+  }
+
+  @override
+  String permissionEditorTitle(String role) {
+    return 'Izin · $role';
+  }
+
+  @override
+  String get permissionEditorSave => 'Simpan izin';
+
+  @override
+  String get permissionEditorSaved => 'Izin disimpan';
+
+  @override
+  String permissionEditorSelected(int count, int total) {
+    return '$count dari $total dipilih';
+  }
+
+  @override
+  String get permissionEditorNotHeld =>
+      'Izin yang abu-abu tidak kamu punya sendiri, jadi tidak bisa kamu berikan.';
+
+  @override
+  String permissionEditorSaveFailed(String message) {
+    return 'Gagal menyimpan izin: $message';
+  }
+
+  @override
+  String get permissionGroupProducts => 'Produk';
+
+  @override
+  String get permissionGroupCategories => 'Kategori';
+
+  @override
+  String get permissionGroupInventory => 'Stok';
+
+  @override
+  String get permissionGroupCustomers => 'Pelanggan';
+
+  @override
+  String get permissionGroupSalesOrders => 'Pesanan';
+
+  @override
+  String get permissionGroupAnalytics => 'Analitik';
+
+  @override
+  String get permissionGroupUsers => 'Pengguna';
+
+  @override
+  String get permissionGroupRoles => 'Role';
+
+  @override
+  String get usersTitle => 'Pengguna';
+
+  @override
+  String get usersAdd => 'Tambah pengguna';
+
+  @override
+  String get usersSearchHint => 'Cari nama atau email';
+
+  @override
+  String get usersEmpty => 'Belum ada pengguna.';
+
+  @override
+  String usersEmptyForSearch(String query) {
+    return 'Tidak ada pengguna yang cocok dengan \"$query\"';
+  }
+
+  @override
+  String usersCount(int count) {
+    return '$count pengguna';
+  }
+
+  @override
+  String get userActive => 'Aktif';
+
+  @override
+  String get userInactive => 'Nonaktif';
+
+  @override
+  String get userYou => 'Kamu';
+
+  @override
+  String get userNew => 'Pengguna baru';
+
+  @override
+  String get userEdit => 'Pengguna';
+
+  @override
+  String get userFieldName => 'Nama';
+
+  @override
+  String get userFieldEmail => 'Email';
+
+  @override
+  String get userFieldPassword => 'Kata sandi';
+
+  @override
+  String get userFieldNewPassword => 'Kata sandi baru (opsional)';
+
+  @override
+  String get userFieldNewPasswordHelper =>
+      'Kosongkan untuk tetap memakai yang lama. Kata sandi baru membuat pengguna keluar dari semua perangkat.';
+
+  @override
+  String get userFieldRole => 'Role';
+
+  @override
+  String get userFieldActive => 'Akun aktif';
+
+  @override
+  String get userFieldActiveHelper =>
+      'Pengguna nonaktif tidak bisa masuk, dan sesinya langsung berakhir.';
+
+  @override
+  String get userRolesLoadFailed => 'Role tidak bisa dimuat';
+
+  @override
+  String get userRolesReload => 'Muat ulang role';
+
+  @override
+  String get userSelfDeactivate =>
+      'Kamu tidak bisa menonaktifkan akun sendiri.';
+
+  @override
+  String get userSelfRole => 'Kamu tidak bisa mengubah role akun sendiri.';
+
+  @override
+  String get userSelfDelete => 'Kamu tidak bisa menghapus akun sendiri.';
+
+  @override
+  String userCreated(String name) {
+    return 'Pengguna \"$name\" dibuat';
+  }
+
+  @override
+  String get userUpdated => 'Pengguna disimpan';
+
+  @override
+  String userSaveFailed(String message) {
+    return 'Gagal menyimpan pengguna: $message';
+  }
+
+  @override
+  String get userDeleteConfirmTitle => 'Hapus pengguna?';
+
+  @override
+  String userDeleteConfirmBody(String name, String email) {
+    return '$name ($email) akan dihapus dan keluar dari semua perangkat.';
+  }
+
+  @override
+  String userDeleted(String name) {
+    return '$name dihapus';
+  }
+
+  @override
+  String userDeleteFailed(String message) {
+    return 'Gagal menghapus pengguna: $message';
   }
 }

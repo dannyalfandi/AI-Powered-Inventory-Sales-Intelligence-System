@@ -10,6 +10,7 @@ import 'package:inventory_intel/features/sales_order/presentation/providers/sale
 import 'package:inventory_intel/features/sales_order/presentation/screens/sales_order_detail_screen.dart';
 import 'package:mocktail/mocktail.dart';
 
+import '../../../../helpers/auth_fixtures.dart';
 import '../../../../helpers/inventory_fixtures.dart';
 import '../../../../helpers/sales_order_fixtures.dart';
 import '../../../../helpers/l10n_harness.dart';
@@ -32,6 +33,7 @@ void main() {
         overrides: [
           salesOrderRepositoryProvider.overrideWithValue(repo),
           inventoryRepositoryProvider.overrideWithValue(MockInventoryRepository()),
+          signedInAs(superAdmin),
         ],
         retry: (_, _) => null,
         child: localizedApp(home: const SalesOrderDetailScreen(orderId: 1)),

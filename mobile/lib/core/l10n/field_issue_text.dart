@@ -25,6 +25,7 @@ extension FieldIssueText on BuildContext {
       FieldIssueKind.priceTooLarge => l10n.validationPriceTooLarge,
       FieldIssueKind.categoryInvalid => l10n.validationCategoryInvalid,
       FieldIssueKind.orderTransitionInvalid => l10n.validationOrderTransition,
+      FieldIssueKind.emailRequired => l10n.validationEmailRequired,
       FieldIssueKind.emailInvalid => l10n.validationEmailInvalid,
       FieldIssueKind.emailTooLong => l10n.validationEmailTooLong(max),
       FieldIssueKind.phoneInvalid => l10n.validationPhoneInvalid(max),
@@ -42,6 +43,10 @@ extension FieldIssueText on BuildContext {
       FieldIssueKind.itemsRequired => l10n.validationItemsRequired,
       FieldIssueKind.itemsTooMany => l10n.validationItemsTooMany(max),
       FieldIssueKind.itemsDuplicateProduct => l10n.validationItemsDuplicate(issue.line ?? 0),
+      FieldIssueKind.passwordRequired => l10n.validationPasswordRequired,
+      FieldIssueKind.passwordTooShort => l10n.validationPasswordTooShort(max),
+      FieldIssueKind.passwordTooLong => l10n.validationPasswordTooLong(max),
+      FieldIssueKind.roleRequired => l10n.validationRoleRequired,
     };
   }
 }
