@@ -94,6 +94,8 @@ func translate(err error) error {
 		return ErrNotFound
 	case errors.Is(err, gorm.ErrDuplicatedKey):
 		return ErrDuplicateKey
+	case errors.Is(err, gorm.ErrForeignKeyViolated):
+		return ErrInUse
 	default:
 		return err
 	}

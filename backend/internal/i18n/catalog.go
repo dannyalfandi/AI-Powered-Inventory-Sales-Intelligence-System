@@ -61,7 +61,41 @@ const (
 	// --- forecasting (the Python ML service) ------------------------------
 	KeyMLUnavailable Key = "ml.unavailable"
 	KeyMLFailed      Key = "ml.failed"
+
+	// --- authentication & access control ----------------------------------
+	KeyMinChars          Key = "field.min_chars"
+	KeyMaxBytes          Key = "field.max_bytes"
+	KeyPermissionUnknown Key = "field.permission_unknown"
+
+	KeyAuthInvalidCredentials Key = "auth.invalid_credentials"
+	KeyAuthMissingToken       Key = "auth.missing_token"
+	KeyAuthInvalidToken       Key = "auth.invalid_token"
+	KeyAuthTokenExpired       Key = "auth.token_expired"
+	KeyAuthRefreshInvalid     Key = "auth.refresh_invalid"
+	KeyAuthRefreshExpired     Key = "auth.refresh_expired"
+	KeyAuthAccountDisabled    Key = "auth.account_disabled"
+	KeyAuthForbidden          Key = "auth.forbidden"
+
+	KeyUserEmailTaken               Key = "rule.user_email_taken"
+	KeyCannotDeactivateSelf         Key = "rule.cannot_deactivate_self"
+	KeyCannotChangeOwnRole          Key = "rule.cannot_change_own_role"
+	KeyLastSuperAdmin               Key = "rule.last_super_admin"
+	KeySystemRoleRequiresSuperAdmin Key = "rule.system_role_requires_super_admin"
+	KeySystemRoleLocked             Key = "rule.system_role_locked"
+	KeyRoleInUse                    Key = "rule.role_in_use"
+	KeyPermissionNotHeld            Key = "rule.permission_not_held"
+
+	KeyEntityUser     Key = "entity.user"
+	KeyEntityRole     Key = "entity.role"
+	KeyEntityRoleName Key = "entity.role_name"
 )
+
+// PermissionDescription is the key of a permission's description, e.g.
+// "permission.products.view". Every catalog permission has one; a test in
+// internal/auth makes sure of it.
+func PermissionDescription(permission string) Key {
+	return Key("permission." + permission)
+}
 
 // catalog holds every sentence this API can send. Indonesian is the default
 // language, so it is written first in each entry.
@@ -260,4 +294,132 @@ var catalog = map[Key]map[Lang]string{
 		ID: "forecast gagal dihitung untuk produk ini",
 		EN: "could not compute a forecast for this product",
 	},
+
+	// --- authentication & access control ----------------------------------
+	KeyMinChars: {
+		ID: "minimal %d karakter",
+		EN: "must be at least %d characters",
+	},
+	KeyMaxBytes: {
+		ID: "maksimal %d byte",
+		EN: "must be at most %d bytes",
+	},
+	KeyPermissionUnknown: {
+		ID: "izin %q tidak dikenal",
+		EN: "unknown permission %q",
+	},
+	// One sentence for an unknown email, a wrong password and a disabled
+	// account alike, so the login endpoint can't be used to probe accounts.
+	KeyAuthInvalidCredentials: {
+		ID: "email atau password salah",
+		EN: "invalid email or password",
+	},
+	KeyAuthMissingToken: {
+		ID: "wajib login: kirim header Authorization: Bearer <access_token>",
+		EN: "authentication required: send an Authorization: Bearer <access_token> header",
+	},
+	KeyAuthInvalidToken: {
+		ID: "token akses tidak valid",
+		EN: "invalid access token",
+	},
+	KeyAuthTokenExpired: {
+		ID: "token akses sudah kedaluwarsa, perbarui dengan refresh token",
+		EN: "access token has expired, renew it with the refresh token",
+	},
+	KeyAuthRefreshInvalid: {
+		ID: "refresh token tidak valid, sudah dipakai, atau sudah dicabut; silakan login ulang",
+		EN: "refresh token is invalid, already used or revoked; please log in again",
+	},
+	KeyAuthRefreshExpired: {
+		ID: "refresh token sudah kedaluwarsa, silakan login ulang",
+		EN: "refresh token has expired, please log in again",
+	},
+	KeyAuthAccountDisabled: {
+		ID: "akun ini tidak aktif atau sudah dihapus",
+		EN: "this account is inactive or has been deleted",
+	},
+	KeyAuthForbidden: {
+		ID: "anda tidak punya izin %s",
+		EN: "you do not have the %s permission",
+	},
+	KeyUserEmailTaken: {
+		ID: "email sudah dipakai pengguna lain",
+		EN: "email is already used by another user",
+	},
+	KeyCannotDeactivateSelf: {
+		ID: "tidak bisa menonaktifkan atau menghapus akun sendiri",
+		EN: "you can't deactivate or delete your own account",
+	},
+	KeyCannotChangeOwnRole: {
+		ID: "tidak bisa mengubah role akun sendiri",
+		EN: "you can't change the role of your own account",
+	},
+	KeyLastSuperAdmin: {
+		ID: "harus tetap ada minimal satu Super Admin yang aktif",
+		EN: "at least one active Super Admin must remain",
+	},
+	KeySystemRoleRequiresSuperAdmin: {
+		ID: "hanya Super Admin yang bisa memberikan role sistem atau mengubah akun Super Admin",
+		EN: "only a Super Admin can grant a system role or change a Super Admin account",
+	},
+	KeySystemRoleLocked: {
+		ID: "role sistem %q tidak bisa dihapus, diganti nama, atau diatur izinnya",
+		EN: "system role %q can't be deleted, renamed or given a permission list",
+	},
+	KeyRoleInUse: {
+		ID: "role %d masih terhubung dengan %d pengguna (termasuk yang sudah dihapus)",
+		EN: "role %d is still linked to %d user(s), including deleted ones",
+	},
+	KeyPermissionNotHeld: {
+		ID: "tidak bisa memberikan izin %q yang tidak anda miliki sendiri",
+		EN: "you can't grant the %q permission because you don't hold it yourself",
+	},
+	KeyEntityUser: {
+		ID: "pengguna %d",
+		EN: "user %d",
+	},
+	KeyEntityRole: {
+		ID: "role %d",
+		EN: "role %d",
+	},
+	KeyEntityRoleName: {
+		ID: "role dengan nama %q",
+		EN: "role name %q",
+	},
+
+	// --- permission descriptions (GET /permissions, GET /auth/me) ---------
+	// Keyed by PermissionDescription(key). The Indonesian text matches the
+	// description stored in the permissions table.
+	"permission.products.view":             {ID: "Melihat daftar dan detail produk", EN: "View the product list and details"},
+	"permission.products.create":           {ID: "Membuat produk", EN: "Create products"},
+	"permission.products.update":           {ID: "Mengubah produk", EN: "Edit products"},
+	"permission.products.delete":           {ID: "Menghapus produk", EN: "Delete products"},
+	"permission.categories.view":           {ID: "Melihat daftar dan detail kategori", EN: "View the category list and details"},
+	"permission.categories.create":         {ID: "Membuat kategori", EN: "Create categories"},
+	"permission.categories.update":         {ID: "Mengubah kategori", EN: "Edit categories"},
+	"permission.categories.delete":         {ID: "Menghapus kategori", EN: "Delete categories"},
+	"permission.inventory.view":            {ID: "Melihat stok, riwayat pergerakan, dan stok menipis", EN: "View stock, movement history and low stock"},
+	"permission.inventory.update":          {ID: "Mengubah ambang stok menipis", EN: "Change low-stock thresholds"},
+	"permission.inventory.record_movement": {ID: "Mencatat pergerakan stok (IN/OUT/ADJUSTMENT)", EN: "Record stock movements (IN/OUT/ADJUSTMENT)"},
+	"permission.customers.view":            {ID: "Melihat daftar dan detail pelanggan", EN: "View the customer list and details"},
+	"permission.customers.create":          {ID: "Membuat pelanggan", EN: "Create customers"},
+	"permission.customers.update":          {ID: "Mengubah pelanggan", EN: "Edit customers"},
+	"permission.customers.delete":          {ID: "Menghapus pelanggan", EN: "Delete customers"},
+	"permission.sales_orders.view":         {ID: "Melihat daftar dan detail pesanan", EN: "View the sales order list and details"},
+	"permission.sales_orders.create":       {ID: "Membuat pesanan", EN: "Create sales orders"},
+	"permission.sales_orders.confirm":      {ID: "Mengonfirmasi pesanan (mengurangi stok)", EN: "Confirm sales orders (deducts stock)"},
+	"permission.sales_orders.ship":         {ID: "Menandai pesanan dikirim", EN: "Mark sales orders as shipped"},
+	"permission.sales_orders.cancel":       {ID: "Membatalkan pesanan (mengembalikan stok bila sudah dikonfirmasi)", EN: "Cancel sales orders (returns stock if confirmed)"},
+	"permission.analytics.view":            {ID: "Melihat dashboard analytics", EN: "View the analytics dashboard"},
+	"permission.analytics.forecast":        {ID: "Melihat prediksi permintaan", EN: "View demand forecasts"},
+	"permission.analytics.insights":        {ID: "Melihat insight bisnis", EN: "View business insights"},
+	"permission.users.view":                {ID: "Melihat daftar dan detail pengguna", EN: "View the user list and details"},
+	"permission.users.create":              {ID: "Membuat pengguna", EN: "Create users"},
+	"permission.users.update":              {ID: "Mengubah pengguna (termasuk role dan status aktif)", EN: "Edit users (including role and active status)"},
+	"permission.users.delete":              {ID: "Menghapus pengguna", EN: "Delete users"},
+	"permission.roles.view":                {ID: "Melihat daftar role dan katalog izin", EN: "View roles and the permission catalog"},
+	"permission.roles.create":              {ID: "Membuat role", EN: "Create roles"},
+	"permission.roles.update":              {ID: "Mengubah nama dan deskripsi role", EN: "Rename roles and edit their description"},
+	"permission.roles.delete":              {ID: "Menghapus role", EN: "Delete roles"},
+	"permission.roles.assign_permissions":  {ID: "Mengatur izin sebuah role", EN: "Set the permissions of a role"},
 }

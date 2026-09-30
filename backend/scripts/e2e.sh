@@ -1,33 +1,48 @@
 #!/usr/bin/env bash
-# Smoke test for the Category + Inventory endpoints against a running API.
+# End-to-end test of the whole API (auth, RBAC, catalogue, inventory, sales
+# orders, analytics, forecasting, i18n) against a running API.
 #
-# Usage (API running, migrations applied):
+# Usage (API running, migrations applied, accounts seeded):
+#   go run ./cmd/seed --auth-only     # once: roles + the Super Admin account
 #   bash scripts/e2e.sh
 #   API_URL=http://localhost:9000/api/v1 LOW_STOCK_DEFAULT_THRESHOLD=5 bash scripts/e2e.sh
+#   ADMIN_EMAIL=me@example.com ADMIN_PASSWORD=... bash scripts/e2e.sh
 #
+# The script logs in as the Super Admin first and sends that access token on
+# every request; the auth section then checks 401/403 with other tokens.
+# ADMIN_EMAIL / ADMIN_PASSWORD default to the seeder's defaults.
 # LOW_STOCK_DEFAULT_THRESHOLD must match the API's value (default 10).
-# Every run uses unique names/SKUs, so it can be re-run against the same DB.
-# Created products/categories are soft-deleted at the end. Their
+# Every run uses unique names/SKUs/emails, so it can be re-run against the same
+# DB. Created products/categories/users are soft-deleted at the end. Their
 # stock_movements and inventories rows stay, because movements are immutable.
 # Exits 1 if any check fails.
 B=${API_URL:-http://localhost:8080/api/v1}
 THRESHOLD=${LOW_STOCK_DEFAULT_THRESHOLD:-10}
+ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
+ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin12345}
 RUN=$(date +%s)
 CODES=$(mktemp); trap 'rm -f "$CODES"' EXIT
 pass=0; fail=0
+TOKEN=
 
 # req METHOD PATH [BODY] -> sets $code and $body
 # LANG_HEADER (optional) is sent as Accept-Language, e.g. LANG_HEADER=en req ...
+# TOKEN (when set) is sent as "Authorization: Bearer $TOKEN".
 req() {
-  local out lang=()
+  local out lang=() authz=()
   [ -n "$LANG_HEADER" ] && lang=(-H "Accept-Language: $LANG_HEADER")
+  [ -n "$TOKEN" ] && authz=(-H "Authorization: Bearer $TOKEN")
   if [ -n "$3" ]; then
-    out=$(curl -s -w $'\n%{http_code}' -X "$1" "$B$2" "${lang[@]}" -H 'Content-Type: application/json' -d "$3")
+    out=$(curl -s -w $'\n%{http_code}' -X "$1" "$B$2" "${lang[@]}" "${authz[@]}" -H 'Content-Type: application/json' -d "$3")
   else
-    out=$(curl -s -w $'\n%{http_code}' -X "$1" "$B$2" "${lang[@]}")
+    out=$(curl -s -w $'\n%{http_code}' -X "$1" "$B$2" "${lang[@]}" "${authz[@]}")
   fi
   code=${out##*$'\n'}; body=${out%$'\n'*}
 }
+# as TOKEN METHOD PATH [BODY] -> req with another caller ("" = no token)
+as() { local TOKEN=$1; shift; req "$@"; }
+# jstr KEY [JSON] -> the first string value of KEY
+jstr() { grep -o "\"$1\":\"[^\"]*\"" <<<"${2:-$body}" | head -1 | cut -d'"' -f4; }
 check() { # label expected-code [grep-pattern]
   if [ "$code" = "$2" ] && { [ -z "$3" ] || grep -q -- "$3" <<<"$body"; }; then
     pass=$((pass+1)); echo "PASS  $1 -> $code"
@@ -36,6 +51,203 @@ check() { # label expected-code [grep-pattern]
   fi
 }
 jid() { grep -o '"id":[0-9]*' <<<"$body" | head -1 | cut -d: -f2; }
+# login EMAIL PASSWORD -> sets $ACCESS and $REFRESH (empty on failure)
+login() {
+  as "" POST /auth/login "{\"email\":\"$1\",\"password\":\"$2\"}"
+  ACCESS=$(jstr access_token); REFRESH=$(jstr refresh_token)
+}
+
+echo "== Auth: log in as the Super Admin (every request below carries this token)"
+login "$ADMIN_EMAIL" "$ADMIN_PASSWORD"
+if [ "$code" != 200 ] || [ -z "$ACCESS" ]; then
+  echo "FATAL: can't log in as $ADMIN_EMAIL -> $code $body"
+  echo "       seed the accounts (go run ./cmd/seed --auth-only) or set ADMIN_EMAIL / ADMIN_PASSWORD"
+  exit 1
+fi
+pass=$((pass+1)); echo "PASS  login as Super Admin -> 200"
+TOKEN=$ACCESS
+grep -q '"token_type":"Bearer","expires_in":900' <<<"$body" && { pass=$((pass+1)); echo "PASS  Bearer token, 15 minutes"; } || { fail=$((fail+1)); echo "FAIL  token shape: $body"; }
+req GET /auth/me;                                         check "me: Super Admin sees every permission" 200 '"is_system":true'
+ADMIN_ID=$(jid)
+expect() { # label actual expected
+  [ "$2" = "$3" ] && { pass=$((pass+1)); echo "PASS  $1 ($2)"; } || { fail=$((fail+1)); echo "FAIL  $1: got '$2', want '$3'"; }
+}
+expect "me lists the whole catalog" "$(grep -o '"[a-z_]*\.[a-z_]*"' <<<"$body" | wc -l | tr -d ' ')" 32
+req GET /permissions;                                     check "permission catalog" 200 '"key":"roles.assign_permissions"'
+expect "32 permissions in the catalog" "$(grep -o '"key":' <<<"$body" | wc -l | tr -d ' ')" 32
+
+echo "== Auth: 401 without a valid token"
+as ""      GET /products;                                 check "no token" 401 '"code":"unauthorized"'
+as "abc"   GET /products;                                 check "garbage token" 401 '"code":"unauthorized"'
+curl -s -o /dev/null -w '%{http_code}' "${B%/api/v1}/health" | grep -q 200 && { pass=$((pass+1)); echo "PASS  /health stays public"; } || { fail=$((fail+1)); echo "FAIL  /health"; }
+LANG_HEADER=en as "" GET /products;                       check "401 message in English" 401 'authentication required'
+unset LANG_HEADER
+as "" POST /auth/login "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"wrong-password\"}"; check "login: wrong password" 401 '"code":"invalid_credentials"'
+as "" POST /auth/login '{"email":"nobody@example.test","password":"whatever1"}';   check "login: unknown email, same answer" 401 'email atau password salah'
+as "" POST /auth/login '{"email":"","password":""}';                                check "login: missing fields" 422 '"field":"password"'
+
+echo "== Auth: refresh rotation and logout (a second admin session)"
+login "$ADMIN_EMAIL" "$ADMIN_PASSWORD"; A1=$ACCESS; R1=$REFRESH
+as "" POST /auth/refresh "{\"refresh_token\":\"$R1\"}";   check "refresh -> new pair" 200 '"access_token"'
+A2=$(jstr access_token); R2=$(jstr refresh_token)
+[ -n "$R2" ] && [ "$R2" != "$R1" ] && [ "$A2" != "$A1" ] && { pass=$((pass+1)); echo "PASS  both tokens rotated"; } || { fail=$((fail+1)); echo "FAIL  tokens not rotated"; }
+as "" POST /auth/refresh "{\"refresh_token\":\"$R1\"}";   check "old refresh token is single-use" 401 '"code":"unauthorized"'
+as "$A2" GET /auth/me;                                    check "new access token works" 200 "\"id\":$ADMIN_ID"
+as "" POST /auth/refresh "{\"refresh_token\":\"$A2\"}";   check "an access token is not a refresh token" 401
+as "$R2" GET /auth/me;                                    check "a refresh token is not an access token" 401
+as "" POST /auth/logout "{\"refresh_token\":\"$R2\"}";    check "logout" 204
+as "" POST /auth/refresh "{\"refresh_token\":\"$R2\"}";   check "refresh after logout" 401 'dicabut'
+as "" POST /auth/logout "{\"refresh_token\":\"$R2\"}";    check "logout twice is fine" 204
+as "" POST /auth/logout '{"refresh_token":"forged"}';     check "logout with a forged token" 401
+
+echo "== Concurrency: one refresh token used 5x in parallel -> exactly one wins (row lock)"
+login "$ADMIN_EMAIL" "$ADMIN_PASSWORD"; RACE_REFRESH=$REFRESH
+for i in 1 2 3 4 5; do
+  curl -s -o /dev/null -w '%{http_code}\n' -X POST "$B/auth/refresh" -H 'Content-Type: application/json' -d "{\"refresh_token\":\"$RACE_REFRESH\"}" &
+done > "$CODES"; wait
+expect "exactly one refresh succeeds" "$(grep -c '^200$' "$CODES")" 1
+expect "the other four are refused"  "$(grep -c '^401$' "$CODES")" 4
+
+echo "== RBAC: Staff role (seeded) -> 403 on what it lacks"
+req GET "/roles?search=Staff";                            check "find the Staff role" 200 '"name":"Staff"'
+STAFF_ROLE=$(grep -o '"id":[0-9]*,"name":"Staff"' <<<"$body" | head -1 | grep -o '[0-9]*')
+req GET "/roles?search=Super%20Admin";                    check "find the Super Admin role" 200 '"is_system":true'
+ADMIN_ROLE=$(jid)
+STAFF_EMAIL="e2e.staff.$RUN@example.test"
+req POST /users "{\"email\":\" E2E.Staff.$RUN@Example.TEST \",\"password\":\"rahasia123\",\"name\":\"E2E Staff $RUN\",\"role_id\":$STAFF_ROLE}"
+check "create a Staff user (email lowercased, no hash in response)" 201 "\"email\":\"$STAFF_EMAIL\""
+STAFF_USER=$(jid)
+grep -q 'password' <<<"$body" && { fail=$((fail+1)); echo "FAIL  password leaked: $body"; } || { pass=$((pass+1)); echo "PASS  no password or hash in the response"; }
+req POST /users "{\"email\":\"$STAFF_EMAIL\",\"password\":\"rahasia123\",\"name\":\"X\",\"role_id\":$STAFF_ROLE}"; check "duplicate email" 409 'email sudah dipakai pengguna lain'
+req POST /users '{"email":"nope","password":"short","name":"","role_id":999999}';  check "invalid user fields" 422 '"field":"role_id"'
+login "$STAFF_EMAIL" rahasia123; STAFF=$ACCESS
+[ -n "$STAFF" ] && { pass=$((pass+1)); echo "PASS  Staff can log in"; } || { fail=$((fail+1)); echo "FAIL  staff login: $body"; }
+as "$STAFF" GET /auth/me;                                 check "me: Staff has sales_orders.confirm" 200 '"sales_orders.confirm"'
+grep -q '"products.delete"' <<<"$body" && { fail=$((fail+1)); echo "FAIL  staff has products.delete"; } || { pass=$((pass+1)); echo "PASS  me: Staff lacks products.delete"; }
+as "$STAFF" GET /products;                                check "Staff: view products" 200
+as "$STAFF" GET /analytics/summary;                       check "Staff: view analytics" 200
+as "$STAFF" POST /products '{"sku":"E2E-X","name":"X","price":1}'; check "Staff: create product" 403 '"code":"forbidden"'
+as "$STAFF" DELETE /products/999999;                      check "Staff: delete product (before 404)" 403 'products.delete'
+as "$STAFF" DELETE /categories/999999;                    check "Staff: delete category" 403 'categories.delete'
+as "$STAFF" GET /users;                                   check "Staff: list users" 403 'users.view'
+as "$STAFF" POST /roles '{"name":"E2E Hack"}';            check "Staff: create role" 403
+as "$STAFF" PUT /roles/$STAFF_ROLE/permissions '{"permission_keys":["users.view"]}'; check "Staff: edit own role" 403
+as "$STAFF" POST /sales-orders '{"items":[]}';            check "Staff: may create orders (reaches validation)" 422 '"field":"items"'
+as "$STAFF" PATCH /sales-orders/999999/status '{"status":"CONFIRMED"}'; check "Staff: may confirm (reaches the order lookup)" 404
+LANG_HEADER=en as "$STAFF" POST /products '{}';           check "403 message in English" 403 'you do not have the products.create permission'
+unset LANG_HEADER
+
+echo "== Reuse detection: a revoked refresh token used again ends EVERY session of that user"
+# A refresh token works once. If a rotated-away (revoked) one comes back, two
+# parties hold it and the server can't tell which is asking, so it revokes all
+# of the user's refresh tokens — while answering like any other failed refresh.
+REUSE_EMAIL="e2e.reuse.$RUN@example.test"
+req POST /users "{\"email\":\"$REUSE_EMAIL\",\"password\":\"rahasia123\",\"name\":\"E2E Reuse $RUN\",\"role_id\":$STAFF_ROLE}"
+check "create a user for the reuse scenario" 201; REUSE_USER=$(jid)
+login "$REUSE_EMAIL" rahasia123; PHONE_ACCESS=$ACCESS; PHONE=$REFRESH   # session 1
+login "$REUSE_EMAIL" rahasia123; LAPTOP=$REFRESH                        # session 2, same user
+as "" POST /auth/refresh "{\"refresh_token\":\"$PHONE\"}"
+check "(a) first use of the phone's refresh token: ordinary rotation" 200 '"refresh_token"'
+PHONE_NEXT=$(jstr refresh_token)
+as "" POST /auth/refresh "{\"refresh_token\":\"$PHONE_NEXT\"}"
+check "(a) the rotated token works too (normal use never trips detection)" 200 '"refresh_token"'
+PHONE_NEXT=$(jstr refresh_token)
+# What an ordinary failed refresh looks like, to compare against.
+as "" POST /auth/refresh "{\"refresh_token\":\"$PHONE_ACCESS\"}"; PLAIN_FAILURE="$code $body"
+as "" POST /auth/refresh "{\"refresh_token\":\"$PHONE\"}"
+check "(b) the SAME phone token again (reuse)" 401 '"code":"unauthorized"'
+expect "the reuse answer is byte-for-byte an ordinary failed refresh (nothing reveals the detection)" "$code $body" "$PLAIN_FAILURE"
+as "" POST /auth/refresh "{\"refresh_token\":\"$LAPTOP\"}"
+check "(b) the LAPTOP session of the same user was revoked too" 401
+as "" POST /auth/refresh "{\"refresh_token\":\"$PHONE_NEXT\"}"
+check "(b) the phone's latest (rotated) token was revoked too" 401
+login "$REUSE_EMAIL" rahasia123
+check "the real user can still log in with the password" 200
+as "" POST /auth/refresh "{\"refresh_token\":\"$REFRESH\"}"
+check "and the new session refreshes normally" 200
+req DELETE /users/$REUSE_USER;                            check "remove the reuse user" 204
+
+echo "== RBAC: custom role, permissions replaced live (no cache)"
+req POST /roles "{\"name\":\"E2E Gudang $RUN\",\"description\":\"stok saja\"}"; check "create role" 201 '"permissions":\[\]'
+ROLE=$(jid)
+req POST /roles "{\"name\":\"E2E Gudang $RUN\"}";         check "duplicate role name" 409
+req PUT /roles/$ROLE/permissions '{"permission_keys":["inventory.view","nope.nope"]}'; check "unknown permission key" 422 '"field":"permission_keys\[1\]"'
+req PUT /roles/$ROLE/permissions '{"permission_keys":["inventory.view","inventory.record_movement","inventory.view"]}'
+check "set permissions (deduplicated)" 200 '"permissions":\["inventory.view","inventory.record_movement"\]'
+GUDANG_EMAIL="e2e.gudang.$RUN@example.test"
+req POST /users "{\"email\":\"$GUDANG_EMAIL\",\"password\":\"rahasia123\",\"name\":\"E2E Gudang $RUN\",\"role_id\":$ROLE}"; GUDANG=$(jid)
+login "$GUDANG_EMAIL" rahasia123; G=$ACCESS; GR=$REFRESH
+as "$G" GET /inventory/low-stock;                         check "custom role: inventory allowed" 200
+as "$G" GET /products;                                    check "custom role: products denied" 403
+req PUT /roles/$ROLE/permissions '{"permission_keys":["products.view"]}'; check "replace (not append) the list" 200 '"permissions":\["products.view"\]'
+as "$G" GET /products;                                    check "same token, new permission applies at once" 200
+as "$G" GET /inventory/low-stock;                         check "same token, removed permission denied at once" 403
+req DELETE /roles/$ROLE;                                  check "delete a role in use" 409 'masih terhubung dengan 1 pengguna'
+
+echo "== RBAC: the Super Admin role is locked"
+req DELETE /roles/$ADMIN_ROLE;                            check "delete system role" 409 'role sistem'
+req PATCH /roles/$ADMIN_ROLE '{"name":"Boss"}';           check "rename system role" 409
+req PUT /roles/$ADMIN_ROLE/permissions '{"permission_keys":[]}'; check "set permissions of system role" 409
+req POST /roles "{\"name\":\"E2E Empty $RUN\"}"; EMPTY=$(jid)
+req DELETE /roles/$EMPTY;                                 check "delete an unused role" 204
+
+echo "== Users: self-protection, deactivation, deletion"
+req PATCH /users/$ADMIN_ID '{"is_active":false}';         check "can't deactivate yourself" 409 'akun sendiri'
+req PATCH /users/$ADMIN_ID "{\"role_id\":$STAFF_ROLE}";   check "can't change your own role" 409
+req DELETE /users/$ADMIN_ID;                              check "can't delete yourself" 409
+req GET /users/$ADMIN_ID;                                 check "self-protection: account unchanged (active, still Super Admin)" 200 "\"role_id\":$ADMIN_ROLE,\"role\":{\"id\":$ADMIN_ROLE,\"name\":\"Super Admin\""
+grep -q '"is_active":true' <<<"$body" && { pass=$((pass+1)); echo "PASS  self-protection: still active"; } || { fail=$((fail+1)); echo "FAIL  admin changed: $body"; }
+req PATCH /users/$GUDANG '{"is_active":false}';           check "deactivate a user" 200 '"is_active":false'
+as "$G" GET /products;                                    check "their live access token stops at once" 401 'tidak aktif'
+as "" POST /auth/refresh "{\"refresh_token\":\"$GR\"}";   check "their refresh token was revoked" 401
+login "$GUDANG_EMAIL" rahasia123;                         check "an inactive user can't log in" 401 invalid_credentials
+req DELETE /users/$GUDANG;                                check "delete a user" 204
+req GET /users/$GUDANG;                                   check "deleted user is gone" 404
+req GET "/users?search=e2e.staff.$RUN";                   check "list users with search" 200 '"total":1'
+# The only user of ROLE is now soft-deleted; it still holds role_id as history.
+req DELETE /roles/$ROLE;                                  check "role used only by a DELETED user still can't be deleted" 409 'termasuk yang sudah dihapus'
+req GET /roles/$ROLE;                                     check "that role is still there" 200 "\"id\":$ROLE"
+
+echo "== Guardrail: only a Super Admin can hand out Super Admin power"
+# A "user manager" holds every users.* permission but is not a Super Admin.
+req POST /roles "{\"name\":\"E2E UserMgr $RUN\"}"; UM_ROLE=$(jid)
+req PUT /roles/$UM_ROLE/permissions '{"permission_keys":["users.view","users.create","users.update","users.delete"]}'; check "user-manager role" 200 '"users.delete"'
+UM_EMAIL="e2e.usermgr.$RUN@example.test"
+req POST /users "{\"email\":\"$UM_EMAIL\",\"password\":\"rahasia123\",\"name\":\"E2E UserMgr $RUN\",\"role_id\":$UM_ROLE}"; UM_USER=$(jid)
+login "$UM_EMAIL" rahasia123; UM=$ACCESS
+as "$UM" POST /users "{\"email\":\"e2e.um-staff.$RUN@example.test\",\"password\":\"rahasia123\",\"name\":\"E2E UM Staff $RUN\",\"role_id\":$STAFF_ROLE}"
+check "user manager CAN create a Staff user (control)" 201
+UM_STAFF=$(jid)
+as "$UM" POST /users "{\"email\":\"e2e.um-boss.$RUN@example.test\",\"password\":\"rahasia123\",\"name\":\"E2E Boss $RUN\",\"role_id\":$ADMIN_ROLE}"
+check "user manager can't CREATE a Super Admin" 403 'hanya Super Admin'
+as "$UM" PATCH /users/$UM_STAFF "{\"role_id\":$ADMIN_ROLE}"; check "user manager can't PROMOTE someone to Super Admin" 403 'hanya Super Admin'
+as "$UM" PATCH /users/$UM_USER "{\"role_id\":$ADMIN_ROLE}";  check "user manager can't promote THEMSELVES" 409 'role akun sendiri'
+as "$UM" PATCH /users/$ADMIN_ID '{"password":"dibajak123"}'; check "user manager can't change a Super Admin's password" 403 'hanya Super Admin'
+as "$UM" PATCH /users/$ADMIN_ID '{"is_active":false}';       check "user manager can't deactivate a Super Admin" 403
+as "$UM" DELETE /users/$ADMIN_ID;                            check "user manager can't delete a Super Admin" 403
+req GET /users/$UM_STAFF;                                    check "the Staff user is still Staff" 200 "\"role_id\":$STAFF_ROLE"
+login "$ADMIN_EMAIL" "$ADMIN_PASSWORD";                      check "the Super Admin password is unchanged" 200
+req GET "/users?search=e2e.um-boss.$RUN";                    check "no Super Admin was created" 200 '"total":0'
+
+echo "== Guardrail: a non-Super-Admin can only grant permissions they hold"
+# A "role manager" may assign permissions but only holds a few itself.
+req POST /roles "{\"name\":\"E2E RoleMgr $RUN\"}"; RM_ROLE=$(jid)
+req PUT /roles/$RM_ROLE/permissions '{"permission_keys":["roles.view","roles.create","roles.assign_permissions","products.view"]}'; check "role-manager role" 200
+RM_EMAIL="e2e.rolemgr.$RUN@example.test"
+req POST /users "{\"email\":\"$RM_EMAIL\",\"password\":\"rahasia123\",\"name\":\"E2E RoleMgr $RUN\",\"role_id\":$RM_ROLE}"; RM_USER=$(jid)
+login "$RM_EMAIL" rahasia123; RM=$ACCESS
+as "$RM" POST /roles "{\"name\":\"E2E Viewer $RUN\"}";       check "role manager creates a role" 201
+VIEWER=$(jid)
+as "$RM" PUT /roles/$VIEWER/permissions '{"permission_keys":["products.view"]}'; check "grant a permission they hold (control)" 200 '"permissions":\["products.view"\]'
+as "$RM" PUT /roles/$VIEWER/permissions '{"permission_keys":["products.view","users.delete"]}'; check "grant one they don't hold" 403 'izin \\"users.delete'
+req GET /roles/$VIEWER;                                      check "the refused grant changed nothing" 200 '"permissions":\["products.view"\]'
+as "$RM" PUT /roles/$RM_ROLE/permissions '{"permission_keys":["roles.view","roles.create","roles.assign_permissions","products.view","users.update"]}'
+check "can't escalate their OWN role either" 403 'izin \\"users.update'
+req GET /roles/$RM_ROLE
+grep -q '"users.update"' <<<"$body" && { fail=$((fail+1)); echo "FAIL  role manager escalated: $body"; } || { pass=$((pass+1)); echo "PASS  own role still without users.update"; }
+as "$RM" PUT /roles/$STAFF_ROLE/permissions '{"permission_keys":["users.view"]}'; check "can't grant it to another role (Staff)" 403
+as "$RM" PUT /roles/$ADMIN_ROLE/permissions '{"permission_keys":[]}';            check "can't touch the system role" 409
+for id in $UM_STAFF $UM_USER $RM_USER; do req DELETE /users/$id; done
 
 echo "== Category"
 req POST /categories "{\"name\":\"  E2E Minuman $RUN \",\"description\":\"kopi & teh\"}"; check "create category (trimmed)" 201 "\"name\":\"E2E Minuman $RUN\""
@@ -93,7 +305,7 @@ grep -q "\"product_id\":$PA," <<<"$body" && { pass=$((pass+1)); echo "PASS  A no
 
 echo "== Concurrency: 20 parallel OUT 1 on stock 7 -> exactly 7 succeed, stock 0"
 for i in $(seq 1 20); do
-  curl -s -o /dev/null -w '%{http_code}\n' -X POST "$B/inventory/$PA/movements" -H 'Content-Type: application/json' -d '{"type":"OUT","quantity":1}' &
+  curl -s -o /dev/null -w '%{http_code}\n' -X POST "$B/inventory/$PA/movements" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"type":"OUT","quantity":1}' &
 done > "$CODES"; wait
 ok=$(grep -c '^201$' "$CODES"); rej=$(grep -c '^422$' "$CODES")
 req GET /inventory/$PA
@@ -125,9 +337,6 @@ req POST /products "{\"sku\":\"E2E-SO2-$RUN\",\"name\":\"E2E Teh SO\",\"price\":
 req POST /inventory/$P1/movements '{"type":"IN","quantity":10}'; check "stock P1 = 10" 201
 req POST /inventory/$P2/movements '{"type":"IN","quantity":5}';  check "stock P2 = 5" 201
 stock() { req GET /inventory/$1; grep -o '"quantity":[0-9]*' <<<"$body" | head -1 | cut -d: -f2; }
-expect() { # label actual expected
-  [ "$2" = "$3" ] && { pass=$((pass+1)); echo "PASS  $1 ($2)"; } || { fail=$((fail+1)); echo "FAIL  $1: got '$2', want '$3'"; }
-}
 status_of() { req GET /sales-orders/$1; grep -o '"status":"[A-Z]*"' <<<"$body" | head -1 | cut -d'"' -f4; }
 
 echo "== Sales orders: create (PENDING, price snapshot, no stock change)"
@@ -198,7 +407,7 @@ for i in 1 2 3 4 5; do
   req POST /sales-orders "{\"customer_id\":$CUST3,\"items\":[{\"product_id\":$P3,\"quantity\":3}]}"; RACE+=("$(jid)")
 done
 for id in "${RACE[@]}"; do
-  curl -s -o /dev/null -w '%{http_code}\n' -X PATCH "$B/sales-orders/$id/status" -H 'Content-Type: application/json' -d '{"status":"CONFIRMED"}' &
+  curl -s -o /dev/null -w '%{http_code}\n' -X PATCH "$B/sales-orders/$id/status" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"status":"CONFIRMED"}' &
 done > "$CODES"; wait
 expect "confirms 200" "$(grep -c '^200$' "$CODES")" 3
 expect "confirms 422" "$(grep -c '^422$' "$CODES")" 2
@@ -208,7 +417,7 @@ echo "== Concurrency: same order confirmed 10x in parallel -> deducted once"
 req POST /inventory/$P3/movements '{"type":"IN","quantity":9}'
 req POST /sales-orders "{\"customer_id\":$CUST3,\"items\":[{\"product_id\":$P3,\"quantity\":2}]}"; OD=$(jid)
 for i in $(seq 1 10); do
-  curl -s -o /dev/null -w '%{http_code}\n' -X PATCH "$B/sales-orders/$OD/status" -H 'Content-Type: application/json' -d '{"status":"CONFIRMED"}' &
+  curl -s -o /dev/null -w '%{http_code}\n' -X PATCH "$B/sales-orders/$OD/status" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"status":"CONFIRMED"}' &
 done > "$CODES"; wait
 expect "exactly one 200" "$(grep -c '^200$' "$CODES")" 1
 expect "the rest 422"    "$(grep -c '^422$' "$CODES")" 9
@@ -216,13 +425,13 @@ expect "stock (10 - 2)"  "$(stock $P3)" 8
 
 echo "== Concurrency: 20 orders created in parallel get unique numbers"
 for i in $(seq 1 20); do
-  curl -s -X POST "$B/sales-orders" -H 'Content-Type: application/json' \
+  curl -s -X POST "$B/sales-orders" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
     -d "{\"customer_id\":$CUST3,\"items\":[{\"product_id\":$P3,\"quantity\":1}]}" | grep -o '"order_number":"[^"]*"' &
 done > "$CODES"; wait
 expect "20 created" "$(wc -l < "$CODES" | tr -d ' ')" 20
 expect "20 unique numbers" "$(sort -u "$CODES" | wc -l | tr -d ' ')" 20
 for id in "${RACE[@]}" $OC; do
-  curl -s -o /dev/null -X PATCH "$B/sales-orders/$id/status" -H 'Content-Type: application/json' -d '{"status":"CANCELLED"}'
+  curl -s -o /dev/null -X PATCH "$B/sales-orders/$id/status" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"status":"CANCELLED"}'
 done
 
 echo "== Analytics: setup (own category, products and customer for exact numbers)"
@@ -392,6 +601,50 @@ fi
 echo "== Cleanup (soft delete; stock_movements are immutable and stay)"
 req DELETE /products/$PA;   check "delete product A" 204
 req DELETE /categories/$CAT; check "category deletable once products are gone" 204
+req DELETE /users/$STAFF_USER; check "delete the e2e Staff user" 204
+as "$STAFF" GET /products;     check "a deleted user's token stops working" 401
+
+echo "== Guardrail: at least one active Super Admin always remains"
+# Through the API the last Super Admin can only be removed by a race: nobody
+# may demote themselves, and only a Super Admin may demote a Super Admin, so
+# with one left there is nobody who could. With two, A demoting B while B
+# demotes A is the real danger — each request alone is legal. The service
+# locks every Super Admin row before counting, so one of them must lose.
+# Run several rounds; each round restores both accounts afterwards.
+ADMIN2_EMAIL="e2e.admin2.$RUN@example.test"
+req POST /users "{\"email\":\"$ADMIN2_EMAIL\",\"password\":\"rahasia123\",\"name\":\"E2E Admin2 $RUN\",\"role_id\":$ADMIN_ROLE}"
+check "create a second Super Admin" 201; ADMIN2=$(jid)
+login "$ADMIN2_EMAIL" rahasia123; B_TOKEN=$ACCESS
+race_ok=0; race_409=0
+for round in 1 2 3 4 5; do
+  curl -s -o /dev/null -w 'A %{http_code}\n' -X PATCH "$B/users/$ADMIN2" -H "Authorization: Bearer $TOKEN" \
+    -H 'Content-Type: application/json' -d "{\"role_id\":$STAFF_ROLE}" > "$CODES.a" &
+  curl -s -o /dev/null -w 'B %{http_code}\n' -X PATCH "$B/users/$ADMIN_ID" -H "Authorization: Bearer $B_TOKEN" \
+    -H 'Content-Type: application/json' -d "{\"role_id\":$STAFF_ROLE}" > "$CODES.b" &
+  wait
+  a=$(cut -d' ' -f2 "$CODES.a"); b=$(cut -d' ' -f2 "$CODES.b")
+  # Count who is still Super Admin, as the database sees it.
+  req GET "/users?role_id=$ADMIN_ROLE&page_size=100"
+  [ "$code" = 200 ] || { as "$B_TOKEN" GET "/users?role_id=$ADMIN_ROLE&page_size=100"; }
+  a_admin=$(grep -o "{\"id\":$ADMIN_ID,\"email\"" <<<"$body" | wc -l | tr -d " "); b_admin=$(grep -o "{\"id\":$ADMIN2,\"email\"" <<<"$body" | wc -l | tr -d " ")
+  winners=$(( (a == 200) + (b == 200) ))
+  if [ "$winners" = 1 ] && [ $((a_admin + b_admin)) = 1 ]; then
+    race_ok=$((race_ok+1)); { [ "$a" = 409 ] || [ "$b" = 409 ]; } && race_409=$((race_409+1))
+    echo "      round $round: A->$a B->$b, one Super Admin left"
+  else
+    echo "      round $round: A->$a B->$b, Super Admins left: A=$a_admin B=$b_admin (WRONG)"
+  fi
+  # Restore both: whoever is still Super Admin re-promotes the other.
+  if [ "$a_admin" = 1 ]; then as "$TOKEN" PATCH /users/$ADMIN2 "{\"role_id\":$ADMIN_ROLE}"; else as "$B_TOKEN" PATCH /users/$ADMIN_ID "{\"role_id\":$ADMIN_ROLE}"; fi
+done
+rm -f "$CODES.a" "$CODES.b"
+expect "every round: exactly one demotion won, one Super Admin remained" "$race_ok" 5
+echo "      ($race_409 of 5 rounds were decided by the lock -> 409, the rest by the loser's permission check -> 403."
+echo "       HTTP timing rarely overlaps enough to reach the lock; TestGuardrail_TwoSuperAdminsDemotingEachOther proves it deterministically.)"
+req GET /auth/me;                                         check "the main admin is Super Admin again" 200 '"is_system":true'
+req PATCH /users/$ADMIN2 '{"is_active":false}';           check "deactivating one of two Super Admins is allowed" 200
+login "$ADMIN2_EMAIL" rahasia123;                         check "the deactivated admin can't log in" 401
+req DELETE /users/$ADMIN2;                                check "remove the second Super Admin" 204
 
 echo; echo "RESULT: $pass passed, $fail failed  (products $PA,$PB,$P1,$P2,$P3 categories $CAT,$CAT2 customers $CUST,$CUST2,$CUST3 orders $OA,$OB,$OC,$OD)"
 [ "$fail" -eq 0 ]

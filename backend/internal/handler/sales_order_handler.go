@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 
 	"github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/backend/internal/model"
 	"github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/backend/internal/service"
@@ -85,7 +86,9 @@ func (h *SalesOrderHandler) UpdateStatus(c *gin.Context) {
 		return
 	}
 	var in model.UpdateOrderStatusInput
-	if err := c.ShouldBindJSON(&in); err != nil {
+	// BodyWith, not JSON: RequireStatusPermission has already read the body
+	// to pick the permission, and this reuses the copy it cached.
+	if err := c.ShouldBindBodyWith(&in, binding.JSON); err != nil {
 		writeInvalidBody(c, err)
 		return
 	}

@@ -14,5 +14,11 @@ func All() []any {
 		&SalesOrderCounter{},
 		&StockMovement{}, // references sales_orders
 
+		// Access control.
+		&Role{},
+		&Permission{},
+		&RolePermission{}, // references roles, permissions
+		&User{},           // references roles
+		&RefreshToken{},   // references users
 	}
 }
