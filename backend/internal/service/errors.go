@@ -6,6 +6,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/backend/internal/i18n"
@@ -14,7 +15,26 @@ import (
 var (
 	ErrNotFound = errors.New("not found")
 	ErrConflict = errors.New("conflict")
+
+	// Authentication and authorization. Each maps to its own response code,
+	// because a client reacts to each differently:
+	//
+	//	ErrInvalidCredentials → 401 invalid_credentials (show "wrong email or password")
+	//	ErrTokenExpired       → 401 token_expired       (refresh the access token, retry)
+	//	ErrUnauthorized       → 401 unauthorized        (log in again)
+	//	ErrForbidden          → 403 forbidden           (logged in, but not allowed)
+	ErrInvalidCredentials = errors.New("invalid credentials")
+	ErrTokenExpired       = errors.New("token expired")
+	ErrUnauthorized       = errors.New("unauthorized")
+	ErrForbidden          = errors.New("forbidden")
 )
+
+// ruleError wraps a sentinel with a translated sentence, the way every
+// service error in this package is built: "%w: <message>". The handler strips
+// the sentinel prefix before sending the message.
+func ruleError(ctx context.Context, sentinel error, key i18n.Key, args ...any) error {
+	return fmt.Errorf("%w: %s", sentinel, i18n.T(ctx, key, args...))
+}
 
 // FieldError describes one invalid input field.
 type FieldError struct {

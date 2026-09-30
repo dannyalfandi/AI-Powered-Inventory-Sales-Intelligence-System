@@ -34,12 +34,27 @@ func writeError(c *gin.Context, err error) {
 		response.Error(c, http.StatusNotFound, "not_found", messageOf(err, service.ErrNotFound), nil)
 	case errors.Is(err, service.ErrConflict):
 		response.Error(c, http.StatusConflict, "conflict", messageOf(err, service.ErrConflict), nil)
+	case errors.Is(err, service.ErrInvalidCredentials):
+		unauthorized(c, "invalid_credentials", messageOf(err, service.ErrInvalidCredentials))
+	case errors.Is(err, service.ErrTokenExpired):
+		unauthorized(c, "token_expired", messageOf(err, service.ErrTokenExpired))
+	case errors.Is(err, service.ErrUnauthorized):
+		unauthorized(c, "unauthorized", messageOf(err, service.ErrUnauthorized))
+	case errors.Is(err, service.ErrForbidden):
+		response.Error(c, http.StatusForbidden, "forbidden", messageOf(err, service.ErrForbidden), nil)
 	default:
 		slog.ErrorContext(ctx, "request failed",
 			"method", c.Request.Method, "path", c.FullPath(), "error", err)
 		response.Error(c, http.StatusInternalServerError, "internal_error",
 			i18n.T(ctx, i18n.KeyInternalError), nil)
 	}
+}
+
+// unauthorized answers 401 with the WWW-Authenticate challenge RFC 6750
+// asks for, so generic HTTP clients know a bearer token is expected.
+func unauthorized(c *gin.Context, code, message string) {
+	c.Header("WWW-Authenticate", `Bearer realm="api"`)
+	response.Error(c, http.StatusUnauthorized, code, message, nil)
 }
 
 // messageOf strips the sentinel prefix ("not found: ", "conflict: ") that the

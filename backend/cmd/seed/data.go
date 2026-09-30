@@ -228,6 +228,10 @@ var customers = []customerSpec{
 var (
 	testProductSKUs = []string{"E2E-%", "SMOKE-%", "SHAPE-%", "SHP-%", "CACHE-%", "KOPI-001", "TEH-001"}
 	testNames       = []string{"E2E %", "E2E-%", "Shape %", "Cache probe%", "SMOKE%"}
+	// scripts/e2e.sh creates its accounts as e2e.<role>.<run>@example.test
+	// and its roles as "E2E <name> <run>".
+	testUserEmails = "e2e.%@example.test"
+	testRoleNames  = "E2E %"
 	// Categories and customers created by hand while testing the app.
 	manualCategoryNames = []string{"Minuman", "Makanan"}
 	manualCustomerNames = []string{"Toko Maju Jaya"}

@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/backend/internal/auth"
 	"github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/backend/internal/client"
 	"github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/backend/internal/config"
 	"github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/backend/internal/handler"
@@ -35,6 +36,9 @@ func run() error {
 
 	cfg, err := config.Load()
 	if err != nil {
+		return err
+	}
+	if err := cfg.RequireJWT(); err != nil {
 		return err
 	}
 
@@ -80,18 +84,32 @@ func run() error {
 	customerSvc := service.NewCustomerService(customerRepo)
 	salesOrderSvc := service.NewSalesOrderService(salesOrderRepo, customerRepo, cfg.LowStockDefaultThreshold, loc)
 
+	tokens, err := auth.NewTokens(cfg.JWT.Secret, cfg.JWT.AccessTTL, cfg.JWT.RefreshTTL)
+	if err != nil {
+		return fmt.Errorf("jwt: %w", err)
+	}
+	userRepo := repository.NewUserRepository(db)
+	roleRepo := repository.NewRoleRepository(db)
+	permissionRepo := repository.NewPermissionRepository(db)
+	authSvc := service.NewAuthService(userRepo, roleRepo, permissionRepo, repository.NewRefreshTokenRepository(db), tokens)
+	userSvc := service.NewUserService(userRepo, roleRepo)
+	roleSvc := service.NewRoleService(roleRepo, permissionRepo, userRepo)
+
 	engine := router.New(router.Handlers{
 		Health: handler.NewHealthHandler(map[string]handler.Pinger{
 			"database": handler.PingFunc(sqlDB.PingContext),
 			"redis":    handler.PingFunc(func(ctx context.Context) error { return rdb.Ping(ctx).Err() }),
 		}),
+		Auth:       handler.NewAuthHandler(authSvc),
+		User:       handler.NewUserHandler(userSvc),
+		Role:       handler.NewRoleHandler(roleSvc),
 		Product:    handler.NewProductHandler(productSvc),
 		Category:   handler.NewCategoryHandler(categorySvc),
 		Inventory:  handler.NewInventoryHandler(inventorySvc),
 		Customer:   handler.NewCustomerHandler(customerSvc),
 		SalesOrder: handler.NewSalesOrderHandler(salesOrderSvc),
 		Analytics:  handler.NewAnalyticsHandler(analyticsSvc),
-	})
+	}, router.Guard{Tokens: tokens, Authorizer: authSvc})
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
