@@ -39,6 +39,10 @@ final class ServerFailure extends Failure {
 
   bool get isNotFound => statusCode == 404;
   bool get isConflict => statusCode == 409;
+
+  /// 403: a permission refusal. Its message is the backend's own sentence,
+  /// already in the app's language — show it as is, never match on it.
+  bool get isForbidden => statusCode == 403;
 }
 
 /// The request never got a response: no connection, timeout, cancelled.

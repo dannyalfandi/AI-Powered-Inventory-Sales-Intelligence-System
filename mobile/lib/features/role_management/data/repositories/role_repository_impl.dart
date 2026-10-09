@@ -48,7 +48,4 @@ class RoleRepositoryImpl implements RoleRepository {
   @override
   Future<List<CatalogPermission>> getPermissionCatalog() =>
       guardApiCall(() async => (await _remote.fetchPermissions()).map((m) => m.toEntity()).toList());
-
-  @override
-  Future<int> countUsers(int roleId) => guardApiCall(() => _remote.countUsers(roleId));
 }

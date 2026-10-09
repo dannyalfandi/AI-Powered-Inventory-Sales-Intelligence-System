@@ -11,19 +11,29 @@ class MockUserRepository extends Mock implements UserRepository {}
 
 final _ts = DateTime.utc(2026, 9, 26);
 
-Role role(int id, {String? name, bool isSystem = false, List<String> permissions = const [], String description = ''}) =>
-    Role(
-      id: id,
-      name: name ?? 'Role $id',
-      description: description,
-      isSystem: isSystem,
-      permissions: permissions,
-      createdAt: _ts,
-      updatedAt: _ts,
-    );
+Role role(
+  int id, {
+  String? name,
+  bool isSystem = false,
+  List<String> permissions = const [],
+  String description = '',
+  int userCount = 0,
+}) => Role(
+  id: id,
+  name: name ?? 'Role $id',
+  description: description,
+  isSystem: isSystem,
+  permissions: permissions,
+  userCount: userCount,
+  createdAt: _ts,
+  updatedAt: _ts,
+);
 
-final superAdminRole = role(1, name: 'Super Admin', isSystem: true, permissions: const ['products.view', 'users.delete']);
-final staffRole = role(2, name: 'Staff', permissions: const ['products.view', 'sales_orders.create']);
+final superAdminRole =
+    role(1, name: 'Super Admin', isSystem: true, permissions: const ['products.view', 'users.delete'], userCount: 1);
+final staffRole = role(2, name: 'Staff', permissions: const ['products.view', 'sales_orders.create'], userCount: 1);
+
+/// No user yet: the one role here that may be offered for deletion.
 final gudangRole = role(3, name: 'Gudang', permissions: const ['inventory.view']);
 
 PageResult<Role> rolePage(List<Role> items) =>

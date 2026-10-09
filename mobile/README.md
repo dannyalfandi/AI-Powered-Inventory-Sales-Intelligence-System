@@ -59,17 +59,19 @@ lib/
   features/role_management/
     domain/      Role, CatalogPermission, PermissionGroup + groupPermissions(), RoleInput/RolePatch, RoleRules;
                  usecases GetRoles, GetRole, CreateRole, UpdateRole, DeleteRole, SetRolePermissions,
-                 GetPermissionCatalog, CountRoleUsers
+                 GetPermissionCatalog
     data/        RoleModel, CatalogPermissionModel, request models; RoleRemoteDataSource, RoleRepositoryImpl
     presentation/
-      providers/ role_providers.dart (DI), roleListProvider, roleOptionsProvider, roleUserCountProvider(id),
+      providers/ role_providers.dart (DI), roleListProvider, roleOptionsProvider,
                  permissionCatalogProvider, roleFormProvider(id) (+ savePermissions)
       screens/   RoleListScreen, RoleFormScreen, RolePermissionEditorScreen
   features/user_management/
-    domain/      ManagedUser, UserInput, UserPatch, UserRules; usecases GetUsers, GetUser, CreateUser, UpdateUser, DeleteUser
+    domain/      ManagedUser, UserInput, UserPatch, UserRules; grant_scope.dart (canGrantRole, canManageUser);
+                 usecases GetUsers, GetUser, CreateUser, UpdateUser, DeleteUser
     data/        UserModel (+ embedded UserRoleModel), request models; UserRemoteDataSource, UserRepositoryImpl
     presentation/
-      providers/ user_providers.dart (DI), userListProvider, userSearchQueryProvider, userFormProvider(id)
+      providers/ user_providers.dart (DI), userListProvider, userSearchQueryProvider, userFormProvider(id),
+                 knownRolesProvider (the role list by id, or null when unknown)
       screens/   UserListScreen, UserFormScreen
   features/product/
     domain/      entities (Product + ProductCategory, ProductPage, ProductInput, ProductPatch, ProductRules),
@@ -213,7 +215,7 @@ restart, and is remembered in `shared_preferences` under `app_language`.
 
 One switch covers both halves of the app:
 
-- **the app's own labels** come from `lib/l10n/app_en.arb` / `app_id.arb` (377 keys), read as `context.l10n.<key>`.
+- **the app's own labels** come from `lib/l10n/app_en.arb` / `app_id.arb` (378 keys), read as `context.l10n.<key>`.
   `app_en.arb` is the template, so a key must exist there first; `flutter gen-l10n` then writes
   `lib/l10n/app_localizations*.dart` (committed, like the other generated files).
 - **the sentences the backend writes** come back already translated: `AcceptLanguageInterceptor` puts
@@ -382,7 +384,7 @@ says what is loading, which is most of the benefit.
 
 ## Prerequisites
 
-- Flutter 3.47+ (Dart 3.13+)
+- Flutter 3.47+ (Dart `^3.13.2`, the SDK constraint in `pubspec.yaml`)
 - Backend running: `../infra` (`docker compose up -d`) and `../backend` (`go run ./cmd/migrate`, then `go run ./cmd/api`)
 - For the two ML-backed dashboard sections (Prediksi Permintaan, Insight Bisnis) also start the Python service: `cd ../ml-service && uvicorn app.main:app --port 8000`. Without it those two sections show their "sedang tidak tersedia" state and everything else works normally.
 
@@ -504,6 +506,17 @@ flutter analyze              # lints incl. riverpod_lint
   validation, and self-protection. `test/features/admin_navigation_test.dart`: the Settings entries for Staff,
   Super Admin and partial custom roles, and admin deep links bounced without the permission (real router).
   Turning off the role-list delete gate, the Settings entry gate or the route guard makes these fail.
+- "Only what you hold" and `user_count` (captured 2026-10-09, `test/helpers/admin_json.dart`):
+  `grant_scope_test.dart` is the matrix of `canGrantRole` / `canManageUser` (Super Admin, a manager whose
+  permissions cover Staff and Gudang, a manager with only `users.*`, against Staff / a subset role / a role
+  beyond / Super Admin / your own account / a role not in the list). `role_list_http_test.dart` runs the
+  role list over the real datasource with a recording HTTP adapter: exactly one `GET /roles`, no `GET /users`.
+  The screen tests cover swipe-delete for `user_count` 0 vs more vs the system role, the filtered / full /
+  `users.create`-only role picker, locked user rows, the deep-link bounce, and the 403 sentences in the form
+  banner and the delete path; the navigation test checks that a user manager never triggers
+  `GET /roles/:id` or `GET /permissions`. `test/core/l10n/arb_parity_test.dart`: the same keys and
+  placeholders in both ARB files. Removing the picker's subset filter, the `user_count == 0` delete condition,
+  the Super Admin case of `canManageUser`, or the `roles.view` gate on the role page makes these fail.
 - `test/core/router/auth_guard_test.dart`: `authRedirect` as a table, and the real router: splash at
   start-up, login from any page, a session ended from a deep screen lands on `/login` **once**, login lands on
   the Dashboard, logout from Settings. `test/core/auth/secure_token_store_test.dart`: `current` changes
@@ -596,8 +609,14 @@ do, never show it disabled without a reason; the backend enforces every permissi
 | Order detail | Confirm · Ship · Cancel (per the state machine) | `sales_orders.confirm` · `.ship` · `.cancel` |
 
 An order whose next steps the user may not perform shows no action bar at all. "No more actions" stays
-reserved for final orders. There is no user or role management screen yet, so there is no entry point to hide.
-Settings shows the logged-in user's name, role and email, and the Sign out button.
+reserved for final orders. The user and role management entries are gated too, see
+[Administration](#administration-roles--users). Settings shows the logged-in user's name, role and email,
+and the Sign out button.
+
+**Not gated: the tabs themselves.** The five tabs (Dashboard, Products, Categories, Customers, Orders) and the
+Dashboard sections are shown to everyone; nothing checks `*.view` before loading them. A custom role without,
+say, `analytics.view` opens the Dashboard and each section shows its error state with the server's 403 message
+and "Try again". The data stays protected (the backend refuses it), but the UI could hide those tabs instead.
 
 ## Administration: roles & users
 
@@ -605,16 +624,22 @@ Settings has an **Administration** section with two entries. Each shows on its o
 least one permission of its area (`Permissions.roleManagement` = any `roles.*`, `Permissions.userManagement` =
 any `users.*`), through the same `ref.hasAnyPermission()` as the rest of the app. With neither, the section
 isn't there. Every admin route also checks the permission itself (`requireAny` in `app_router.dart`), so a
-deep link can't open a screen whose entry is hidden: it lands back on `/settings`.
+deep link can't open a screen whose entry is hidden: it lands back on `/settings`. A role's page and its
+permission editor additionally need `roles.view` (they load `GET /roles/:id` and `GET /permissions`, which
+answer to nothing else), so no path in the app sends a request that can only be refused.
 
 **Role management** (`features/role_management/`):
 
 - **Role list** (`/admin/roles`): name, permission count ("All permissions" for the system role, with a
-  *System* badge), and the number of users. The roles endpoint doesn't report the user count, so each row
-  reads it from `GET /users?role_id=…&page_size=1`. That needs `users.view`; without it the count is left out.
+  *System* badge), and the number of **linked users**, from each role's `user_count`. One `GET /roles` loads
+  the whole screen; nothing asks `GET /users` (it used to, once per role). `user_count` counts inactive and
+  deleted users too, because a deleted user keeps its `role_id` and the backend's foreign key refuses to
+  delete the role while any such row exists ([backend/README.md](../backend/README.md#user_count)). So the
+  label says "linked", never "active", and it is exactly the number behind the delete's 409. Rows open the
+  role's page only for `roles.view`; without it (a user manager) the list is all there is.
 - **Role form** (`/admin/roles/new`, `/admin/roles/:id`): name and description. It doubles as the detail page:
   what the role grants, and "Edit permissions". A new role continues on its own page after saving, since
-  permissions are assigned there. The system role is explained, its name is locked, and it has no permission
+  permissions are assigned there — for `roles.view` holders; anyone else goes back to the list. The system role is explained, its name is locked, and it has no permission
   editor, because the backend never lets it be renamed, deleted or given a list.
 - **Permission editor** (`/admin/roles/:id/permissions`): the catalog from `GET /permissions`, grouped by the
   API's own `resource_group` (only the group *names* are translated; an unknown group shows under its code).
@@ -622,33 +647,56 @@ deep link can't open a screen whose entry is hidden: it lands back on `/settings
   of keys, in catalog order, to `PUT /roles/:id/permissions`, which replaces rather than merges. A
   non-Super-Admin can only grant what they hold (the backend answers 403 otherwise), so those boxes are
   shown but locked, with a note.
-- **Delete**: swipe on the list. Never offered for the system role. A 409 ("still linked to N users, including
-  deleted ones") is shown exactly as the backend wrote it, already in the app's language.
+- **Delete**: swipe on the list, offered only for a role with `user_count` 0 that isn't the system role —
+  the backend would refuse anything else. A 409 can still happen (someone was given the role meanwhile); it
+  is shown exactly as the backend wrote it ("still linked to N users, including deleted ones"), already in the
+  app's language, and so is a 403.
 
 **User management** (`features/user_management/`):
 
 - **User list** (`/admin/users`): name, email, role, an Active/Inactive chip, and a "(You)" mark on your own
-  row. Search by name or email, infinite scroll, swipe to delete.
+  row. Search by name or email, infinite scroll, swipe to delete. A user beyond your scope (see below) shows a
+  lock and "Beyond your permissions"; it has no swipe, and a tap only repeats that note.
 - **User form** (`/admin/users/new`, `/admin/users/:id`): name, email, password (a new, optional one when
   editing; `PATCH /users/:id` accepts it, and it signs the user out everywhere), role (from `GET /roles`),
   and the active switch. On edit only the changed fields are sent.
 - **Self-protection, before the request:** on your own account the role picker and the active switch are
   locked with the reason shown, and swiping your own row says you can't delete yourself. The backend
-  refuses all three too (409). A non-Super-Admin isn't offered the Super Admin role (backend 403). Other
-  refusals (403/409, e.g. a duplicate email) appear in the form as the backend's sentence.
+  refuses all three too (409). Other refusals (403/409, e.g. a duplicate email) appear in the form banner as
+  the backend's sentence, already in the app's language; the app never matches on it or translates it.
+- **Only what you hold** (`domain/grant_scope.dart`, the app's copy of the backend's `grant_scope.go`):
+  a non-Super-Admin may give a user only a role whose permissions they all hold, and change or delete only
+  users whose role they hold in full. One definition behind two pure functions:
+  - `canGrantRole(me, role)`: the role picker offers only these (a Super Admin sees every role; nobody else
+    ever sees the system role). The user's current role stays listed so the field can show it.
+  - `canManageUser(me, user, rolesById)` → `allowed` / `denied` / `unknown`. The role inside a user has no
+    permissions (`null` in `GET /users`), so they come from the role list by `role_id`. When that list isn't
+    available (not loaded yet, failed, or the caller can't read it) the answer is `unknown` and **nothing is
+    hidden**: the backend decides (403). A Super Admin target is `denied` even then, from the user's own
+    `is_system`. Your own account is always `allowed` here; the self rules above still lock its role, active
+    switch and delete.
+  - A form opened by deep link for a `denied` user goes back to the list with the same note.
+- **Role picker loading:** `GET /roles` answers to `roles.view`, `users.create` or `users.update`
+  (`Permissions.roleList`). Without any of those (e.g. `users.view` only) the app never requests it; the
+  picker just shows the user's current role.
 
 | Where | Action | Permission |
 |---|---|---|
 | Settings | "Roles & permissions" entry | any `roles.*` |
 | Settings | "Users" entry | any `users.*` |
-| Role list | add · swipe to delete (not the system role) · user count | `roles.create` · `roles.delete` · `users.view` |
+| Role list | add · swipe to delete (not the system role, only with 0 linked users) · open a role | `roles.create` · `roles.delete` · `roles.view` |
+| Role list | the list itself, with the user counts | `roles.view`, `users.create` or `users.update` |
 | Role form | save changes · "Edit permissions" (not the system role) | `roles.update` · `roles.assign_permissions` |
-| Permission editor | open · a checkbox (non-Super-Admin) | `roles.assign_permissions` · holding that permission |
-| User list | add · swipe to delete | `users.create` · `users.delete` |
+| Permission editor | open · a checkbox (non-Super-Admin) | `roles.view` + `roles.assign_permissions` · holding that permission |
+| User list | add · swipe to delete · open | `users.create` · `users.delete` + the user within your scope · the user within your scope |
 | User form | save changes (role, active, password…) | `users.update` (create: `users.create`) |
+| User form | a role in the picker | you hold all of its permissions (Super Admin: any) |
 
 Reading a list needs its `*.view` permission on the backend. A user with only, say, `roles.create` sees
-the entry, but the list shows the server's 403 message; the form still works.
+the entry, but the list shows the server's 403 message; the form still works. One exception: `GET /roles`
+(the list, which the user form's role picker uses) is also open to `users.create` and `users.update`, so a
+user manager without `roles.view` can still pick a role. The role detail and the permission catalog stay
+`roles.view` only.
 
 ## Error handling
 

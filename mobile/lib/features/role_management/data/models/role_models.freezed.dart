@@ -16,7 +16,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$RoleModel {
 
- int get id; String get name; String get description; bool get isSystem; List<String>? get permissions; DateTime get createdAt; DateTime get updatedAt;
+ int get id; String get name; String get description; bool get isSystem; List<String>? get permissions; int get userCount; DateTime get createdAt; DateTime get updatedAt;
 /// Create a copy of RoleModel
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -30,20 +30,20 @@ $RoleModelCopyWith<RoleModel> get copyWith => _$RoleModelCopyWithImpl<RoleModel>
 @override
 bool operator ==(Object other) {
   final _this = this as RoleModel;
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is RoleModel&&(identical(other.id, _this.id) || other.id == _this.id)&&(identical(other.name, _this.name) || other.name == _this.name)&&(identical(other.description, _this.description) || other.description == _this.description)&&(identical(other.isSystem, _this.isSystem) || other.isSystem == _this.isSystem)&&const DeepCollectionEquality().equals(other.permissions, _this.permissions)&&(identical(other.createdAt, _this.createdAt) || other.createdAt == _this.createdAt)&&(identical(other.updatedAt, _this.updatedAt) || other.updatedAt == _this.updatedAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RoleModel&&(identical(other.id, _this.id) || other.id == _this.id)&&(identical(other.name, _this.name) || other.name == _this.name)&&(identical(other.description, _this.description) || other.description == _this.description)&&(identical(other.isSystem, _this.isSystem) || other.isSystem == _this.isSystem)&&const DeepCollectionEquality().equals(other.permissions, _this.permissions)&&(identical(other.userCount, _this.userCount) || other.userCount == _this.userCount)&&(identical(other.createdAt, _this.createdAt) || other.createdAt == _this.createdAt)&&(identical(other.updatedAt, _this.updatedAt) || other.updatedAt == _this.updatedAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
 int get hashCode {
   final _this = this as RoleModel;
-  return Object.hash(runtimeType,_this.id,_this.name,_this.description,_this.isSystem,const DeepCollectionEquality().hash(_this.permissions),_this.createdAt,_this.updatedAt);
+  return Object.hash(runtimeType,_this.id,_this.name,_this.description,_this.isSystem,const DeepCollectionEquality().hash(_this.permissions),_this.userCount,_this.createdAt,_this.updatedAt);
 }
 
 @override
 String toString() {
   final _this = this as RoleModel;
-  return 'RoleModel(id: ${_this.id}, name: ${_this.name}, description: ${_this.description}, isSystem: ${_this.isSystem}, permissions: ${_this.permissions}, createdAt: ${_this.createdAt}, updatedAt: ${_this.updatedAt})';
+  return 'RoleModel(id: ${_this.id}, name: ${_this.name}, description: ${_this.description}, isSystem: ${_this.isSystem}, permissions: ${_this.permissions}, userCount: ${_this.userCount}, createdAt: ${_this.createdAt}, updatedAt: ${_this.updatedAt})';
 }
 
 
@@ -54,7 +54,7 @@ abstract mixin class $RoleModelCopyWith<$Res>  {
   factory $RoleModelCopyWith(RoleModel value, $Res Function(RoleModel) _then) = _$RoleModelCopyWithImpl;
 @useResult
 $Res call({
- int id, String name, String description, bool isSystem, List<String>? permissions, DateTime createdAt, DateTime updatedAt
+ int id, String name, String description, bool isSystem, List<String>? permissions, int userCount, DateTime createdAt, DateTime updatedAt
 });
 
 
@@ -71,14 +71,15 @@ class _$RoleModelCopyWithImpl<$Res>
 
 /// Create a copy of RoleModel
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? description = null,Object? isSystem = null,Object? permissions = freezed,Object? createdAt = null,Object? updatedAt = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? description = null,Object? isSystem = null,Object? permissions = freezed,Object? userCount = null,Object? createdAt = null,Object? updatedAt = null,}) {
   return _then(RoleModel(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as int,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
 as String,description: null == description ? _self.description : description // ignore: cast_nullable_to_non_nullable
 as String,isSystem: null == isSystem ? _self.isSystem : isSystem // ignore: cast_nullable_to_non_nullable
 as bool,permissions: freezed == permissions ? _self.permissions : permissions // ignore: cast_nullable_to_non_nullable
-as List<String>?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
+as List<String>?,userCount: null == userCount ? _self.userCount : userCount // ignore: cast_nullable_to_non_nullable
+as int,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as DateTime,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
 as DateTime,
   ));
@@ -165,10 +166,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( int id,  String name,  String description,  bool isSystem,  List<String>? permissions,  DateTime createdAt,  DateTime updatedAt)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( int id,  String name,  String description,  bool isSystem,  List<String>? permissions,  int userCount,  DateTime createdAt,  DateTime updatedAt)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _RoleModel() when $default != null:
-return $default(_that.id,_that.name,_that.description,_that.isSystem,_that.permissions,_that.createdAt,_that.updatedAt);case _:
+return $default(_that.id,_that.name,_that.description,_that.isSystem,_that.permissions,_that.userCount,_that.createdAt,_that.updatedAt);case _:
   return orElse();
 
 }
@@ -186,10 +187,10 @@ return $default(_that.id,_that.name,_that.description,_that.isSystem,_that.permi
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( int id,  String name,  String description,  bool isSystem,  List<String>? permissions,  DateTime createdAt,  DateTime updatedAt)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( int id,  String name,  String description,  bool isSystem,  List<String>? permissions,  int userCount,  DateTime createdAt,  DateTime updatedAt)  $default,) {final _that = this;
 switch (_that) {
 case _RoleModel():
-return $default(_that.id,_that.name,_that.description,_that.isSystem,_that.permissions,_that.createdAt,_that.updatedAt);case _:
+return $default(_that.id,_that.name,_that.description,_that.isSystem,_that.permissions,_that.userCount,_that.createdAt,_that.updatedAt);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -206,10 +207,10 @@ return $default(_that.id,_that.name,_that.description,_that.isSystem,_that.permi
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( int id,  String name,  String description,  bool isSystem,  List<String>? permissions,  DateTime createdAt,  DateTime updatedAt)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( int id,  String name,  String description,  bool isSystem,  List<String>? permissions,  int userCount,  DateTime createdAt,  DateTime updatedAt)?  $default,) {final _that = this;
 switch (_that) {
 case _RoleModel() when $default != null:
-return $default(_that.id,_that.name,_that.description,_that.isSystem,_that.permissions,_that.createdAt,_that.updatedAt);case _:
+return $default(_that.id,_that.name,_that.description,_that.isSystem,_that.permissions,_that.userCount,_that.createdAt,_that.updatedAt);case _:
   return null;
 
 }
@@ -221,7 +222,7 @@ return $default(_that.id,_that.name,_that.description,_that.isSystem,_that.permi
 @JsonSerializable()
 
 class _RoleModel extends RoleModel {
-  const _RoleModel({required this.id, required this.name, this.description = '', required this.isSystem,  List<String>? permissions, required this.createdAt, required this.updatedAt}): _permissions = permissions,super._();
+  const _RoleModel({required this.id, required this.name, this.description = '', required this.isSystem,  List<String>? permissions, required this.userCount, required this.createdAt, required this.updatedAt}): _permissions = permissions,super._();
   factory _RoleModel.fromJson(Map<String, dynamic> json) => _$RoleModelFromJson(json);
 
 @override final  int id;
@@ -237,6 +238,7 @@ class _RoleModel extends RoleModel {
   return EqualUnmodifiableListView(value);
 }
 
+@override final  int userCount;
 @override final  DateTime createdAt;
 @override final  DateTime updatedAt;
 
@@ -253,18 +255,18 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is _RoleModel&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.description, description) || other.description == description)&&(identical(other.isSystem, isSystem) || other.isSystem == isSystem)&&const DeepCollectionEquality().equals(other.permissions, _permissions)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is _RoleModel&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.description, description) || other.description == description)&&(identical(other.isSystem, isSystem) || other.isSystem == isSystem)&&const DeepCollectionEquality().equals(other.permissions, _permissions)&&(identical(other.userCount, userCount) || other.userCount == userCount)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
 int get hashCode {
-    return Object.hash(runtimeType,id,name,description,isSystem,const DeepCollectionEquality().hash(_permissions),createdAt,updatedAt);
+    return Object.hash(runtimeType,id,name,description,isSystem,const DeepCollectionEquality().hash(_permissions),userCount,createdAt,updatedAt);
 }
 
 @override
 String toString() {
-    return 'RoleModel(id: $id, name: $name, description: $description, isSystem: $isSystem, permissions: $permissions, createdAt: $createdAt, updatedAt: $updatedAt)';
+    return 'RoleModel(id: $id, name: $name, description: $description, isSystem: $isSystem, permissions: $permissions, userCount: $userCount, createdAt: $createdAt, updatedAt: $updatedAt)';
 }
 
 
@@ -275,7 +277,7 @@ abstract mixin class _$RoleModelCopyWith<$Res> implements $RoleModelCopyWith<$Re
   factory _$RoleModelCopyWith(_RoleModel value, $Res Function(_RoleModel) _then) = __$RoleModelCopyWithImpl;
 @override @useResult
 $Res call({
- int id, String name, String description, bool isSystem, List<String>? permissions, DateTime createdAt, DateTime updatedAt
+ int id, String name, String description, bool isSystem, List<String>? permissions, int userCount, DateTime createdAt, DateTime updatedAt
 });
 
 
@@ -292,14 +294,15 @@ class __$RoleModelCopyWithImpl<$Res>
 
 /// Create a copy of RoleModel
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? description = null,Object? isSystem = null,Object? permissions = freezed,Object? createdAt = null,Object? updatedAt = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? description = null,Object? isSystem = null,Object? permissions = freezed,Object? userCount = null,Object? createdAt = null,Object? updatedAt = null,}) {
   return _then(_RoleModel(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as int,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
 as String,description: null == description ? _self.description : description // ignore: cast_nullable_to_non_nullable
 as String,isSystem: null == isSystem ? _self.isSystem : isSystem // ignore: cast_nullable_to_non_nullable
 as bool,permissions: freezed == permissions ? _self._permissions : permissions // ignore: cast_nullable_to_non_nullable
-as List<String>?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
+as List<String>?,userCount: null == userCount ? _self.userCount : userCount // ignore: cast_nullable_to_non_nullable
+as int,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as DateTime,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
 as DateTime,
   ));

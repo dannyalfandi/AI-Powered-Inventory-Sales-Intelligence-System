@@ -1166,9 +1166,9 @@ class AppLocalizationsEn extends AppLocalizations {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '$count users',
-      one: '1 user',
-      zero: 'No users',
+      other: '$count linked users',
+      one: '1 linked user',
+      zero: 'No linked users',
     );
     return '$_temp0';
   }
@@ -1317,6 +1317,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get userYou => 'You';
+
+  @override
+  String get userOutOfScope => 'Beyond your permissions';
 
   @override
   String get userNew => 'New user';

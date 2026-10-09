@@ -38,8 +38,11 @@ abstract class UserModel with _$UserModel {
   );
 }
 
-/// The `role` embedded in a user: a full role object, of which only these
-/// fields matter here (its `permissions` is null in user responses).
+/// The `role` embedded in a user. Only these fields are read, on purpose:
+/// in GET /users it has `"permissions": null` and no `user_count`, and in a
+/// POST/PATCH answer it may carry both, with a `user_count` taken before the
+/// write (one too low after a create). Neither is trustworthy here; the
+/// role's permissions and count come from GET /roles, matched by `role_id`.
 @freezed
 abstract class UserRoleModel with _$UserRoleModel {
   const factory UserRoleModel({required int id, required String name, @Default(false) bool isSystem}) =

@@ -47,4 +47,9 @@ abstract final class Permissions {
 
   /// Any of these opens user management.
   static const userManagement = [usersView, usersCreate, usersUpdate, usersDelete];
+
+  /// Any of these may read the role *list* (GET /roles): the backend opens it
+  /// to user managers too, for the user form's role picker. The role detail
+  /// (GET /roles/:id) and the catalog (GET /permissions) stay [rolesView] only.
+  static const roleList = [rolesView, usersCreate, usersUpdate];
 }

@@ -200,12 +200,15 @@ void main() {
       expect(patch.email, isNull);
     });
 
-    testWidgets('a non-Super-Admin is not offered the Super Admin role', (tester) async {
-      await pump(tester, const UserFormScreen(), userWith({...Permissions.userManagement, Permissions.rolesView}));
+    testWidgets('a non-Super-Admin is not offered the Super Admin role, nor a role beyond their permissions', (tester) async {
+      // Holds Staff's permissions, not Gudang's (inventory.view).
+      await pump(tester, const UserFormScreen(),
+          userWith({...Permissions.userManagement, Permissions.productsView, Permissions.salesOrdersCreate}));
 
       await tester.tap(find.byType(DropdownButton<int?>));
       await tester.pumpAndSettle();
       expect(find.text('Staff'), findsWidgets);
+      expect(find.text('Gudang'), findsNothing);
       expect(find.text('Super Admin'), findsNothing);
     });
 
@@ -228,6 +231,158 @@ void main() {
       when(() => users.getUser(9)).thenAnswer((_) async => budi);
       await pump(tester, const UserFormScreen(userId: 9), userWith({Permissions.usersView}));
       expect(find.byKey(const Key('user_form_submit')), findsNothing);
+    });
+  });
+  // "Only what you hold" (backend grant_scope.go, app grant_scope.dart).
+  // The actor below is a user manager whose permissions cover Staff but
+  // not Gudang (inventory.view) — and never the Super Admin role.
+  group('scope', () {
+    final manager = userWith({
+      Permissions.usersView,
+      Permissions.usersCreate,
+      Permissions.usersUpdate,
+      Permissions.usersDelete,
+      Permissions.productsView,
+      Permissions.salesOrdersCreate,
+    });
+    final staffUser = managedUser(11, name: 'Sari', role: staffRole);
+    final adminUser = managedUser(12, name: 'Admin Dua', role: superAdminRole);
+    final gudangUser = managedUser(13, name: 'Gita', role: gudangRole);
+
+    Future<List<String>> dropdownItems(WidgetTester tester) async {
+      await tester.tap(find.byType(DropdownButton<int?>));
+      await tester.pumpAndSettle();
+      final items = tester
+          .widgetList<DropdownMenuItem<int?>>(find.byType(DropdownMenuItem<int?>))
+          .map((i) => ((i.child as Text).data)!)
+          .toSet()
+          .toList()
+        ..sort();
+      await tester.tapAt(Offset.zero); // close the menu
+      await tester.pumpAndSettle();
+      return items;
+    }
+
+    testWidgets('role dropdown: Super Admin sees every role', (tester) async {
+      await pump(tester, const UserFormScreen(), superAdmin);
+      expect(await dropdownItems(tester), ['Gudang', 'Staff', 'Super Admin']);
+    });
+
+    testWidgets('role dropdown: a user manager sees only the roles they may grant', (tester) async {
+      await pump(tester, const UserFormScreen(), manager);
+      expect(await dropdownItems(tester), ['Staff']);
+    });
+
+    testWidgets('role dropdown: users.create alone (no roles.view) still loads GET /roles', (tester) async {
+      when(() => roles.getRoles(page: any(named: 'page'), pageSize: any(named: 'pageSize')))
+          .thenAnswer((_) async => rolePage([superAdminRole, staffRole, gudangRole, role(6, name: 'Tamu')]));
+      await pump(tester, const UserFormScreen(), userWith({Permissions.usersCreate}));
+
+      verify(() => roles.getRoles(page: any(named: 'page'), pageSize: any(named: 'pageSize'))).called(1);
+      expect(await dropdownItems(tester), ['Tamu'], reason: 'the only role within an empty scope grants nothing');
+      verifyNever(() => roles.getRole(any()));
+      verifyNever(() => roles.getPermissionCatalog());
+    });
+
+    testWidgets('role dropdown: users.view alone never asks for GET /roles (it would be a 403)', (tester) async {
+      when(() => users.getUser(11)).thenAnswer((_) async => staffUser);
+      await pump(tester, const UserFormScreen(userId: 11), userWith({Permissions.usersView}));
+
+      verifyNever(() => roles.getRoles(page: any(named: 'page'), pageSize: any(named: 'pageSize')));
+      expect(find.text('Staff'), findsOneWidget, reason: 'the current role still shows');
+    });
+
+    testWidgets('user list: rows beyond the scope are locked — no swipe, a tap only explains', (tester) async {
+      stubUsers([staffUser, adminUser, gudangUser]);
+      await pump(tester, const UserListScreen(), manager);
+      final l10n = l10nOf(tester);
+
+      expect(find.byKey(const ValueKey('user_locked_11')), findsNothing);
+      expect(find.byKey(const ValueKey('user_locked_12')), findsOneWidget, reason: 'a Super Admin');
+      expect(find.byKey(const ValueKey('user_locked_13')), findsOneWidget, reason: 'Gudang has inventory.view');
+      expect(find.textContaining(l10n.userOutOfScope), findsNWidgets(2));
+      expect(find.byType(Dismissible), findsOneWidget, reason: 'only Sari (Staff) can be swiped');
+
+      await tester.tap(find.byKey(const ValueKey('user_tile_12')));
+      await tester.pumpAndSettle();
+      expect(find.byType(UserListScreen), findsOneWidget, reason: 'no form opened');
+      expect(find.descendant(of: find.byType(SnackBar), matching: find.text(l10n.userOutOfScope)), findsOneWidget);
+      verifyNever(() => users.getUser(any()));
+    });
+
+    testWidgets('user list: Super Admin locks nothing', (tester) async {
+      stubUsers([staffUser, adminUser, gudangUser]);
+      await pump(tester, const UserListScreen(), superAdmin);
+      expect(find.byIcon(Icons.lock_outline), findsNothing);
+      expect(find.byType(Dismissible), findsNWidgets(3));
+    });
+
+    testWidgets('user list: roles not readable → unknown → nothing hidden except the known Super Admin', (tester) async {
+      stubUsers([staffUser, adminUser, gudangUser]);
+      await pump(tester, const UserListScreen(), userWith({Permissions.usersView, Permissions.usersDelete}));
+
+      verifyNever(() => roles.getRoles(page: any(named: 'page'), pageSize: any(named: 'pageSize')));
+      expect(find.byKey(const ValueKey('user_locked_13')), findsNothing, reason: 'unknown: the backend decides');
+      expect(find.byKey(const ValueKey('user_locked_12')), findsOneWidget, reason: 'is_system is in the user itself');
+      expect(find.byType(Dismissible), findsNWidgets(2));
+    });
+
+    testWidgets('user form opened for a user out of scope (deep link): back, with the same message', (tester) async {
+      when(() => users.getUser(13)).thenAnswer((_) async => gudangUser);
+      await pump(tester, const UserFormScreen(userId: 13), manager);
+
+      expect(find.text('home'), findsOneWidget);
+      expect(find.byType(UserFormScreen), findsNothing);
+      expect(find.descendant(of: find.byType(SnackBar), matching: find.text(l10nOf(tester).userOutOfScope)),
+          findsOneWidget);
+      verifyNever(() => users.updateUser(any(), any()));
+    });
+
+    testWidgets('user form in scope stays open', (tester) async {
+      when(() => users.getUser(11)).thenAnswer((_) async => staffUser);
+      await pump(tester, const UserFormScreen(userId: 11), manager);
+      expect(find.byKey(const Key('user_form_submit')), findsOneWidget);
+    });
+
+    // The backend's 403 sentences (captured, see test/helpers/admin_json.dart)
+    // appear exactly as sent; nothing in the app matches or rewrites them.
+    const assignRefused =
+        'tidak bisa memberikan role "Staff" karena role itu punya izin "categories.view" yang tidak anda miliki sendiri';
+    const changeRefused =
+        'tidak bisa mengubah atau menghapus pengguna dengan role "Staff" karena role itu punya izin "categories.view" yang tidak anda miliki sendiri';
+
+    testWidgets('403 on save: the server\'s sentence in the form banner, as is', (tester) async {
+      when(() => users.createUser(any()))
+          .thenThrow(const ServerFailure(assignRefused, statusCode: 403, code: 'forbidden'));
+      await pump(tester, const UserFormScreen(), manager);
+
+      await tester.enterText(find.byKey(const Key('user_form_name')), 'Baru');
+      await tester.enterText(find.byKey(const Key('user_form_email')), 'baru@example.com');
+      await tester.enterText(find.byKey(const Key('user_form_password')), 'rahasia123');
+      await tester.tap(find.byType(DropdownButton<int?>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Staff').last);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('user_form_submit')));
+      await tester.tap(find.byKey(const Key('user_form_submit')));
+      await tester.pumpAndSettle();
+
+      final banner = find.byKey(const Key('user_form_error'));
+      expect(find.descendant(of: banner, matching: find.text(assignRefused)), findsOneWidget);
+    });
+
+    testWidgets('403 on delete: the server\'s sentence in the snack bar, as is; the row stays', (tester) async {
+      stubUsers([staffUser]);
+      when(() => users.deleteUser(11)).thenThrow(const ServerFailure(changeRefused, statusCode: 403, code: 'forbidden'));
+      await pump(tester, const UserListScreen(), manager);
+
+      await tester.drag(find.byKey(const ValueKey('user_tile_11')), const Offset(-500, 0));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('user_delete_confirm')));
+      await tester.pumpAndSettle();
+
+      expect(find.descendant(of: find.byType(SnackBar), matching: find.text(changeRefused)), findsOneWidget);
+      expect(find.byKey(const ValueKey('user_tile_11')), findsOneWidget);
     });
   });
 }

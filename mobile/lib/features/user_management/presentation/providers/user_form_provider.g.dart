@@ -53,7 +53,7 @@ final class UserFormProvider
   }
 }
 
-String _$userFormHash() => r'57ff657ff540198e76dc4acfbbf8135a0e14a516';
+String _$userFormHash() => r'a935ca29439f78bf7790f13613a42d50ac9ea3ef';
 
 /// Backs the create/edit form. `userId == null` → create mode (state null).
 

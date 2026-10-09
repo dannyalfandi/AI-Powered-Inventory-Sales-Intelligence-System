@@ -28,25 +28,24 @@ class RoleList extends _$RoleList {
   }
 }
 
-/// Every role, for the user form's role picker. Invalidated whenever roles
-/// are created, renamed or deleted.
+/// Every role, for the user form's role picker and for deciding which users
+/// the caller may manage (see `grant_scope.dart`). Invalidated whenever roles
+/// are created, renamed, re-permissioned or deleted. GET /roles answers for
+/// `Permissions.roleList` (roles.view, users.create or users.update); callers
+/// without one of those must not watch this.
 @riverpod
 Future<List<Role>> roleOptions(Ref ref) => ref.watch(getRolesUseCaseProvider)();
-
-/// How many users have the role (non-deleted; from GET /users). Only watched
-/// by users who hold `users.view` — the call needs it.
-@riverpod
-Future<int> roleUserCount(Ref ref, int roleId) => ref.watch(countRoleUsersUseCaseProvider)(roleId);
 
 /// The fixed permission catalog, descriptions in the app's language.
 @riverpod
 Future<List<CatalogPermission>> permissionCatalog(Ref ref) => ref.watch(getPermissionCatalogUseCaseProvider)();
 
-/// User-facing message for a failed role delete. A 409 is quoted as the
-/// backend wrote it (already localized): "role 7 is still linked to 2
-/// user(s), including deleted ones", or the system-role lock.
+/// User-facing message for a failed role delete. A 409 or 403 is quoted as
+/// the backend wrote it (already localized): "role 7 is still linked to 2
+/// user(s), including deleted ones", the system-role lock, or a permission
+/// refusal. Nothing matches the sentence itself.
 String roleDeleteErrorMessage(BuildContext context, Failure failure) {
   final reason = errorMessage(context, failure);
-  if (failure is ServerFailure && failure.isConflict) return reason;
+  if (failure is ServerFailure && (failure.isConflict || failure.isForbidden)) return reason;
   return context.l10n.roleDeleteFailed(reason);
 }

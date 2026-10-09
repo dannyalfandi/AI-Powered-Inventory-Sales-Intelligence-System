@@ -2,6 +2,9 @@ import '../../../../core/pagination/paged.dart';
 import '../entities/role.dart';
 
 /// Roles and the permission catalog. Every method throws `Failure`.
+///
+/// Each role carries its `userCount` (backend `user_count`), so nothing
+/// here asks GET /users how many users a role has.
 abstract interface class RoleRepository {
   Future<PageResult<Role>> getRoles({required int page, required int pageSize});
 
@@ -21,9 +24,4 @@ abstract interface class RoleRepository {
 
   /// The fixed catalog, descriptions in the app's language.
   Future<List<CatalogPermission>> getPermissionCatalog();
-
-  /// How many (non-deleted) users have the role. The roles endpoint doesn't
-  /// report it, so it comes from GET /users?role_id=… — which needs
-  /// `users.view`.
-  Future<int> countUsers(int roleId);
 }

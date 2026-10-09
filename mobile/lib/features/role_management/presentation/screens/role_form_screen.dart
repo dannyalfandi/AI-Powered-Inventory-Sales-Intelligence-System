@@ -92,8 +92,13 @@ class _RoleFormState extends ConsumerState<_RoleForm> {
       } else {
         messenger.showSnackBar(SnackBar(content: Text(l10n.roleCreated(saved.name))));
         // A new role has no permissions yet: continue on its page, where
-        // they are assigned, rather than back to the list.
-        context.pushReplacementNamed(AppRoutes.roleEdit, pathParameters: {'id': '${saved.id}'});
+        // they are assigned, rather than back to the list. That page loads
+        // GET /roles/:id, which needs roles.view; without it, back to the list.
+        if (ref.read(currentUserProvider)?.can(Permissions.rolesView) ?? false) {
+          context.pushReplacementNamed(AppRoutes.roleEdit, pathParameters: {'id': '${saved.id}'});
+        } else {
+          context.pop(true);
+        }
       }
     } on ValidationFailure catch (f) {
       setState(() => _serverErrors = {

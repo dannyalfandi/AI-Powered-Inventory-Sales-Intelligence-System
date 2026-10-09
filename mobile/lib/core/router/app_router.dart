@@ -99,6 +99,12 @@ GoRouter appRouter(Ref ref) {
   String? requireAny(List<String> anyOf) =>
       (ref.read(currentUserProvider)?.canAny(anyOf) ?? false) ? null : '/settings';
 
+  /// Like [requireAny], but every one of [allOf] is needed.
+  String? requireAll(List<String> allOf) {
+    final user = ref.read(currentUserProvider);
+    return user != null && allOf.every(user.can) ? null : '/settings';
+  }
+
   final router = GoRouter(
     initialLocation: '/',
     refreshListenable: auth,
@@ -178,17 +184,21 @@ GoRouter appRouter(Ref ref) {
         redirect: (context, state) => requireAny(const [Permissions.rolesCreate]),
         builder: (context, state) => const RoleFormScreen(),
       ),
+      // A role's page loads GET /roles/:id, and its permission editor also
+      // GET /permissions: both answer only to roles.view, so neither opens
+      // without it (no request that can only be refused with 403).
       GoRoute(
         path: '/admin/roles/:id',
         name: AppRoutes.roleEdit,
         redirect: (context, state) =>
-            _positiveId(state) == null ? '/admin/roles' : requireAny(Permissions.roleManagement),
+            _positiveId(state) == null ? '/admin/roles' : requireAny(const [Permissions.rolesView]),
         builder: (context, state) => RoleFormScreen(roleId: _positiveId(state)),
         routes: [
           GoRoute(
             path: 'permissions',
             name: AppRoutes.rolePermissions,
-            redirect: (context, state) => requireAny(const [Permissions.rolesAssignPermissions]),
+            redirect: (context, state) =>
+                requireAll(const [Permissions.rolesView, Permissions.rolesAssignPermissions]),
             builder: (context, state) => RolePermissionEditorScreen(roleId: _positiveId(state)!),
           ),
         ],

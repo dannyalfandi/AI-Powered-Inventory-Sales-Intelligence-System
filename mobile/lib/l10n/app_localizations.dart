@@ -1991,7 +1991,7 @@ abstract class AppLocalizations {
   /// No description provided for @roleUserCount.
   ///
   /// In en, this message translates to:
-  /// **'{count, plural, =0{No users} =1{1 user} other{{count} users}}'**
+  /// **'{count, plural, =0{No linked users} =1{1 linked user} other{{count} linked users}}'**
   String roleUserCount(int count);
 
   /// No description provided for @roleNew.
@@ -2227,6 +2227,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'You'**
   String get userYou;
+
+  /// No description provided for @userOutOfScope.
+  ///
+  /// In en, this message translates to:
+  /// **'Beyond your permissions'**
+  String get userOutOfScope;
 
   /// No description provided for @userNew.
   ///

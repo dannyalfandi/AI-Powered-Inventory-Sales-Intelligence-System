@@ -68,8 +68,8 @@ void main() {
       await pump(tester, const RoleListScreen(), userWith({Permissions.rolesView}));
       final l10n = l10nOf(tester);
       expect(find.text('Gudang'), findsOneWidget);
-      expect(find.text(l10n.rolePermissionCount(1)), findsOneWidget);
-      expect(find.text(l10n.roleAllPermissions), findsOneWidget, reason: 'the system role: every permission');
+      expect(find.textContaining(l10n.rolePermissionCount(1)), findsOneWidget);
+      expect(find.textContaining(l10n.roleAllPermissions), findsOneWidget, reason: 'the system role: every permission');
       expect(find.text(l10n.roleSystemBadge), findsOneWidget);
     });
 
@@ -91,23 +91,52 @@ void main() {
       expect(find.text(l10nOf(tester).rolesEmpty), findsOneWidget);
     });
 
-    testWidgets('Super Admin: add, swipe-delete on every role except the system one, user counts', (tester) async {
-      stubRoles([superAdminRole, staffRole, gudangRole]);
-      when(() => repo.countUsers(any())).thenAnswer((i) async => (i.positionalArguments.first as int) * 2);
+    testWidgets('every row shows its user_count, in neutral words ("linked"), with no extra request', (tester) async {
+      stubRoles([superAdminRole, staffRole, role(4, name: 'Gudang Besar', userCount: 7), gudangRole]);
       await pump(tester, const RoleListScreen(), superAdmin);
+      final l10n = l10nOf(tester);
 
-      expect(find.byType(FloatingActionButton), findsOneWidget);
-      expect(find.byType(Dismissible), findsNWidgets(2), reason: 'the system role can never be deleted');
-      expect(find.textContaining(l10nOf(tester).roleUserCount(6)), findsOneWidget);
+      String subtitle(int id) => tester.widget<Text>(find.byKey(ValueKey('role_subtitle_$id'))).data!;
+      expect(subtitle(1), contains(l10n.roleUserCount(1)));
+      expect(subtitle(4), contains(l10n.roleUserCount(7)));
+      expect(subtitle(3), contains(l10n.roleUserCount(0)));
+      verify(() => repo.getRoles(page: any(named: 'page'), pageSize: any(named: 'pageSize'))).called(1);
+      verifyNoMoreInteractions(repo);
     });
 
-    testWidgets('view only: no add, no delete, and no user count (it needs users.view)', (tester) async {
+    testWidgets('view only: no add, no delete — and the counts still show (no users.view needed)', (tester) async {
       stubRoles([staffRole, gudangRole]);
       await pump(tester, const RoleListScreen(), userWith({Permissions.rolesView}));
 
       expect(find.byType(FloatingActionButton), findsNothing);
       expect(find.byType(Dismissible), findsNothing);
-      verifyNever(() => repo.countUsers(any()));
+      expect(find.textContaining(l10nOf(tester).roleUserCount(1)), findsOneWidget);
+    });
+
+    // Swipe-to-delete is offered only where the backend would say yes.
+    for (final (name, r, offered) in [
+      ('no linked user (userCount 0)', gudangRole, true),
+      ('linked users (userCount 1)', staffRole, false),
+      ('linked users, deleted ones too (userCount 2)', role(4, name: 'Arsip', userCount: 2), false),
+      ('the system role', superAdminRole, false),
+    ]) {
+      testWidgets('swipe delete — $name: ${offered ? 'offered' : 'not offered'}', (tester) async {
+        stubRoles([r]);
+        await pump(tester, const RoleListScreen(), superAdmin);
+        expect(find.byType(Dismissible), offered ? findsOneWidget : findsNothing);
+      });
+    }
+
+    testWidgets('a user manager without roles.view: the list and counts, but rows don\'t open the detail', (tester) async {
+      stubRoles([staffRole, gudangRole]);
+      await pump(tester, const RoleListScreen(), userWith({Permissions.usersCreate, Permissions.rolesDelete}));
+
+      expect(find.text('Gudang'), findsOneWidget);
+      expect(find.byIcon(Icons.chevron_right), findsNothing, reason: 'nothing to open');
+      await tester.tap(find.text('Gudang'));
+      await tester.pumpAndSettle();
+      expect(find.byType(RoleListScreen), findsOneWidget);
+      verifyNever(() => repo.getRole(any()));
     });
 
     testWidgets('delete refused (409): the server\'s sentence, as is, and the row stays', (tester) async {
@@ -219,6 +248,19 @@ void main() {
   });
 
   group('RoleFormScreen', () {
+    testWidgets('create without roles.view: back to the list, never GET /roles/:id', (tester) async {
+      when(() => repo.createRole(any())).thenAnswer((_) async => role(7, name: 'Kasir'));
+      await pump(tester, const RoleFormScreen(), userWith({Permissions.rolesCreate}));
+
+      await tester.enterText(find.byKey(const Key('role_form_name')), 'Kasir');
+      await tester.tap(find.byKey(const Key('role_form_submit')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('home'), findsOneWidget, reason: 'popped back');
+      verify(() => repo.createRole(const RoleInput(name: 'Kasir'))).called(1);
+      verifyNever(() => repo.getRole(any()));
+    });
+
     testWidgets('create: an empty name is rejected before any request', (tester) async {
       await pump(tester, const RoleFormScreen(), superAdmin);
 

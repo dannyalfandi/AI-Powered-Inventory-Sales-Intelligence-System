@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:inventory_intel/core/error/failure.dart';
@@ -6,6 +8,8 @@ import 'package:inventory_intel/core/network/page_meta_model.dart';
 import 'package:inventory_intel/features/role_management/data/models/role_models.dart';
 import 'package:inventory_intel/features/role_management/domain/entities/role.dart';
 import 'package:inventory_intel/features/user_management/data/models/user_models.dart';
+
+import '../helpers/admin_json.dart';
 
 // JSON below was captured from the running Go API (admin@example.com, seeded
 // data) on 2026-09-29 — not written from memory. See the endpoint list in
@@ -46,55 +50,76 @@ void main() {
   });
 
   group('roles', () {
-    final staffJson = {
-      'id': 2,
-      'name': 'Staff',
-      'description': 'Staf operasional: melihat semua data, membuat dan memproses pesanan.',
-      'is_system': false,
-      'created_at': '2026-09-26T13:09:00.686718+07:00',
-      'updated_at': '2026-09-26T13:09:00.692974+07:00',
-      'permissions': ['products.view', 'categories.view', 'sales_orders.create'],
-    };
+    List<Role> rolesOf(String json) => ((jsonDecode(json) as Map<String, dynamic>)['data'] as List)
+        .map((e) => RoleModel.fromJson(e as Map<String, dynamic>).toEntity())
+        .toList();
+    Role roleOf(String json) =>
+        RoleModel.fromJson((jsonDecode(json) as Map<String, dynamic>)['data'] as Map<String, dynamic>).toEntity();
 
-    test('GET /roles: list with permission keys and meta — but no user count', () {
-      final body = {
-        'data': [
-          {
-            'id': 1,
-            'name': 'Super Admin',
-            'description': 'Akses penuh ke seluruh sistem, termasuk pengguna dan role. Tidak bisa dihapus.',
-            'is_system': true,
-            'created_at': '2026-09-26T13:09:00.678113+07:00',
-            'updated_at': '2026-09-26T13:09:00.678113+07:00',
-            'permissions': ['products.view', 'roles.assign_permissions'],
-          },
-          staffJson,
-        ],
-        'meta': {'page': 1, 'page_size': 20, 'total': 14},
-      };
-      final roles = (body['data']! as List).map((e) => RoleModel.fromJson(e as Map<String, dynamic>).toEntity()).toList();
-      final meta = PageMetaModel.fromJson(body['meta']! as Map<String, dynamic>);
+    test('GET /roles: every role carries user_count (0 included), with its permission keys and meta', () {
+      final roles = rolesOf(adminGetRoles);
+      final meta = PageMetaModel.fromJson((jsonDecode(adminGetRoles) as Map<String, dynamic>)['meta'] as Map<String, dynamic>);
 
+      expect(meta.total, 5);
+      expect([for (final r in roles) (r.name.split(' ').take(2).join(' '), r.userCount)], [
+        ('Super Admin', 1),
+        ('E2E Baru', 0),
+        ('E2E Gudang', 2),
+        ('E2E UserMgr', 1),
+        ('Staff', 1),
+      ]);
+      // The system role lists the whole catalog (32 keys), not an empty list.
       expect(roles.first.isSystem, isTrue);
-      expect(roles.last.permissions, hasLength(3), reason: 'the permission count is derivable');
-      expect(meta.total, 14);
-      // Differs from the brief: there is no user count on a role. The app
-      // reads it from GET /users?role_id=…&page_size=1 → meta.total.
-      expect((body['data']! as List).first as Map, isNot(contains('user_count')));
+      expect(roles.first.permissions, hasLength(32));
+      expect(roles.last.permissions, hasLength(12), reason: 'the seeded Staff role');
+      for (final r in (jsonDecode(adminGetRoles) as Map<String, dynamic>)['data'] as List) {
+        expect(r as Map, contains('user_count'), reason: 'never omitted, not even at 0');
+      }
     });
 
-    test('GET /roles/:id and POST /roles: a new role has "permissions": []', () {
-      final created = RoleModel.fromJson({
-        'id': 51,
-        'name': 'E2E Gudang Capture',
-        'description': 'stok saja',
-        'is_system': false,
-        'created_at': '2026-09-29T12:57:52.5005255+07:00',
-        'updated_at': '2026-09-29T12:57:52.5005255+07:00',
-        'permissions': <String>[],
-      }).toEntity();
+    test('user_count counts deleted users too: Gudang says 2 while GET /users lists only 1 of them', () {
+      // One of the two Gudang users was soft-deleted before the capture.
+      expect(roleOf(adminGetRole).userCount, 2);
+      final listed = ((jsonDecode(adminGetUsers) as Map<String, dynamic>)['data'] as List)
+          .map((e) => UserModel.fromJson(e as Map<String, dynamic>).toEntity())
+          .where((u) => u.roleId == 170);
+      expect(listed, hasLength(1));
+    });
+
+    test('GET /roles/:id and POST /roles: user_count too; a new role has 0 and "permissions": []', () {
+      final gudang = roleOf(adminGetRole);
+      expect(gudang.permissions, ['products.view', 'inventory.view', 'inventory.record_movement']);
+      final created = roleOf(adminPostRole);
+      expect(created.userCount, 0);
       expect(created.permissions, isEmpty);
-      expect(RoleModel.fromJson(staffJson).toEntity().name, 'Staff');
+    });
+
+    test('a role without user_count is rejected, never read as 0', () {
+      final noCount = (jsonDecode(adminGetRole) as Map<String, dynamic>)['data'] as Map<String, dynamic>
+        ..remove('user_count');
+      expect(() => RoleModel.fromJson(noCount), throwsA(anything));
+    });
+
+    test('a user manager reads the same list (users.create/update, no roles.view)', () {
+      expect(rolesOf(managerGetRoles).map((r) => (r.id, r.userCount)), rolesOf(adminGetRoles).map((r) => (r.id, r.userCount)));
+    });
+
+    test('…but not the detail nor the catalog: 403 naming roles.view', () {
+      for (final body in [managerGetRole, managerGetPermissions]) {
+        final f = _map(403, jsonDecode(body) as Map<String, dynamic>) as ServerFailure;
+        expect(f.isForbidden, isTrue);
+        expect(f.code, 'forbidden');
+        expect(f.message, 'anda tidak punya izin roles.view');
+      }
+    });
+
+    test('409 on delete: the count in the sentence is the role\'s user_count', () {
+      final id = _map(409, jsonDecode(deleteRoleInUseId) as Map<String, dynamic>) as ServerFailure;
+      final en = _map(409, jsonDecode(deleteRoleInUseEn) as Map<String, dynamic>) as ServerFailure;
+      expect(id.isConflict, isTrue);
+      expect(id.message, 'role 170 masih terhubung dengan 2 pengguna (termasuk yang sudah dihapus)');
+      expect(en.message, 'role 170 is still linked to 2 user(s), including deleted ones');
+      expect(roleOf(adminGetRole).userCount, 2);
     });
 
     test('request bodies: create, partial patch, and PUT with permission **keys**', () {
@@ -243,6 +268,55 @@ void main() {
       final self = _map(409, {'error': {'code': 'conflict', 'message': 'tidak bisa menonaktifkan atau menghapus akun sendiri'}},
           path: '/api/v1/users/1');
       expect(self.message, 'tidak bisa menonaktifkan atau menghapus akun sendiri');
+    });
+  });
+  group('users and the "only what you hold" rule (captured 2026-10-09)', () {
+    Map<String, dynamic> dataOf(String json) => (jsonDecode(json) as Map<String, dynamic>)['data'] as Map<String, dynamic>;
+
+    test('GET /users: the embedded role has "permissions": null and no user_count', () {
+      final rows = (jsonDecode(adminGetUsers) as Map<String, dynamic>)['data'] as List;
+      for (final row in rows) {
+        final role = (row as Map<String, dynamic>)['role'] as Map<String, dynamic>;
+        expect(role['permissions'], isNull);
+        expect(role, isNot(contains('user_count')));
+      }
+      final u = UserModel.fromJson(rows.first as Map<String, dynamic>).toEntity();
+      expect((u.roleId, u.roleName, u.roleIsSystem), (170, 'E2E Gudang 1791539033', false));
+    });
+
+    test('POST /users answer: its embedded role DOES carry permissions and a user_count taken before the insert', () {
+      // Differs from the brief ("a role inside a user has no user_count"):
+      // after a create the embedded role says 2 although the role now has 3.
+      // The app reads only id/name/is_system from it, so nothing stale leaks.
+      final role = dataOf(managerCreateGudang)['role'] as Map<String, dynamic>;
+      expect(role['user_count'], 2);
+      expect(role['permissions'], hasLength(3));
+      final u = UserModel.fromJson(dataOf(managerCreateGudang)).toEntity();
+      expect((u.roleId, u.roleName, u.roleIsSystem), (170, 'E2E Gudang 1791539033', false));
+    });
+
+    test('403 for a role beyond the caller\'s permissions: the translated sentence, kept as is', () {
+      final id = _map(403, jsonDecode(managerAssignStaffId) as Map<String, dynamic>, path: '/api/v1/users') as ServerFailure;
+      final en = _map(403, jsonDecode(managerAssignStaffEn) as Map<String, dynamic>, path: '/api/v1/users') as ServerFailure;
+      expect(id.isForbidden, isTrue);
+      expect(id.code, 'forbidden');
+      expect(id.message,
+          'tidak bisa memberikan role "Staff" karena role itu punya izin "categories.view" yang tidak anda miliki sendiri');
+      expect(en.message,
+          'you can\'t assign the "Staff" role because it has the "categories.view" permission, which you don\'t hold yourself');
+    });
+
+    test('403 for changing a user out of scope, and the older 403s, share the envelope', () {
+      final cases = {
+        managerPatchStaff:
+            'tidak bisa mengubah atau menghapus pengguna dengan role "Staff" karena role itu punya izin "categories.view" yang tidak anda miliki sendiri',
+        managerPatchSuperAdmin: 'hanya Super Admin yang bisa memberikan role sistem atau mengubah akun Super Admin',
+        managerDeleteNoPerm: 'anda tidak punya izin users.delete',
+      };
+      cases.forEach((json, message) {
+        final f = _map(403, jsonDecode(json) as Map<String, dynamic>, path: '/api/v1/users/2') as ServerFailure;
+        expect((f.statusCode, f.code, f.message), (403, 'forbidden', message));
+      });
     });
   });
 }

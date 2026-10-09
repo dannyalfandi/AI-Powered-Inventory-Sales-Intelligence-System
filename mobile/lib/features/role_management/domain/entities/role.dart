@@ -6,6 +6,12 @@ part 'role.freezed.dart';
 
 /// A role (backend model.Role). [permissions] are permission keys; the
 /// system role (Super Admin) reports every key in the catalog.
+///
+/// [userCount] is the backend's `user_count`: every user whose `role_id` is
+/// this role, **inactive and deleted users included** (a deleted user keeps
+/// its `role_id`, and `users.role_id` is ON DELETE RESTRICT). So it is exactly
+/// what decides the 409 on delete: `userCount > 0` ⇔ the role can't be
+/// deleted. It is not "active users".
 @freezed
 abstract class Role with _$Role {
   const factory Role({
@@ -14,6 +20,7 @@ abstract class Role with _$Role {
     required String description,
     required bool isSystem,
     required List<String> permissions,
+    required int userCount,
     required DateTime createdAt,
     required DateTime updatedAt,
   }) = _Role;
