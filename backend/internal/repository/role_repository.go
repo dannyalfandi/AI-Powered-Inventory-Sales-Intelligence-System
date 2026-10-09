@@ -13,22 +13,30 @@ import (
 
 type RoleRepository interface {
 	Create(ctx context.Context, r *model.Role) error
-	// FindByID returns the role with Permissions filled from role_permissions.
+	// FindByID returns the role with Permissions filled from role_permissions
+	// and UserCount computed (see roleColumnsWithUserCount).
 	FindByID(ctx context.Context, id uint) (*model.Role, error)
-	// List returns roles with Permissions filled.
+	// List returns roles with Permissions and UserCount filled. The counts
+	// come from the same query as the roles, never one query per role.
 	List(ctx context.Context, params model.ListRolesParams) ([]model.Role, int64, error)
 	Update(ctx context.Context, r *model.Role) error
 	// Delete removes the role and its permission links. Returns ErrInUse if a
 	// user still references it (users.role_id is ON DELETE RESTRICT).
 	Delete(ctx context.Context, id uint) error
-	// CountUsers counts users with this role, deleted ones included: they
-	// keep their role_id and still block the delete at the database level.
-	CountUsers(ctx context.Context, id uint) (int64, error)
 	// ReplacePermissions sets the role's permissions to exactly keys, in one
 	// transaction that holds a lock on the role row, so two concurrent
 	// replacements can't interleave into a mix of both lists.
 	ReplacePermissions(ctx context.Context, id uint, keys []string) error
 }
+
+// roleColumnsWithUserCount selects a role plus its user_count in one
+// statement. It is the only definition of user_count: every users row that
+// references the role, soft-deleted ones included (raw SQL, so GORM adds no
+// deleted_at filter). Deleted users keep role_id as history, and
+// users.role_id is ON DELETE RESTRICT, so exactly these rows make Postgres
+// refuse to delete the role; the service's 409 reads this same number.
+// The correlated subquery is answered from the index on users.role_id.
+const roleColumnsWithUserCount = `roles.*, (SELECT COUNT(*) FROM users u WHERE u.role_id = roles.id) AS user_count`
 
 type roleRepository struct {
 	db *gorm.DB
@@ -47,7 +55,7 @@ func (r *roleRepository) Create(ctx context.Context, role *model.Role) error {
 
 func (r *roleRepository) FindByID(ctx context.Context, id uint) (*model.Role, error) {
 	var role model.Role
-	if err := r.db.WithContext(ctx).First(&role, id).Error; err != nil {
+	if err := r.db.WithContext(ctx).Select(roleColumnsWithUserCount).First(&role, id).Error; err != nil {
 		return nil, fmt.Errorf("find role %d: %w", id, translate(err))
 	}
 	roles := []model.Role{role}
@@ -69,7 +77,8 @@ func (r *roleRepository) List(ctx context.Context, params model.ListRolesParams)
 	}
 
 	var roles []model.Role
-	err := q.Order("is_system DESC, name ASC, id ASC").
+	err := q.Select(roleColumnsWithUserCount).
+		Order("is_system DESC, name ASC, id ASC").
 		Limit(params.PageSize).
 		Offset((params.Page - 1) * params.PageSize).
 		Find(&roles).Error
@@ -103,15 +112,6 @@ func (r *roleRepository) Delete(ctx context.Context, id uint) error {
 		}
 		return nil
 	})
-}
-
-func (r *roleRepository) CountUsers(ctx context.Context, id uint) (int64, error) {
-	var n int64
-	err := r.db.WithContext(ctx).Unscoped().Model(&model.User{}).Where("role_id = ?", id).Count(&n).Error
-	if err != nil {
-		return 0, fmt.Errorf("count users of role %d: %w", id, err)
-	}
-	return n, nil
 }
 
 func (r *roleRepository) ReplacePermissions(ctx context.Context, id uint, keys []string) error {

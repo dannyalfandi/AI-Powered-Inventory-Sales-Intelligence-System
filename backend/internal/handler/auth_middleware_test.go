@@ -256,3 +256,88 @@ func TestRequireStatusPermission(t *testing.T) {
 		assert.Len(t, authz.asked, 1)
 	})
 }
+
+func TestRequireAnyPermission(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	gate := []auth.Permission{auth.RolesView, auth.UsersCreate, auth.UsersUpdate}
+	disabled := fmt.Errorf("%w: akun ini tidak aktif", service.ErrUnauthorized)
+
+	tests := []struct {
+		name      string
+		holds     []auth.Permission
+		decide    func(p auth.Permission) error // overrides holds
+		lang      string
+		wantCode  int
+		wantAsked []auth.Permission
+		wantMsg   string
+	}{
+		{name: "first one granted: stops there", holds: []auth.Permission{auth.RolesView},
+			wantCode: 200, wantAsked: gate[:1]},
+		{name: "second one granted", holds: []auth.Permission{auth.UsersCreate},
+			wantCode: 200, wantAsked: gate[:2]},
+		{name: "last one granted", holds: []auth.Permission{auth.UsersUpdate},
+			wantCode: 200, wantAsked: gate},
+		{name: "a permission outside the list doesn't count", holds: []auth.Permission{auth.UsersView, auth.UsersDelete},
+			wantCode: 403, wantAsked: gate, wantMsg: "anda tidak punya izin roles.view / users.create / users.update"},
+		{name: "nothing held", wantCode: 403, wantAsked: gate},
+		{name: "403 names every permission, in English too", lang: "en",
+			wantCode: 403, wantAsked: gate, wantMsg: "you do not have the roles.view / users.create / users.update permission"},
+		{name: "a 401 stops the search", decide: func(auth.Permission) error { return disabled },
+			wantCode: 401, wantAsked: gate[:1]},
+		{name: "a database error stops the search", decide: func(auth.Permission) error { return errors.New("connection refused") },
+			wantCode: 500, wantAsked: gate[:1]},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			decide := tt.decide
+			if decide == nil {
+				decide = func(p auth.Permission) error {
+					for _, held := range tt.holds {
+						if held == p {
+							return nil
+						}
+					}
+					return fmt.Errorf("%w: %s", service.ErrForbidden, i18n.T(context.Background(), i18n.KeyAuthForbidden, p))
+				}
+			}
+			authz := &fakeAuthorizer{decide: decide}
+			handlerRan := false
+			r := gin.New()
+			r.Use(func(c *gin.Context) {
+				c.Request = c.Request.WithContext(i18n.WithLang(c.Request.Context(), i18n.Parse(c.GetHeader("Accept-Language"))))
+			})
+			r.GET("/x", withPrincipal, RequireAnyPermission(authz, gate...), func(c *gin.Context) {
+				handlerRan = true
+				c.Status(http.StatusOK)
+			})
+
+			req := httptest.NewRequest(http.MethodGet, "/x", nil)
+			if tt.lang != "" {
+				req.Header.Set("Accept-Language", tt.lang)
+			}
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			assert.Equal(t, tt.wantCode, w.Code, w.Body.String())
+			assert.Equal(t, tt.wantAsked, authz.asked)
+			assert.Equal(t, tt.wantCode == 200, handlerRan)
+			if tt.wantMsg != "" {
+				assert.Equal(t, tt.wantMsg, decodeError(t, w).Error.Message)
+			}
+		})
+	}
+
+	t.Run("without Authenticate in front it refuses", func(t *testing.T) {
+		authz := &fakeAuthorizer{}
+		r := gin.New()
+		r.GET("/x", RequireAnyPermission(authz, gate...), func(c *gin.Context) { c.Status(http.StatusOK) })
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/x", nil))
+		assert.Equal(t, http.StatusUnauthorized, w.Code)
+		assert.Empty(t, authz.asked)
+	})
+
+	t.Run("an empty list is a wiring bug caught at startup", func(t *testing.T) {
+		assert.Panics(t, func() { RequireAnyPermission(&fakeAuthorizer{}) })
+	})
+}

@@ -57,6 +57,7 @@ func (s *roleService) Create(ctx context.Context, in model.CreateRoleInput) (*mo
 		return nil, mapRepoError(ctx, err, i18n.KeyEntityRoleName, r.Name)
 	}
 	r.Permissions = []string{}
+	r.UserCount = new(int64) // nobody has a role that didn't exist a moment ago
 	return r, nil
 }
 
@@ -111,6 +112,11 @@ func (s *roleService) Update(ctx context.Context, id uint, in model.UpdateRoleIn
 
 // Delete removes a role. It refuses (ErrConflict) for the system role and for
 // a role any user still has — users are never reassigned implicitly.
+//
+// "Still has" is Role.UserCount, the number GET /roles shows, so a client
+// can predict the 409: it includes soft-deleted users, because they keep
+// role_id and users.role_id is ON DELETE RESTRICT — the database would
+// refuse the delete for them anyway.
 func (s *roleService) Delete(ctx context.Context, id uint) error {
 	r, err := s.roles.FindByID(ctx, id)
 	if err != nil {
@@ -119,12 +125,10 @@ func (s *roleService) Delete(ctx context.Context, id uint) error {
 	if r.IsSystem {
 		return ruleError(ctx, ErrConflict, i18n.KeySystemRoleLocked, r.Name)
 	}
-	n, err := s.roles.CountUsers(ctx, id)
-	if err != nil {
-		return fmt.Errorf("role %d: %w", id, err)
-	}
-	if n > 0 {
-		return ruleError(ctx, ErrConflict, i18n.KeyRoleInUse, id, n)
+	// FindByID always loads the count; were it missing, the foreign key
+	// below would still refuse (ErrInUse).
+	if r.UserCount != nil && *r.UserCount > 0 {
+		return ruleError(ctx, ErrConflict, i18n.KeyRoleInUse, id, *r.UserCount)
 	}
 	switch err := s.roles.Delete(ctx, id); {
 	case errors.Is(err, repository.ErrInUse):
@@ -158,20 +162,12 @@ func (s *roleService) SetPermissions(ctx context.Context, id uint, in model.SetR
 	// Someone who may edit roles but is not a Super Admin can only hand out
 	// what they hold themselves; otherwise roles.assign_permissions would be
 	// a way to grant yourself (via a role you then get) anything at all.
-	if !isSuperAdmin(actor) {
-		own, err := s.roles.FindByID(ctx, actor.RoleID)
-		if err != nil {
-			return nil, fmt.Errorf("load caller role %d: %w", actor.RoleID, err)
-		}
-		held := make(map[string]bool, len(own.Permissions))
-		for _, k := range own.Permissions {
-			held[k] = true
-		}
-		for _, k := range keys {
-			if !held[k] {
-				return nil, ruleError(ctx, ErrForbidden, i18n.KeyPermissionNotHeld, k)
-			}
-		}
+	scope, err := grantScopeOf(ctx, s.roles, actor)
+	if err != nil {
+		return nil, err
+	}
+	if k := scope.firstMissing(keys); k != "" {
+		return nil, ruleError(ctx, ErrForbidden, i18n.KeyPermissionNotHeld, k)
 	}
 
 	if err := s.roles.ReplacePermissions(ctx, id, keys); err != nil {
