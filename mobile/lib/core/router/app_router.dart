@@ -5,6 +5,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../features/auth/domain/entities/auth_user.dart';
 import '../../features/auth/presentation/providers/auth_controller.dart';
 import '../../features/auth/presentation/screens/login_screen.dart';
+import '../../features/auth/presentation/screens/no_access_screen.dart';
 import '../../features/auth/presentation/screens/splash_screen.dart';
 import '../../features/category/presentation/screens/category_form_screen.dart';
 import '../../features/category/presentation/screens/category_list_screen.dart';
@@ -26,6 +27,7 @@ import '../../features/user_management/presentation/screens/user_form_screen.dar
 import '../../features/user_management/presentation/screens/user_list_screen.dart';
 import '../auth/permissions.dart';
 import 'home_shell.dart';
+import 'home_tabs.dart';
 
 part 'app_router.g.dart';
 
@@ -35,6 +37,7 @@ abstract final class AppRoutes {
   static const splash = 'splash';
   static const dashboard = 'dashboard';
   static const settings = 'settings';
+  static const noAccess = 'no-access';
   static const products = 'products';
   static const productCreate = 'product-create';
   static const productDetail = 'product-detail';
@@ -94,14 +97,28 @@ GoRouter appRouter(Ref ref) {
   ref.listen(authControllerProvider, (_, next) => auth.value = next);
   ref.onDispose(auth.dispose);
 
+  /// The user every guard below decides on: the same value the router was
+  /// just notified with. Reading `currentUserProvider` here instead would
+  /// race the notification — during a refresh it can still hold the previous
+  /// user, so a permission taken away (or a fresh login) would be judged
+  /// against stale permissions.
+  AuthUser? currentUser() => auth.value.value;
+
   /// Route-level permission gate: null (allowed) if the current user holds
   /// any of [anyOf], else back to Settings — where the entry points live.
-  String? requireAny(List<String> anyOf) =>
-      (ref.read(currentUserProvider)?.canAny(anyOf) ?? false) ? null : '/settings';
+  String? requireAny(List<String> anyOf) => (currentUser()?.canAny(anyOf) ?? false) ? null : '/settings';
+
+  /// Tab gate: null (allowed) if the current user may open [tab], else the
+  /// first tab they may open — or the no-access screen when there is none.
+  /// The same check decides which tabs HomeShell shows (see HomeTab).
+  String? requireTab(HomeTab tab) {
+    final user = currentUser();
+    return tab.allows(user) ? null : firstAllowedPath(user);
+  }
 
   /// Like [requireAny], but every one of [allOf] is needed.
   String? requireAll(List<String> allOf) {
-    final user = ref.read(currentUserProvider);
+    final user = currentUser();
     return user != null && allOf.every(user.can) ? null : '/settings';
   }
 
@@ -114,12 +131,21 @@ GoRouter appRouter(Ref ref) {
       GoRoute(path: '/splash', name: AppRoutes.splash, builder: (context, state) => const SplashScreen()),
 
       // Tabs (bottom navigation). Each branch keeps its own stack.
-      StatefulShellRoute.indexedStack(
+      StatefulShellRoute(
         builder: (context, state, shell) => HomeShell(shell: shell),
+        navigatorContainerBuilder: (context, shell, children) =>
+            FadingBranchContainer(currentIndex: shell.currentIndex, children: children),
         branches: [
           StatefulShellBranch(
             routes: [
-              GoRoute(path: '/', name: AppRoutes.dashboard, builder: (context, state) => const DashboardScreen()),
+              GoRoute(
+                path: '/',
+                name: AppRoutes.dashboard,
+                // Also where login lands: someone without analytics goes on
+                // to their first allowed tab from here.
+                redirect: (context, state) => requireTab(HomeTab.dashboard),
+                builder: (context, state) => const DashboardScreen(),
+              ),
             ],
           ),
           StatefulShellBranch(
@@ -127,6 +153,7 @@ GoRouter appRouter(Ref ref) {
               GoRoute(
                 path: '/products',
                 name: AppRoutes.products,
+                redirect: (context, state) => requireTab(HomeTab.products),
                 builder: (context, state) => const ProductListScreen(),
               ),
             ],
@@ -136,6 +163,7 @@ GoRouter appRouter(Ref ref) {
               GoRoute(
                 path: '/categories',
                 name: AppRoutes.categories,
+                redirect: (context, state) => requireTab(HomeTab.categories),
                 builder: (context, state) => const CategoryListScreen(),
               ),
             ],
@@ -145,6 +173,7 @@ GoRouter appRouter(Ref ref) {
               GoRoute(
                 path: '/customers',
                 name: AppRoutes.customers,
+                redirect: (context, state) => requireTab(HomeTab.customers),
                 builder: (context, state) => const CustomerListScreen(),
               ),
             ],
@@ -154,6 +183,7 @@ GoRouter appRouter(Ref ref) {
               GoRoute(
                 path: '/sales-orders',
                 name: AppRoutes.salesOrders,
+                redirect: (context, state) => requireTab(HomeTab.salesOrders),
                 builder: (context, state) => const SalesOrderListScreen(),
               ),
             ],
@@ -162,6 +192,19 @@ GoRouter appRouter(Ref ref) {
       ),
 
       // Full-screen routes (root navigator, no bottom navigation).
+
+      // A role without any view permission: nothing to show but the way to
+      // Settings and to sign out. Leaves as soon as a tab opens up (the
+      // permissions are refreshed on resume and after a 403).
+      GoRoute(
+        path: noAccessPath,
+        name: AppRoutes.noAccess,
+        redirect: (context, state) {
+          final first = firstAllowedPath(currentUser());
+          return first == noAccessPath ? null : first;
+        },
+        builder: (context, state) => const NoAccessScreen(),
+      ),
       GoRoute(
         path: '/settings',
         name: AppRoutes.settings,
@@ -224,17 +267,25 @@ GoRouter appRouter(Ref ref) {
       ),
 
       // Low stock is reached from the low-stock card on the dashboard.
-      GoRoute(path: '/low-stock', name: AppRoutes.lowStock, builder: (context, state) => const LowStockScreen()),
+      // It lists GET /inventory/low-stock, which needs inventory.view.
+      GoRoute(
+        path: '/low-stock',
+        name: AppRoutes.lowStock,
+        redirect: (context, state) =>
+            (currentUser()?.can(Permissions.inventoryView) ?? false) ? null : firstAllowedPath(currentUser()),
+        builder: (context, state) => const LowStockScreen(),
+      ),
       // `products/new` must come before `products/:id`.
       GoRoute(
         path: '/products/new',
         name: AppRoutes.productCreate,
+        redirect: (context, state) => requireTab(HomeTab.products),
         builder: (context, state) => const ProductFormScreen(),
       ),
       GoRoute(
         path: '/products/:id',
         name: AppRoutes.productDetail,
-        redirect: (context, state) => _positiveId(state) == null ? '/' : null,
+        redirect: (context, state) => _positiveId(state) == null ? '/' : requireTab(HomeTab.products),
         builder: (context, state) => ProductStockScreen(productId: _positiveId(state)!),
         routes: [
           GoRoute(
@@ -247,35 +298,39 @@ GoRouter appRouter(Ref ref) {
       GoRoute(
         path: '/categories/new',
         name: AppRoutes.categoryCreate,
+        redirect: (context, state) => requireTab(HomeTab.categories),
         builder: (context, state) => const CategoryFormScreen(),
       ),
       GoRoute(
         path: '/categories/:id/edit',
         name: AppRoutes.categoryEdit,
-        redirect: (context, state) => _positiveId(state) == null ? '/categories' : null,
+        redirect: (context, state) => _positiveId(state) == null ? '/categories' : requireTab(HomeTab.categories),
         builder: (context, state) => CategoryFormScreen(categoryId: _positiveId(state)!),
       ),
       GoRoute(
         path: '/customers/new',
         name: AppRoutes.customerCreate,
+        redirect: (context, state) => requireTab(HomeTab.customers),
         builder: (context, state) => const CustomerFormScreen(),
       ),
       GoRoute(
         path: '/customers/:id/edit',
         name: AppRoutes.customerEdit,
-        redirect: (context, state) => _positiveId(state) == null ? '/customers' : null,
+        redirect: (context, state) => _positiveId(state) == null ? '/customers' : requireTab(HomeTab.customers),
         builder: (context, state) => CustomerFormScreen(customerId: _positiveId(state)!),
       ),
       // `sales-orders/new` must come before `sales-orders/:id`.
       GoRoute(
         path: '/sales-orders/new',
         name: AppRoutes.salesOrderCreate,
+        redirect: (context, state) => requireTab(HomeTab.salesOrders),
         builder: (context, state) => const SalesOrderFormScreen(),
       ),
       GoRoute(
         path: '/sales-orders/:id',
         name: AppRoutes.salesOrderDetail,
-        redirect: (context, state) => _positiveId(state) == null ? '/sales-orders' : null,
+        redirect: (context, state) =>
+            _positiveId(state) == null ? '/sales-orders' : requireTab(HomeTab.salesOrders),
         builder: (context, state) => SalesOrderDetailScreen(orderId: _positiveId(state)!),
       ),
     ],

@@ -63,7 +63,7 @@ final class DioProvider extends $FunctionalProvider<Dio, Dio, Dio>
   }
 }
 
-String _$dioHash() => r'6f72f3ffb99846fcb2c85f0796a0e29529eafd4d';
+String _$dioHash() => r'6f1ed937eaa77f7cc5f2e7250c2c5f9fcc7112e9';
 
 /// The session's tokens. `main()` overrides this with a [SecureTokenStore]
 /// loaded before the first frame; the in-memory default is what tests get.

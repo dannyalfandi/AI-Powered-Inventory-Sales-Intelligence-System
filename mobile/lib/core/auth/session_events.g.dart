@@ -88,3 +88,77 @@ abstract class _$SessionEnded extends $Notifier<int> {
     return element.handleCreate(ref, build);
   }
 }
+
+/// Fired by the network layer when a business endpoint answered **403**: the
+/// role's permissions may have changed since `/auth/me` last described them
+/// (a Super Admin took one away). The auth feature listens, and re-reads
+/// `/auth/me` once the burst is over (see `PermissionRefresher`). Same
+/// counter shape as [SessionEnded], for the same reason.
+
+@ProviderFor(PermissionDenied)
+final permissionDeniedProvider = PermissionDeniedProvider._();
+
+/// Fired by the network layer when a business endpoint answered **403**: the
+/// role's permissions may have changed since `/auth/me` last described them
+/// (a Super Admin took one away). The auth feature listens, and re-reads
+/// `/auth/me` once the burst is over (see `PermissionRefresher`). Same
+/// counter shape as [SessionEnded], for the same reason.
+final class PermissionDeniedProvider
+    extends $NotifierProvider<PermissionDenied, int> {
+  /// Fired by the network layer when a business endpoint answered **403**: the
+  /// role's permissions may have changed since `/auth/me` last described them
+  /// (a Super Admin took one away). The auth feature listens, and re-reads
+  /// `/auth/me` once the burst is over (see `PermissionRefresher`). Same
+  /// counter shape as [SessionEnded], for the same reason.
+  PermissionDeniedProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'permissionDeniedProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$permissionDeniedHash();
+
+  @$internal
+  @override
+  PermissionDenied create() => PermissionDenied();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(int value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<int>(value),
+    );
+  }
+}
+
+String _$permissionDeniedHash() => r'e59e38ce477ffff023bbd277c14221ffa34c70f3';
+
+/// Fired by the network layer when a business endpoint answered **403**: the
+/// role's permissions may have changed since `/auth/me` last described them
+/// (a Super Admin took one away). The auth feature listens, and re-reads
+/// `/auth/me` once the burst is over (see `PermissionRefresher`). Same
+/// counter shape as [SessionEnded], for the same reason.
+
+abstract class _$PermissionDenied extends $Notifier<int> {
+  int build();
+  @$mustCallSuper
+  @override
+  WhenComplete runBuild() {
+    final ref = this.ref as $Ref<int, int>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<int, int>,
+              int,
+              Object?,
+              Object?
+            >;
+    return element.handleCreate(ref, build);
+  }
+}

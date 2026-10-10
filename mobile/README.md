@@ -43,12 +43,15 @@ lib/
     auth/token_store.dart         AuthTokens, TokenStore, MemoryTokenStore (tests)
     auth/secure_token_store.dart  SecureTokenStore: Keychain / Keystore, loaded in main()
     auth/token_refresher.dart     TokenRefresher: single-flight /auth/refresh
-    auth/session_events.dart      sessionEndedProvider: the network layer says the server ended the session
+    auth/session_events.dart      sessionEndedProvider / permissionDeniedProvider: the network layer says the
+                                  server ended the session / answered 403
     auth/permissions.dart         Permissions: the backend's permission keys
     network/page_meta_model.dart  {"page","page_size","total"} meta of list responses
     pagination/paged.dart         PageResult<T> (domain) + PagedState<T> (infinite-scroll lists)
     router/app_router.dart        appRouterProvider (go_router), AppRoutes
-    router/home_shell.dart        bottom navigation: Dashboard · Produk · Kategori · Pelanggan · Pesanan
+    router/home_shell.dart        bottom navigation: the allowed tabs of Dashboard · Produk · Kategori · Pelanggan · Pesanan
+    router/home_tabs.dart         HomeTab: each tab's path and the *.view permissions that open it
+    utils/clock.dart              clockProvider: the current time, injectable for tests
     utils/                        formatRupiah(), formatDateTime()
   features/auth/
     domain/      AuthUser (+ can()), AuthRole, LoginRules; usecases Login, GetCurrentUser, Logout
@@ -150,10 +153,11 @@ Screens and routes:
 | `/splash` | Shown at start-up only, while a stored session is checked (`GET /auth/me`) |
 | `/admin/roles`, `/admin/roles/new`, `/admin/roles/:id`, `/admin/roles/:id/permissions` | Role management: list, form/detail, permission editor (see [Administration](#administration-roles--users)) |
 | `/admin/users`, `/admin/users/new`, `/admin/users/:id` | User management: list, form |
+| `/no-access` | A role that opens no tab at all: what is going on, plus Settings and Sign out. Left automatically as soon as a tab opens up |
 | `/` (tab) | Dashboard: summary cards, date range (7/30/90 hari or custom), sales trend (daily/weekly), business insights, demand forecast, top 10 products, revenue per category, low-stock badge |
 | `/products` (tab) | Products: search, infinite scroll, swipe delete. Tapping a product opens its detail. |
 | `/categories` (tab) | Categories: search, infinite scroll, swipe delete |
-| `/low-stock` | Products with `quantity <= low_stock_threshold`, opened from the dashboard card. |
+| `/low-stock` | Products with `quantity <= low_stock_threshold`, opened from the dashboard card (needs `inventory.view`). |
 | `/products/new`, `/products/:id/edit` | Product form with a category dropdown ("Tanpa Kategori" + all categories) |
 | `/products/:id` | Product detail: category, current stock, low-stock status, "Catat pergerakan" and movement history |
 | `/categories/new`, `/categories/:id/edit` | Category form |
@@ -163,7 +167,8 @@ Screens and routes:
 | `/sales-orders/new` | Order form: customer picker, product picker, quantities, running total |
 | `/sales-orders/:id` | Order detail: status + timeline, customer, items with snapshot prices, total, action buttons |
 
-Bottom navigation (5 tabs): Dashboard · Produk · Kategori · Pelanggan · Pesanan.
+Bottom navigation: Dashboard · Produk · Kategori · Pelanggan · Pesanan — **only the tabs the role may open**
+(see [Tabs follow the permissions](#tabs-follow-the-permissions)); with a single tab there is no bar.
 Stok Menipis is no longer a tab: it is opened from the low-stock card on the dashboard (`context.pushNamed(AppRoutes.lowStock)`), which keeps the dashboard as the home screen without a sixth tab.
 
 Behaviour worth knowing:
@@ -195,8 +200,8 @@ Behaviour worth knowing:
 
 - **Dashboard**: five endpoints load in parallel, each in its own provider and its own section. A section that fails shows only its own message and "Coba lagi"; the others keep their data. While a section reloads (after a date change) its previous data stays on screen under a thin progress bar.
   The date range is one provider that the four range-based sections watch, so changing it reloads them together; the granularity toggle is a separate provider, so daily↔weekly costs exactly one request.
-  The low-stock count is not range-bound (it is current stock), so it does not reload on a date change, and its card stays tappable even when the count fails.
-  `DashboardScreen` keeps all five providers subscribed with `ref.listen`, so scrolling a card out of the `ListView` does not dispose it and refetch on scroll back.
+  The low-stock count is not range-bound (it is current stock), so it does not reload on a date change, and its card stays tappable even when the count fails (with `inventory.view`, which the list it opens needs).
+  `DashboardScreen` keeps the providers of its *visible* sections subscribed with `ref.listen`, so scrolling a card out of the `ListView` does not dispose it and refetch on scroll back. A section the role may not see is neither shown nor subscribed, so it sends no request (see [Tabs follow the permissions](#tabs-follow-the-permissions)).
   Money is formatted with `formatRupiah`; chart axes use `formatRupiahCompact` ("Rp 928rb"). Products without a category arrive as `category_id: null` and are shown as an italic grey "Tanpa Kategori" slice.
 - **Forecast and insights** (`Prediksi Permintaan`, `Insight Bisnis`) come from the Go API endpoints backed by the Python ML service, so they have a state the other sections do not: **unavailable**. Three "nothing to show" cases are deliberately different:
   - `forecast_available` / `insights_available` false (the ML service is down) → `UnavailableView`: grey panel, muted icon, no red, and a low-emphasis "Coba lagi". It is not a bug and not the user's fault, so it must not look like `ErrorView`.
@@ -209,13 +214,14 @@ Dependency direction: `presentation → domain ← data`. `domain` imports nothi
 ## Language (English / Bahasa Indonesia)
 
 The app ships in both languages and **starts in English**. The choice is in **Settings**, reached from the
-Dashboard app bar — five destinations already fill the bottom bar on a phone, and settings are somewhere
-you visit now and then rather than a place you navigate between. Switching applies immediately, with no
+settings button in every tab's app bar (and from the no-access screen) — not a tab: five destinations already
+fill the bottom bar on a phone, and settings are somewhere you visit now and then rather than a place you
+navigate between. Switching applies immediately, with no
 restart, and is remembered in `shared_preferences` under `app_language`.
 
 One switch covers both halves of the app:
 
-- **the app's own labels** come from `lib/l10n/app_en.arb` / `app_id.arb` (378 keys), read as `context.l10n.<key>`.
+- **the app's own labels** come from `lib/l10n/app_en.arb` / `app_id.arb` (380 keys), read as `context.l10n.<key>`.
   `app_en.arb` is the template, so a key must exist there first; `flutter gen-l10n` then writes
   `lib/l10n/app_localizations*.dart` (committed, like the other generated files).
 - **the sentences the backend writes** come back already translated: `AcceptLanguageInterceptor` puts
@@ -517,6 +523,17 @@ flutter analyze              # lints incl. riverpod_lint
   `GET /roles/:id` or `GET /permissions`. `test/core/l10n/arb_parity_test.dart`: the same keys and
   placeholders in both ARB files. Removing the picker's subset filter, the `user_count == 0` delete condition,
   the Super Admin case of `canManageUser`, or the `roles.view` gate on the role page makes these fail.
+- Tabs and permission refresh: `test/core/router/home_tabs_test.dart` runs the real router and shell — which tabs
+  Super Admin, Staff, Gudang (`products.view` only), mixed roles and a role with no view permission see, where
+  each opens, deep links bounced to the first allowed tab or `/no-access`, every Dashboard section per
+  permission with `verifyNever` on the endpoints it must not call, the low-stock link, and the Orders customer
+  filter. `test/features/auth/permission_refresh_test.dart`: the throttle on a fake clock, the 403 debounce, no
+  overlapping calls, what `refreshPermissions` does with new / unchanged / failed answers, the 403 → one
+  `/auth/me` path and the 401 → session-ended path over the real Dio client and a fake backend, and the whole
+  app (`InventoryApp`) sent to the background and back: a permission removed meanwhile hides its tab and moves
+  the user, and a second resume within 60 s sends nothing. Removing the tab filter, the section guards, the
+  tab route guard, the throttle or the debounce — or reading the user from `currentUserProvider` in the
+  guards — makes them fail.
 - `test/core/router/auth_guard_test.dart`: `authRedirect` as a table, and the real router: splash at
   start-up, login from any page, a session ended from a deep screen lands on `/login` **once**, login lands on
   the Dashboard, logout from Settings. `test/core/auth/secure_token_store_test.dart`: `current` changes
@@ -589,10 +606,20 @@ name, the one role and the permission keys from `GET /auth/me`.
 - **Session ended by the server:** the network layer calls `onSessionEnded`, which signals
   `sessionEndedProvider` in `core/` (so `core/` doesn't import the feature). `AuthController` listens to it and
   drops the user, whichever request noticed, from whichever screen.
+- **Permissions refreshed without a new login** (`PermissionRefresher`): `AuthController.refreshPermissions()`
+  re-reads `GET /auth/me` when the app returns to the foreground (`AppLifecycleListener` in `app.dart`, at most
+  once per 60 s, clock injectable through `clockProvider`) and once after a 403 from a business endpoint
+  (`ForbiddenInterceptor` → `permissionDeniedProvider`, debounced 800 ms so a burst of 403s is one call;
+  `/auth/*` never counts). It goes through the same Dio client, so an expired access token is refreshed by
+  the shared single-flight `TokenRefresher` on the way. A new answer replaces the user (tabs, sections and
+  buttons follow, and the router moves off a tab that is no longer allowed); the same answer changes nothing;
+  offline or a 5xx keeps the current state; a 401 goes through the session-ended path above.
 
 **Routing guard.** `appRouter` re-runs `authRedirect` (a pure function, tested as a table) whenever the auth
 state changes. Checking the session → `/splash`. Nobody logged in → `/login`, from any route. Logged in on
-`/login` or `/splash` → the Dashboard. Already on `/login` → no redirect, so a burst of 401s never loops. No
+`/login` or `/splash` → the Dashboard (and from there to the first allowed tab). Every route-level guard
+reads the user from the same notifier the router was just told about, not from `currentUserProvider`, which
+can still hold the previous user during that notification. Already on `/login` → no redirect, so a burst of 401s never loops. No
 screen navigates on login or logout itself; the guard follows the state.
 
 **Permission-based UI.** `ref.hasPermission(Permissions.productsDelete)` (`auth_controller.dart`) checks the
@@ -613,10 +640,35 @@ reserved for final orders. The user and role management entries are gated too, s
 [Administration](#administration-roles--users). Settings shows the logged-in user's name, role and email,
 and the Sign out button.
 
-**Not gated: the tabs themselves.** The five tabs (Dashboard, Products, Categories, Customers, Orders) and the
-Dashboard sections are shown to everyone; nothing checks `*.view` before loading them. A custom role without,
-say, `analytics.view` opens the Dashboard and each section shows its error state with the server's 403 message
-and "Try again". The data stays protected (the backend refuses it), but the UI could hide those tabs instead.
+### Tabs follow the permissions
+
+A tab is shown — and its route opens — only when the role holds a permission its endpoint demands
+(`backend/internal/router/router.go`). One table, `HomeTab` in `core/router/home_tabs.dart`, feeds both the
+bottom bar (`HomeShell`) and the route guards (`requireTab`):
+
+| Tab | Endpoint | Shown with |
+|---|---|---|
+| Dashboard | `GET /analytics/*` | `analytics.view`, `analytics.insights` or `analytics.forecast` |
+| Products (+ product create/detail/edit) | `GET /products` | `products.view` |
+| Categories (+ form) | `GET /categories` | `categories.view` |
+| Customers (+ form) | `GET /customers` | `customers.view` |
+| Orders (+ create, detail) | `GET /sales-orders` | `sales_orders.view` |
+
+- The app opens on the **first allowed tab**. A deep link to a tab (or one of its screens) the role may not
+  open lands there too. With no tab at all → `/no-access` (Settings and Sign out).
+- **Dashboard sections** each need their own permission: `analytics.view` for summary, low stock, trend, top
+  products and categories; `analytics.insights` for insights; `analytics.forecast` for the forecast. A section
+  without it is not rendered and its provider is never subscribed, so it sends no request.
+- Inside a tab, a picker that reads another resource follows that resource's permission too: the Orders tab
+  offers the customer filter (`GET /customers`) only with `customers.view`; the low-stock card opens its list
+  (`GET /inventory/low-stock`) only with `inventory.view`.
+- Settings is not a tab; every tab's app bar has the settings button (`SettingsAction`).
+- **Not gated yet** (known limitation): other parts inside a screen that read another resource — the customer
+  and product pickers in the order form (`customers.view` / `products.view`), the category dropdown in the
+  product form (`categories.view`), and the stock and movement history in a product's detail
+  (`inventory.view`). A role without those permissions sees the server's 403 message in that part.
+- When permissions change (refreshed on resume and after a 403, see above), the bar, the sections and the
+  current location follow without a new login.
 
 ## Administration: roles & users
 

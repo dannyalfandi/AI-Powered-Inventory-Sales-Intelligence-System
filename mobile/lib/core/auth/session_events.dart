@@ -16,3 +16,16 @@ class SessionEnded extends _$SessionEnded {
 
   void signal() => state++;
 }
+
+/// Fired by the network layer when a business endpoint answered **403**: the
+/// role's permissions may have changed since `/auth/me` last described them
+/// (a Super Admin took one away). The auth feature listens, and re-reads
+/// `/auth/me` once the burst is over (see `PermissionRefresher`). Same
+/// counter shape as [SessionEnded], for the same reason.
+@Riverpod(keepAlive: true)
+class PermissionDenied extends _$PermissionDenied {
+  @override
+  int build() => 0;
+
+  void signal() => state++;
+}

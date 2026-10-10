@@ -48,7 +48,7 @@ final class AuthControllerProvider
   AuthController create() => AuthController();
 }
 
-String _$authControllerHash() => r'440f79f9aead2feb9c89d6ffa937096137d006b5';
+String _$authControllerHash() => r'0436df1342782abf02bda99de29e1cff002503d9';
 
 /// Who is logged in: `AsyncData(user)`, `AsyncData(null)` when nobody is,
 /// and `AsyncLoading` only while the stored session is checked at start-up.

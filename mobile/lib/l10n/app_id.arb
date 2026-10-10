@@ -313,6 +313,8 @@
   "settingsAccountSection": "Akun",
   "settingsAccountRole": "Role: {role}",
   "settingsLogout": "Keluar",
+  "noAccessTitle": "Belum ada yang bisa ditampilkan",
+  "noAccessMessage": "Role kamu ({role}) belum punya izin untuk melihat data apa pun. Minta admin menambah izin; app akan mengikutinya saat kamu kembali membukanya.",
   "validationPasswordTooShort": "Kata sandi minimal {min} karakter",
   "validationPasswordTooLong": "Kata sandi maksimal {max} byte",
   "validationRoleRequired": "Pilih role",

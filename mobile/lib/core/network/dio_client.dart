@@ -27,6 +27,9 @@ Dio dio(Ref ref) {
     // Whichever request notices that the server ended the session, the app
     // hears about it once, through one provider (and goes to /login).
     onSessionEnded: () => ref.read(sessionEndedProvider.notifier).signal(),
+    // A 403 may mean the role lost a permission: the auth feature re-reads
+    // /auth/me (debounced) so the UI follows.
+    onForbidden: () => ref.read(permissionDeniedProvider.notifier).signal(),
   );
   ref.onDispose(dio.close);
   return dio;
@@ -44,11 +47,14 @@ TokenStore tokenStore(Ref ref) => MemoryTokenStore();
 /// refreshed through a single [TokenRefresher] shared by every request of
 /// this client (see [AuthInterceptor]). [onSessionEnded] fires once when the
 /// server ends the session (refresh rejected, account deactivated).
+/// [onForbidden] fires on every 403 from a business endpoint (not `/auth/*`);
+/// the listener debounces.
 Dio buildDio({
   required String baseUrl,
   String Function()? language,
   TokenStore? tokens,
   void Function()? onSessionEnded,
+  void Function()? onForbidden,
   @visibleForTesting HttpClientAdapter? adapter,
 }) {
   final dio = _baseDio(baseUrl, language, adapter);
@@ -63,6 +69,9 @@ Dio buildDio({
     );
     dio.interceptors.add(AuthInterceptor(store: tokens, refresher: refresher, retry: dio.fetch));
   }
+  // Before ApiErrorInterceptor, which turns the error into a Failure and
+  // stops the chain.
+  if (onForbidden != null) dio.interceptors.add(ForbiddenInterceptor(onForbidden));
   dio.interceptors.add(ApiErrorInterceptor());
   if (kDebugMode) {
     dio.interceptors.add(
@@ -103,6 +112,25 @@ class AcceptLanguageInterceptor extends Interceptor {
     options.headers[Headers.acceptHeader] ??= Headers.jsonContentType;
     options.headers['Accept-Language'] = _language();
     handler.next(options);
+  }
+}
+
+/// Reports a 403 from a business endpoint to [_onForbidden] and lets the
+/// error continue unchanged. `/auth/*` is excluded: a 403 there says nothing
+/// about the role's permissions, and `/auth/me` must never trigger itself.
+class ForbiddenInterceptor extends Interceptor {
+  const ForbiddenInterceptor(this._onForbidden);
+
+  final void Function() _onForbidden;
+
+  static const _authPrefix = '/api/v1/auth/';
+
+  @override
+  void onError(DioException err, ErrorInterceptorHandler handler) {
+    if (err.response?.statusCode == 403 && !err.requestOptions.uri.path.startsWith(_authPrefix)) {
+      _onForbidden();
+    }
+    handler.next(err);
   }
 }
 

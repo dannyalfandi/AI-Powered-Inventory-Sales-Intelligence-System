@@ -12,6 +12,7 @@ import '../../../../shared/theme/app_spacing.dart';
 import '../../../../shared/widgets/app_refresh_indicator.dart';
 import '../../../../shared/widgets/paged_list.dart';
 import '../../../../shared/widgets/press_effect.dart';
+import '../../../../shared/widgets/settings_action.dart';
 import '../../../../shared/widgets/skeleton.dart';
 import '../../../../shared/widgets/state_views.dart';
 import '../../../customer/presentation/widgets/customer_picker.dart';
@@ -61,11 +62,16 @@ class _SalesOrderListScreenState extends ConsumerState<SalesOrderListScreen> {
     final l10n = context.l10n;
     final orders = ref.watch(salesOrderListProvider);
     final filter = ref.watch(salesOrderFiltersProvider);
+    // The customer picker lists GET /customers, which needs customers.view.
+    // Without it the picker isn't offered; a filter already set still shows,
+    // and can still be cleared.
+    final canPickCustomer = ref.hasPermission(Permissions.customersView);
     final filtered = filter.status != null || filter.customerId != null;
 
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.ordersTitle),
+        actions: const [SettingsAction()],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(56),
           child: SizedBox(
@@ -74,19 +80,19 @@ class _SalesOrderListScreenState extends ConsumerState<SalesOrderListScreen> {
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.xs, AppSpacing.lg, AppSpacing.md),
               children: [
-                if (filter.customerId == null)
+                if (filter.customerId == null && canPickCustomer)
                   ActionChip(
                     key: const Key('order_filter_customer'),
                     avatar: const Icon(Icons.person_search_outlined, size: 18),
                     label: Text(l10n.ordersFilterCustomerClear),
                     onPressed: _pickCustomerFilter,
                   )
-                else
+                else if (filter.customerId != null)
                   InputChip(
                     key: const Key('order_filter_customer'),
                     avatar: const Icon(Icons.person_outline, size: 18),
                     label: Text(filter.customerName ?? l10n.orderCustomerFallback('${filter.customerId}')),
-                    onPressed: _pickCustomerFilter,
+                    onPressed: canPickCustomer ? _pickCustomerFilter : null,
                     onDeleted: () => ref.read(salesOrderFiltersProvider.notifier).clearCustomer(),
                   ),
                 const SizedBox(width: AppSpacing.sm),

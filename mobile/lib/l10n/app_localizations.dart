@@ -1904,6 +1904,18 @@ abstract class AppLocalizations {
   /// **'Sign out'**
   String get settingsLogout;
 
+  /// No description provided for @noAccessTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing to show yet'**
+  String get noAccessTitle;
+
+  /// No description provided for @noAccessMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Your role ({role}) doesn\'t include permission to view any data. Ask an administrator to add one; the app picks up the change when you return to it.'**
+  String noAccessMessage(String role);
+
   /// No description provided for @validationPasswordTooShort.
   ///
   /// In en, this message translates to:

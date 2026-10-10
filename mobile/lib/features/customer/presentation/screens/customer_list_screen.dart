@@ -13,6 +13,7 @@ import '../../../../shared/theme/app_spacing.dart';
 import '../../../../shared/widgets/app_refresh_indicator.dart';
 import '../../../../shared/widgets/paged_list.dart';
 import '../../../../shared/widgets/press_effect.dart';
+import '../../../../shared/widgets/settings_action.dart';
 import '../../../../shared/widgets/skeleton.dart';
 import '../../../../shared/widgets/state_views.dart';
 import '../../../auth/presentation/providers/auth_controller.dart';
@@ -124,6 +125,7 @@ class _CustomerListScreenState extends ConsumerState<CustomerListScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.customersTitle),
+        actions: const [SettingsAction()],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(64),
           child: Padding(
