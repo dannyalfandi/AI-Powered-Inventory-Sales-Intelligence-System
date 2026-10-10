@@ -15,6 +15,7 @@ package repository_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -236,4 +237,65 @@ func TestRoleRepository_LockedUserCarriesRolePermissions(t *testing.T) {
 	})
 	require.EqualError(t, err, "refuse")
 	assert.ElementsMatch(t, []string{"products.view", "products.delete"}, seen, "Delete")
+}
+
+// user_count is a role-endpoint field. The user repository hands out roles
+// for embedding in users (GET /users/:id, GET /users, login, and the locked
+// user of an update) and must never fill it: those queries load the role
+// without the count subquery.
+func TestUserRepository_EmbeddedRoleHasNoUserCount(t *testing.T) {
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("set TEST_DATABASE_URL to run role SQL tests against a real Postgres")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent), TranslateError: true})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	tx := db.Begin()
+	require.NoError(t, tx.Error)
+	t.Cleanup(func() { tx.Rollback() })
+	ctx := context.Background()
+
+	tag := fmt.Sprintf("ITEM%d", time.Now().UnixNano())
+	roles := repository.NewRoleRepository(tx)
+	role := model.Role{Name: tag + " Gudang"}
+	require.NoError(t, roles.Create(ctx, &role))
+	require.NoError(t, roles.ReplacePermissions(ctx, role.ID, []string{"products.view"}))
+	email := strings.ToLower(tag) + "@example.test"
+	u := model.User{Email: email, Name: "Embedded", PasswordHash: "x", RoleID: role.ID, IsActive: true}
+	require.NoError(t, tx.Omit("Role").Create(&u).Error)
+
+	users := repository.NewUserRepository(tx)
+	byID, err := users.FindByID(ctx, u.ID)
+	require.NoError(t, err)
+	byEmail, err := users.FindByEmail(ctx, email)
+	require.NoError(t, err)
+	listed, _, err := users.List(ctx, model.ListUsersParams{Page: 1, PageSize: 20, Search: email})
+	require.NoError(t, err)
+	require.Len(t, listed, 1)
+	locked, err := users.Mutate(ctx, u.ID, func(*model.User, int64) (bool, error) { return false, nil })
+	require.NoError(t, err)
+
+	for name, got := range map[string]*model.User{
+		"FindByID (GET /users/:id)": byID,
+		"FindByEmail (login)":       byEmail,
+		"List (GET /users)":         &listed[0],
+		"Mutate (PATCH /users/:id)": locked,
+	} {
+		t.Run(name, func(t *testing.T) {
+			require.NotNil(t, got.Role)
+			assert.Equal(t, role.ID, got.Role.ID)
+			assert.Nil(t, got.Role.UserCount)
+			b, err := json.Marshal(got)
+			require.NoError(t, err)
+			assert.NotContains(t, string(b), "user_count")
+		})
+	}
+	// Control: the role endpoints do count (1 user).
+	viaRoles, err := roles.FindByID(ctx, role.ID)
+	require.NoError(t, err)
+	require.NotNil(t, viaRoles.UserCount)
+	assert.Equal(t, int64(1), *viaRoles.UserCount)
 }

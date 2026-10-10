@@ -85,7 +85,7 @@ func (s *userService) Create(ctx context.Context, in model.CreateUserInput) (*mo
 	if err := s.users.Create(ctx, u); err != nil {
 		return nil, mapUserRepoError(ctx, err, 0)
 	}
-	u.Role = role
+	u.Role = embeddedRole(role)
 	return u, nil
 }
 
@@ -192,6 +192,11 @@ func (s *userService) Update(ctx context.Context, id uint, in model.UpdateUserIn
 	if err != nil {
 		return nil, mapUserRepoError(ctx, err, id)
 	}
+	// Whichever role the user ended up with (a new one from the role
+	// repository, or the locked one), it is answered as an embedded role.
+	if u.Role != nil {
+		u.Role = embeddedRole(u.Role)
+	}
 	return u, nil
 }
 
@@ -239,6 +244,17 @@ func checkTargetInScope(ctx context.Context, actor *model.User, scope grantScope
 		return ruleError(ctx, ErrForbidden, i18n.KeyUserRoleExceedsOwnPermissions, u.Role.Name, k)
 	}
 	return nil
+}
+
+// embeddedRole is a role as it appears inside a user: a copy without
+// user_count. The roles a request names come from the role repository, which
+// counts users, but inside a user that number is out of place and, after a
+// create, stale (counted before the insert). user_count belongs to the role
+// endpoints only. The permission keys are left as they are.
+func embeddedRole(r *model.Role) *model.Role {
+	c := *r
+	c.UserCount = nil
+	return &c
 }
 
 // resolveRole loads the role a request names, recording a field error on

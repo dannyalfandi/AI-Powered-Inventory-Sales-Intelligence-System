@@ -27,8 +27,9 @@ type Role struct {
 	// same query that loads the role (read-only, no column).
 	//
 	// A pointer so that it can be absent: every role endpoint sets it (0
-	// included), but a role embedded in a user (GET /users) is loaded without
-	// the count and must not claim "user_count": 0.
+	// included), and a role embedded in a user never carries it (GET /users
+	// loads it without the count; the user service drops it on create and
+	// update) — it must not claim a "user_count" there.
 	UserCount *int64 `gorm:"->;-:migration" json:"user_count,omitempty"`
 
 	CreatedAt time.Time `json:"created_at"`

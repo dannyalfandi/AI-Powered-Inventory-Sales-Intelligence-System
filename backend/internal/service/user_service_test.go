@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -351,4 +352,55 @@ func TestUserService_List(t *testing.T) {
 	assert.Len(t, got, 1)
 	assert.Equal(t, int64(1), total)
 	assert.Equal(t, 1, used.Page)
+}
+
+// user_count belongs to the role endpoints. A role embedded in a user (the
+// answer to POST /users and PATCH /users/:id) never carries it — the role
+// repository counts users, and after a create that count is one too low.
+// Its permission keys are left as they were.
+func TestUserService_EmbeddedRoleHasNoUserCount(t *testing.T) {
+	counted := func(r *model.Role, n int64) *model.Role {
+		c := *r
+		c.UserCount = &n
+		return &c
+	}
+	tests := []struct {
+		name string
+		run  func(svc UserService) (*model.User, error)
+		want []string // permission keys still on the embedded role
+	}{
+		{"POST /users", func(svc UserService) (*model.User, error) {
+			return svc.Create(asUser(callerAdmin.ID), model.CreateUserInput{
+				Email: "baru@example.com", Password: "rahasia123", Name: "Baru", RoleID: staffRole.ID})
+		}, staffRole.Permissions},
+		{"PATCH /users/:id changing the role", func(svc UserService) (*model.User, error) {
+			return svc.Update(asUser(callerAdmin.ID), guestUser.ID, model.UpdateUserInput{RoleID: ptr(staffRole.ID)})
+		}, staffRole.Permissions},
+		{"PATCH /users/:id keeping the role", func(svc UserService) (*model.User, error) {
+			return svc.Update(asUser(callerAdmin.ID), guestUser.ID, model.UpdateUserInput{Name: ptr("Tamu Baru")})
+		}, guestRole.Permissions},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			users, roles := &mockUserRepo{}, &mockRoleRepo{}
+			users.On("FindByID", mock.Anything, callerAdmin.ID).Return(copyUser(callerAdmin), nil)
+			roles.On("FindByID", mock.Anything, staffRole.ID).Return(counted(staffRole, 7), nil)
+			users.On("Create", mock.Anything, mock.Anything).Return(nil).Maybe()
+			// The locked user as the repository hands it over: a role with
+			// permission keys (and, defensively here, a count).
+			locked := copyUser(guestUser)
+			locked.Role = counted(guestRole, 3)
+			users.On("Mutate", mock.Anything, guestUser.ID).Return(locked, int64(2), nil).Maybe()
+
+			got, err := tt.run(NewUserService(users, roles))
+			require.NoError(t, err)
+			require.NotNil(t, got.Role)
+			assert.Nil(t, got.Role.UserCount, "no user_count inside a user")
+			assert.Equal(t, tt.want, got.Role.Permissions, "permissions are left as they were")
+
+			b, err := json.Marshal(got)
+			require.NoError(t, err)
+			assert.NotContains(t, string(b), "user_count")
+		})
+	}
 }

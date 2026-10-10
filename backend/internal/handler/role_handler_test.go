@@ -169,3 +169,36 @@ func TestUserHandler_ScopeRefusalsAre403(t *testing.T) {
 		})
 	}
 }
+
+// GET /auth/me and POST /auth/login describe the role as a RoleRef: id, name
+// and is_system only — never user_count. /auth/me keeps its permission keys
+// on the user itself, where the app reads them.
+func TestAuthJSON_RoleIsARefWithoutUserCount(t *testing.T) {
+	role := model.RoleRef{ID: 2, Name: "Staff", IsSystem: false}
+	cases := map[string]any{
+		"GET /auth/me":     model.Me{ID: 7, Email: "staff@example.com", Name: "Staf", IsActive: true, Role: role, Permissions: []string{"products.view"}},
+		"POST /auth/login": model.TokenPair{AccessToken: "a", RefreshToken: "r", TokenType: "Bearer", ExpiresIn: 900, User: &model.AuthUser{ID: 7, Email: "staff@example.com", Name: "Staf", Role: role}},
+	}
+	for name, v := range cases {
+		t.Run(name, func(t *testing.T) {
+			b, err := json.Marshal(v)
+			require.NoError(t, err)
+			var got map[string]any
+			require.NoError(t, json.Unmarshal(b, &got))
+			holder := got
+			if u, ok := got["user"].(map[string]any); ok {
+				holder = u
+			}
+			keys := []string{}
+			for k := range holder["role"].(map[string]any) {
+				keys = append(keys, k)
+			}
+			assert.ElementsMatch(t, []string{"id", "name", "is_system"}, keys)
+			assert.NotContains(t, string(b), "user_count")
+		})
+	}
+	t.Run("GET /auth/me keeps its permissions on the user", func(t *testing.T) {
+		b, _ := json.Marshal(cases["GET /auth/me"])
+		assert.Contains(t, string(b), `"permissions":["products.view"]`)
+	})
+}

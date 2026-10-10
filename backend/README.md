@@ -27,7 +27,7 @@ Request flow: `router → handler → service → repository → model`.
 
 ## Prerequisites
 
-- Go **1.25+**
+- Go **1.26+** (`go 1.26.0` in `go.mod`)
 - Postgres + Redis running from `../infra` (`docker compose up -d`, see `../infra/README.md`)
 
 ## Setup
@@ -303,11 +303,21 @@ curl -s -X POST -H "$AUTH" -H "Content-Type: application/json" \
 
 #### `user_count`
 
-Every role in a response (list, detail, create, update, set permissions) carries `user_count`: the number of users whose `role_id` is that role, **soft-deleted users included** (inactive users are included too).
+Every role returned by a **role endpoint** (`GET /roles`, `GET /roles/:id`, `POST /roles`, `PATCH /roles/:id`, `PUT /roles/:id/permissions`) carries `user_count`: the number of users whose `role_id` is that role, **soft-deleted users included** (inactive users are included too).
 
 ```json
 {"id":82,"name":"Gudang","description":"","is_system":false,"user_count":2,
  "created_at":"…","updated_at":"…","permissions":["products.view","products.delete","users.view"]}
+```
+
+A role **embedded in a user** never carries `user_count` — not in `GET /users`, `GET /users/:id`, `POST /users` or `PATCH /users/:id` (inside a user the number is out of place, and right after a create it would be one too low). `GET /auth/me` and the login answer describe the role as `{"id","name","is_system"}` only. The embedded role's `permissions` are unchanged: `null` in `GET /users` and `GET /users/:id`, the role's keys in the `POST`/`PATCH` answers.
+
+```json
+// POST /users → 201
+{"data":{"id":12,"email":"budi@example.com","name":"Budi","role_id":82,
+ "role":{"id":82,"name":"Gudang","description":"","is_system":false,"created_at":"…","updated_at":"…",
+         "permissions":["products.view","products.delete","users.view"]},
+ "is_active":true,"created_at":"…","updated_at":"…"}}
 ```
 
 It counts deleted users on purpose, so that it is the same number that decides `DELETE /roles/:id`. A deleted user keeps `role_id` as history and `users.role_id` is `ON DELETE RESTRICT`, so Postgres itself refuses to delete a role while any user row — deleted or not — points at it. A count of live users only would show `0` for a role that still answers 409. So `user_count > 0` ⇔ the delete answers 409, and the 409 message quotes that number (`role 82 masih terhubung dengan 2 pengguna (termasuk yang sudah dihapus)`). There is one definition (`roleColumnsWithUserCount` in `internal/repository/role_repository.go`), computed in the same `SELECT` that loads the roles (a correlated subquery on the `users.role_id` index), so a page of roles costs the same three statements whatever its size: the total, the page with its counts, the permission keys. `role_repository_integration_test.go` checks both the definition and the statement count against Postgres.
@@ -355,7 +365,9 @@ Rules:
 - The header is parsed the way browsers send it: `en`, `en-US`,
   `en-US,en;q=0.9,id;q=0.8`, `*`. The highest-quality supported language wins.
 - **Anything unknown or missing falls back to Indonesian**, so a client that
-  sends no header (the current Flutter app) keeps the behaviour it had.
+  sends no header keeps the behaviour it had before i18n. The Flutter app
+  does not rely on this: it sends the app's language on every request
+  (`AcceptLanguageInterceptor` in `mobile/lib/core/network/dio_client.dart`).
 - Every response carries `Content-Language` with the language actually used.
 - **Only sentences are translated.** Codes (`validation_failed`, `conflict`,
   `not_found`), field names (`category_id`, `items[0].quantity`), enum values
@@ -646,6 +658,7 @@ The script logs in as the Super Admin first and sends that token on every reques
 - auth: 401 without or with a garbage token, wrong password vs. unknown email (same answer), refresh rotation (the old refresh token is single-use), logout then refresh (401), access and refresh tokens not interchangeable, and 5 parallel refreshes with one token (exactly one wins)
 - reuse detection, with a dedicated user and two sessions (phone, laptop): (a) the phone's refresh token works once, and its rotated successor works too (normal use never trips detection); (b) the phone's first token sent again gets a 401 that is byte-for-byte the answer to an ordinary failed refresh, **and** afterwards the laptop's refresh token and the phone's latest token are both refused, because every session of that user was revoked. The user can then log in again and refresh normally. Earlier sections trip the detection too (reusing a rotated or logged-out token, the losers of the parallel refresh race); they expect 401 either way, and the server log shows each detection
 - RBAC: a Staff user gets 403 on deletes, product creation and user/role management, but may create and confirm orders; a custom role whose permission list is replaced mid-session applies on the **same access token** at once (proof that nothing is cached); the Super Admin role can't be deleted, renamed or re-permissioned; nobody can deactivate, delete or re-role themselves; a deactivated user's live token and refresh token stop working immediately
+- no `user_count` in a role embedded in a user: `POST /users`, `GET /users`, `GET /users/:id`, `PATCH /users/:id` (keeping and changing the role), `POST /auth/login` and `GET /auth/me`
 - `user_count`: 0 on a new role; 3 after three users get it, in both the list and the detail; still 3 after one is deactivated and another soft-deleted; the 409 on delete quotes the same 3; 2 once a user moves to another role
 - roles list for a user manager (`users.create`/`users.update`, no `roles.view`): `GET /roles` 200 with `user_count`, but `GET /roles/:id`, `GET /permissions` and `POST /roles` 403. `users.view` alone and Staff get 403 on `GET /roles`, naming all three permissions (in both languages)
 - guardrails: a user manager (all `users.*` plus Staff's permissions, not a Super Admin) can create Staff users but gets 403 when creating or promoting a Super Admin, or when changing, deactivating or deleting one, and 409 when promoting themselves. Against a "Power" role holding two permissions the user manager lacks, it gets 403 for creating a Power user, giving the Power role, resetting a Power user's password (the new password then doesn't log in, the old one still does), deactivating, demoting and deleting one; a weaker manager with only `users.*` gets 403 even for Staff. Renaming a Staff user and editing their own account still work. A role manager (holds `roles.assign_permissions`) can grant what it holds, but gets 403 for anything else, on another role or its own, and the role is unchanged afterwards. A role whose only user is soft-deleted still can't be deleted. Two Super Admins demote each other in parallel for 5 rounds, and each round must end with exactly one winner and one Super Admin. At the HTTP level the loser is almost always stopped by its own permission check (403) before reaching the lock; the lock itself is proven by the `Guardrail` integration test below

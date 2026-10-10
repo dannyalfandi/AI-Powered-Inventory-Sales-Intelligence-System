@@ -56,6 +56,15 @@ check() { # label expected-code [grep-pattern]
 jid() { grep -o '"id":[0-9]*' <<<"$body" | head -1 | cut -d: -f2; }
 # jnum KEY -> the first integer value of KEY in $body
 jnum() { grep -o "\"$1\":[0-9]*" <<<"$body" | head -1 | cut -d: -f2; }
+# no_count LABEL -> passes when $body (a user answer) has no user_count:
+# that field belongs to the role endpoints, never to a role inside a user.
+no_count() {
+  if [ "${code:0:1}" = 2 ] && ! grep -q '"user_count"' <<<"$body"; then
+    pass=$((pass+1)); echo "PASS  $1: no user_count in the embedded role"
+  else
+    fail=$((fail+1)); echo "FAIL  $1 -> $code: $body"
+  fi
+}
 # login EMAIL PASSWORD -> sets $ACCESS and $REFRESH (empty on failure)
 login() {
   as "" POST /auth/login "{\"email\":\"$1\",\"password\":\"$2\"}"
@@ -226,15 +235,20 @@ for n in 1 2 3; do
   req POST /users "{\"email\":\"e2e.count$n.$RUN@example.test\",\"password\":\"rahasia123\",\"name\":\"E2E Count $n $RUN\",\"role_id\":$COUNT_ROLE}"
   eval "COUNT_U$n=\$(jid)"
 done
+no_count "POST /users"
+req GET "/users?search=e2e.count1.$RUN";                  no_count "GET /users"
+req GET /users/$COUNT_U1;                                 no_count "GET /users/:id"
 req GET "/roles?search=E2E%20Count%20$RUN";               check "list: the role with 3 users" 200 '"total":1'
 expect "list: user_count 3" "$(jnum user_count)" 3
 req GET /roles/$COUNT_ROLE;                               expect "detail: user_count 3 (same number as the list)" "$(jnum user_count)" 3
-req PATCH /users/$COUNT_U1 '{"is_active":false}'
+req PATCH /users/$COUNT_U1 '{"is_active":false}';         no_count "PATCH /users/:id keeping the role"
 req GET /roles/$COUNT_ROLE;                               expect "an inactive user still counts" "$(jnum user_count)" 3
 req DELETE /users/$COUNT_U2
 req GET /roles/$COUNT_ROLE;                               expect "a soft-deleted user still counts" "$(jnum user_count)" 3
 req DELETE /roles/$COUNT_ROLE;                            check "the 409 names the same count" 409 'masih terhubung dengan 3 pengguna'
-req PATCH /users/$COUNT_U3 "{\"role_id\":$STAFF_ROLE}"
+req PATCH /users/$COUNT_U3 "{\"role_id\":$STAFF_ROLE}";   no_count "PATCH /users/:id changing the role"
+login "e2e.count3.$RUN@example.test" rahasia123;          no_count "POST /auth/login"
+as "$ACCESS" GET /auth/me;                                no_count "GET /auth/me"
 req GET /roles/$COUNT_ROLE;                               expect "moving a user to another role lowers it" "$(jnum user_count)" 2
 req GET "/roles?search=Super%20Admin";                    check "the Super Admin role has a count too" 200 '"user_count":[1-9]'
 LANG_HEADER=en req DELETE /roles/$COUNT_ROLE;             check "409 in English says deleted users count" 409 'including deleted ones'
