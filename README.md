@@ -1,3 +1,5 @@
+[![CI](https://github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/actions/workflows/ci.yml) [![E2E](https://github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/actions/workflows/e2e.yml/badge.svg?branch=master)](https://github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/actions/workflows/e2e.yml)
+
 # Inventory & Sales Intelligence Platform
 
 > **Sistem inventory yang memprediksi permintaan dari data penjualan historis** — bukan sekadar mencatat stok, tapi memberi tahu produk mana yang sedang naik, mana yang turun, dan berapa yang kemungkinan terjual minggu depan.

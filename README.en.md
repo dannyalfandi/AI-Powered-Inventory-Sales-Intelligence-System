@@ -1,3 +1,5 @@
+[![CI](https://github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/actions/workflows/ci.yml) [![E2E](https://github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/actions/workflows/e2e.yml/badge.svg?branch=master)](https://github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/actions/workflows/e2e.yml)
+
 # Inventory & Sales Intelligence Platform
 
 > **An inventory system that forecasts demand from historical sales.** It doesn't just record stock. It tells you which products are rising, which are falling, and roughly how many units will sell next week.
