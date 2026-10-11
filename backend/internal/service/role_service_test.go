@@ -100,34 +100,51 @@ func TestRoleService_SystemRoleIsLocked(t *testing.T) {
 	})
 }
 
+// The 409 is decided by the same UserCount that GET /roles shows (which rows
+// it counts — soft-deleted users included — is the repository's job and is
+// proven against Postgres in TestRoleRepository_UserCount).
 func TestRoleService_Delete(t *testing.T) {
 	tests := []struct {
-		name    string
-		users   int64
-		repoErr error
-		wantErr error
-		wantMsg string
+		name      string
+		userCount int64
+		repoErr   error
+		wantErr   error
+		wantMsg   string
 	}{
-		{name: "unused role"},
-		{name: "role in use", users: 3, wantErr: ErrConflict, wantMsg: "masih terhubung dengan 3 pengguna"},
+		{name: "unused role (user_count 0)"},
+		{name: "role in use", userCount: 3, wantErr: ErrConflict, wantMsg: "masih terhubung dengan 3 pengguna"},
+		{name: "one user, even if deleted, blocks it", userCount: 1, wantErr: ErrConflict, wantMsg: "termasuk yang sudah dihapus"},
 		{name: "a user got the role in between (FK violation)", repoErr: repository.ErrInUse, wantErr: ErrConflict},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc, roles, _, _ := newRoleFixture()
-			roles.On("CountUsers", mock.Anything, uint(2)).Return(tt.users, nil)
-			roles.On("Delete", mock.Anything, uint(2)).Return(tt.repoErr).Maybe()
+			roles, perms, users := &mockRoleRepo{}, &mockPermissionRepo{}, &mockUserRepo{}
+			roles.On("FindByID", mock.Anything, uint(5)).Return(&model.Role{ID: 5, Name: "Gudang", UserCount: ptr(tt.userCount)}, nil)
+			roles.On("Delete", mock.Anything, uint(5)).Return(tt.repoErr).Maybe()
+			svc := NewRoleService(roles, perms, users)
 
-			err := svc.Delete(context.Background(), 2)
+			err := svc.Delete(context.Background(), 5)
 
 			if tt.wantErr == nil {
 				require.NoError(t, err)
+				roles.AssertCalled(t, "Delete", mock.Anything, uint(5))
 				return
 			}
-			assert.ErrorIs(t, err, tt.wantErr)
+			require.ErrorIs(t, err, tt.wantErr)
 			assert.Contains(t, err.Error(), tt.wantMsg)
+			if tt.userCount > 0 {
+				roles.AssertNotCalled(t, "Delete", mock.Anything, mock.Anything)
+			}
 		})
 	}
+
+	t.Run("message in English", func(t *testing.T) {
+		roles := &mockRoleRepo{}
+		roles.On("FindByID", mock.Anything, uint(5)).Return(&model.Role{ID: 5, UserCount: ptr(int64(2))}, nil)
+		err := NewRoleService(roles, &mockPermissionRepo{}, &mockUserRepo{}).Delete(i18n.WithLang(context.Background(), i18n.EN), 5)
+		assert.ErrorIs(t, err, ErrConflict)
+		assert.Contains(t, err.Error(), "role 5 is still linked to 2 user(s), including deleted ones")
+	})
 
 	t.Run("unknown role", func(t *testing.T) {
 		svc, _, _, _ := newRoleFixture()
@@ -178,6 +195,10 @@ func TestRoleService_SetPermissions(t *testing.T) {
 			svc, roles, _, _ := newRoleFixture()
 			if tt.wantKeys != nil {
 				roles.On("ReplacePermissions", mock.Anything, uint(2), tt.wantKeys).Return(nil).Once()
+			} else {
+				// A refused call must not get here; if it does, AssertNotCalled
+				// below reports it instead of the mock panicking.
+				roles.On("ReplacePermissions", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 			}
 
 			got, err := svc.SetPermissions(asUser(tt.caller), 2, model.SetRolePermissionsInput{PermissionKeys: tt.keys})
@@ -187,7 +208,7 @@ func TestRoleService_SetPermissions(t *testing.T) {
 				assertInvalidFields(t, err, tt.wantInvalid...)
 				roles.AssertNotCalled(t, "ReplacePermissions", mock.Anything, mock.Anything, mock.Anything)
 			case tt.wantErr != nil:
-				assert.ErrorIs(t, err, tt.wantErr)
+				require.ErrorIs(t, err, tt.wantErr)
 				assert.Contains(t, err.Error(), tt.wantMsg)
 				roles.AssertNotCalled(t, "ReplacePermissions", mock.Anything, mock.Anything, mock.Anything)
 			default:
@@ -215,4 +236,66 @@ func TestRoleService_ListPermissions(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "View the product list and details", got[0].Description, "described in the request's language")
 	assert.Equal(t, "products", got[0].ResourceGroup)
+}
+
+// user_count is computed by the repository; every role the service returns
+// carries it unchanged, and a new role starts at 0.
+func TestRoleService_UserCountIsPassedThrough(t *testing.T) {
+	gudang := &model.Role{ID: 5, Name: "Gudang", UserCount: ptr(int64(4)), Permissions: []string{"inventory.view"}}
+	tests := []struct {
+		name string
+		call func(svc RoleService) ([]model.Role, error)
+		want []int64
+	}{
+		{"get by id", func(svc RoleService) ([]model.Role, error) {
+			r, err := svc.GetByID(context.Background(), 5)
+			return deref(r), err
+		}, []int64{4}},
+		{"list", func(svc RoleService) ([]model.Role, error) {
+			rs, _, _, err := svc.List(context.Background(), model.ListRolesParams{})
+			return rs, err
+		}, []int64{0, 4, 1}},
+		{"update", func(svc RoleService) ([]model.Role, error) {
+			r, err := svc.Update(context.Background(), 5, model.UpdateRoleInput{Description: ptr("stok")})
+			return deref(r), err
+		}, []int64{4}},
+		{"set permissions", func(svc RoleService) ([]model.Role, error) {
+			r, err := svc.SetPermissions(asUser(callerAdmin.ID), 5, model.SetRolePermissionsInput{PermissionKeys: []string{"inventory.view"}})
+			return deref(r), err
+		}, []int64{4}},
+		{"create starts at 0", func(svc RoleService) ([]model.Role, error) {
+			r, err := svc.Create(context.Background(), model.CreateRoleInput{Name: "Baru"})
+			return deref(r), err
+		}, []int64{0}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc, roles, _, _ := newRoleFixture()
+			roles.On("FindByID", mock.Anything, uint(5)).Return(gudang, nil).Maybe()
+			roles.On("List", mock.Anything, mock.Anything).Return([]model.Role{
+				{ID: 1, Name: "Super Admin", IsSystem: true, UserCount: ptr(int64(0))},
+				{ID: 5, Name: "Gudang", UserCount: ptr(int64(4))},
+				{ID: 2, Name: "Staff", UserCount: ptr(int64(1))},
+			}, int64(3), nil).Maybe()
+			roles.On("Update", mock.Anything, mock.Anything).Return(nil).Maybe()
+			roles.On("ReplacePermissions", mock.Anything, uint(5), mock.Anything).Return(nil).Maybe()
+			roles.On("Create", mock.Anything, mock.Anything).Return(nil).Maybe()
+
+			got, err := tt.call(svc)
+			require.NoError(t, err)
+			counts := make([]int64, len(got))
+			for i := range got {
+				require.NotNil(t, got[i].UserCount, "every role the service returns has a count")
+				counts[i] = *got[i].UserCount
+			}
+			assert.Equal(t, tt.want, counts)
+		})
+	}
+}
+
+func deref(r *model.Role) []model.Role {
+	if r == nil {
+		return nil
+	}
+	return []model.Role{*r}
 }

@@ -198,9 +198,10 @@ func TestGuardrail_RoleOfSoftDeletedUserCantBeDeleted(t *testing.T) {
 	require.NoError(t, repository.NewUserRepository(db).Delete(ctx, u.ID,
 		func(*model.User, int64) (bool, error) { return true, nil }))
 
-	n, err := roles.CountUsers(ctx, role.ID)
+	got, err := roles.FindByID(ctx, role.ID)
 	require.NoError(t, err)
-	assert.Equal(t, int64(1), n, "a soft-deleted user still counts: it keeps role_id as history")
+	require.NotNil(t, got.UserCount)
+	assert.Equal(t, int64(1), *got.UserCount, "a soft-deleted user still counts: it keeps role_id as history")
 
 	// Even if the service's count were skipped, the foreign key refuses.
 	err = roles.Delete(ctx, role.ID)
@@ -211,9 +212,10 @@ func TestGuardrail_RoleOfSoftDeletedUserCantBeDeleted(t *testing.T) {
 	// Control: a role nobody ever had is deletable.
 	empty := model.Role{Name: "Kosong"}
 	require.NoError(t, roles.Create(ctx, &empty))
-	n, err = roles.CountUsers(ctx, empty.ID)
+	got, err = roles.FindByID(ctx, empty.ID)
 	require.NoError(t, err)
-	assert.Zero(t, n)
+	require.NotNil(t, got.UserCount)
+	assert.Zero(t, *got.UserCount)
 	assert.NoError(t, roles.Delete(ctx, empty.ID))
 }
 

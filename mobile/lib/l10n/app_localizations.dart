@@ -644,11 +644,23 @@ abstract class AppLocalizations {
   /// **'Price is too large'**
   String get validationPriceTooLarge;
 
+  /// No description provided for @validationEmailRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Email is required'**
+  String get validationEmailRequired;
+
   /// No description provided for @validationEmailInvalid.
   ///
   /// In en, this message translates to:
   /// **'That email address is not valid'**
   String get validationEmailInvalid;
+
+  /// No description provided for @validationPasswordRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Password is required'**
+  String get validationPasswordRequired;
 
   /// No description provided for @validationEmailTooLong.
   ///
@@ -1813,6 +1825,558 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Down {percent}%'**
   String trendDownPercent(int percent);
+
+  /// No description provided for @loginTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in'**
+  String get loginTitle;
+
+  /// No description provided for @loginSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Use the account your administrator gave you.'**
+  String get loginSubtitle;
+
+  /// No description provided for @loginEmail.
+  ///
+  /// In en, this message translates to:
+  /// **'Email'**
+  String get loginEmail;
+
+  /// No description provided for @loginPassword.
+  ///
+  /// In en, this message translates to:
+  /// **'Password'**
+  String get loginPassword;
+
+  /// No description provided for @loginSubmit.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in'**
+  String get loginSubmit;
+
+  /// No description provided for @loginShowPassword.
+  ///
+  /// In en, this message translates to:
+  /// **'Show password'**
+  String get loginShowPassword;
+
+  /// No description provided for @loginHidePassword.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide password'**
+  String get loginHidePassword;
+
+  /// No description provided for @loginInvalidCredentials.
+  ///
+  /// In en, this message translates to:
+  /// **'Wrong email or password. Check both and try again.'**
+  String get loginInvalidCredentials;
+
+  /// No description provided for @loginFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not sign in: {message}'**
+  String loginFailed(String message);
+
+  /// No description provided for @splashCheckingSession.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking your session…'**
+  String get splashCheckingSession;
+
+  /// No description provided for @settingsAccountSection.
+  ///
+  /// In en, this message translates to:
+  /// **'Account'**
+  String get settingsAccountSection;
+
+  /// No description provided for @settingsAccountRole.
+  ///
+  /// In en, this message translates to:
+  /// **'Role: {role}'**
+  String settingsAccountRole(String role);
+
+  /// No description provided for @settingsLogout.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign out'**
+  String get settingsLogout;
+
+  /// No description provided for @noAccessTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing to show yet'**
+  String get noAccessTitle;
+
+  /// No description provided for @noAccessMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Your role ({role}) doesn\'t include permission to view any data. Ask an administrator to add one; the app picks up the change when you return to it.'**
+  String noAccessMessage(String role);
+
+  /// No description provided for @validationPasswordTooShort.
+  ///
+  /// In en, this message translates to:
+  /// **'Password must be at least {min} characters'**
+  String validationPasswordTooShort(int min);
+
+  /// No description provided for @validationPasswordTooLong.
+  ///
+  /// In en, this message translates to:
+  /// **'Password must be at most {max} bytes'**
+  String validationPasswordTooLong(int max);
+
+  /// No description provided for @validationRoleRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a role'**
+  String get validationRoleRequired;
+
+  /// No description provided for @settingsAdminSection.
+  ///
+  /// In en, this message translates to:
+  /// **'Administration'**
+  String get settingsAdminSection;
+
+  /// No description provided for @settingsAdminRoles.
+  ///
+  /// In en, this message translates to:
+  /// **'Roles & permissions'**
+  String get settingsAdminRoles;
+
+  /// No description provided for @settingsAdminRolesSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Decide who can do what'**
+  String get settingsAdminRolesSubtitle;
+
+  /// No description provided for @settingsAdminUsers.
+  ///
+  /// In en, this message translates to:
+  /// **'Users'**
+  String get settingsAdminUsers;
+
+  /// No description provided for @settingsAdminUsersSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Accounts, their role and access'**
+  String get settingsAdminUsersSubtitle;
+
+  /// No description provided for @rolesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Roles & permissions'**
+  String get rolesTitle;
+
+  /// No description provided for @rolesAdd.
+  ///
+  /// In en, this message translates to:
+  /// **'Add role'**
+  String get rolesAdd;
+
+  /// No description provided for @rolesEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No roles yet.'**
+  String get rolesEmpty;
+
+  /// No description provided for @roleSystemBadge.
+  ///
+  /// In en, this message translates to:
+  /// **'System'**
+  String get roleSystemBadge;
+
+  /// No description provided for @rolePermissionCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No permissions} =1{1 permission} other{{count} permissions}}'**
+  String rolePermissionCount(int count);
+
+  /// No description provided for @roleAllPermissions.
+  ///
+  /// In en, this message translates to:
+  /// **'All permissions'**
+  String get roleAllPermissions;
+
+  /// No description provided for @roleUserCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No linked users} =1{1 linked user} other{{count} linked users}}'**
+  String roleUserCount(int count);
+
+  /// No description provided for @roleNew.
+  ///
+  /// In en, this message translates to:
+  /// **'New role'**
+  String get roleNew;
+
+  /// No description provided for @roleEdit.
+  ///
+  /// In en, this message translates to:
+  /// **'Role'**
+  String get roleEdit;
+
+  /// No description provided for @roleFieldName.
+  ///
+  /// In en, this message translates to:
+  /// **'Name'**
+  String get roleFieldName;
+
+  /// No description provided for @roleFieldDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Description (optional)'**
+  String get roleFieldDescription;
+
+  /// No description provided for @roleSystemNote.
+  ///
+  /// In en, this message translates to:
+  /// **'This is the system role. It always holds every permission, and it can\'t be renamed, deleted or given a permission list.'**
+  String get roleSystemNote;
+
+  /// No description provided for @roleCreated.
+  ///
+  /// In en, this message translates to:
+  /// **'Role \"{name}\" created'**
+  String roleCreated(String name);
+
+  /// No description provided for @roleUpdated.
+  ///
+  /// In en, this message translates to:
+  /// **'Role saved'**
+  String get roleUpdated;
+
+  /// No description provided for @roleSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not save the role: {message}'**
+  String roleSaveFailed(String message);
+
+  /// No description provided for @rolePermissionsSection.
+  ///
+  /// In en, this message translates to:
+  /// **'Permissions'**
+  String get rolePermissionsSection;
+
+  /// No description provided for @roleEditPermissions.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit permissions'**
+  String get roleEditPermissions;
+
+  /// No description provided for @roleNoPermissionsYet.
+  ///
+  /// In en, this message translates to:
+  /// **'This role has no permissions yet.'**
+  String get roleNoPermissionsYet;
+
+  /// No description provided for @roleDeleteConfirmTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete role?'**
+  String get roleDeleteConfirmTitle;
+
+  /// No description provided for @roleDeleteConfirmBody.
+  ///
+  /// In en, this message translates to:
+  /// **'The role \"{name}\" will be deleted.'**
+  String roleDeleteConfirmBody(String name);
+
+  /// No description provided for @roleDeleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Role \"{name}\" deleted'**
+  String roleDeleted(String name);
+
+  /// No description provided for @roleDeleteBlockedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Role can\'t be deleted'**
+  String get roleDeleteBlockedTitle;
+
+  /// No description provided for @roleDeleteFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not delete the role: {message}'**
+  String roleDeleteFailed(String message);
+
+  /// No description provided for @permissionEditorTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Permissions · {role}'**
+  String permissionEditorTitle(String role);
+
+  /// No description provided for @permissionEditorSave.
+  ///
+  /// In en, this message translates to:
+  /// **'Save permissions'**
+  String get permissionEditorSave;
+
+  /// No description provided for @permissionEditorSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Permissions saved'**
+  String get permissionEditorSaved;
+
+  /// No description provided for @permissionEditorSelected.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} of {total} selected'**
+  String permissionEditorSelected(int count, int total);
+
+  /// No description provided for @permissionEditorNotHeld.
+  ///
+  /// In en, this message translates to:
+  /// **'Greyed-out permissions are ones you don\'t hold yourself, so you can\'t grant them.'**
+  String get permissionEditorNotHeld;
+
+  /// No description provided for @permissionEditorSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not save the permissions: {message}'**
+  String permissionEditorSaveFailed(String message);
+
+  /// No description provided for @permissionGroupProducts.
+  ///
+  /// In en, this message translates to:
+  /// **'Products'**
+  String get permissionGroupProducts;
+
+  /// No description provided for @permissionGroupCategories.
+  ///
+  /// In en, this message translates to:
+  /// **'Categories'**
+  String get permissionGroupCategories;
+
+  /// No description provided for @permissionGroupInventory.
+  ///
+  /// In en, this message translates to:
+  /// **'Inventory'**
+  String get permissionGroupInventory;
+
+  /// No description provided for @permissionGroupCustomers.
+  ///
+  /// In en, this message translates to:
+  /// **'Customers'**
+  String get permissionGroupCustomers;
+
+  /// No description provided for @permissionGroupSalesOrders.
+  ///
+  /// In en, this message translates to:
+  /// **'Sales orders'**
+  String get permissionGroupSalesOrders;
+
+  /// No description provided for @permissionGroupAnalytics.
+  ///
+  /// In en, this message translates to:
+  /// **'Analytics'**
+  String get permissionGroupAnalytics;
+
+  /// No description provided for @permissionGroupUsers.
+  ///
+  /// In en, this message translates to:
+  /// **'Users'**
+  String get permissionGroupUsers;
+
+  /// No description provided for @permissionGroupRoles.
+  ///
+  /// In en, this message translates to:
+  /// **'Roles'**
+  String get permissionGroupRoles;
+
+  /// No description provided for @usersTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Users'**
+  String get usersTitle;
+
+  /// No description provided for @usersAdd.
+  ///
+  /// In en, this message translates to:
+  /// **'Add user'**
+  String get usersAdd;
+
+  /// No description provided for @usersSearchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Search name or email'**
+  String get usersSearchHint;
+
+  /// No description provided for @usersEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No users yet.'**
+  String get usersEmpty;
+
+  /// No description provided for @usersEmptyForSearch.
+  ///
+  /// In en, this message translates to:
+  /// **'No user matches \"{query}\"'**
+  String usersEmptyForSearch(String query);
+
+  /// No description provided for @usersCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 user} other{{count} users}}'**
+  String usersCount(int count);
+
+  /// No description provided for @userActive.
+  ///
+  /// In en, this message translates to:
+  /// **'Active'**
+  String get userActive;
+
+  /// No description provided for @userInactive.
+  ///
+  /// In en, this message translates to:
+  /// **'Inactive'**
+  String get userInactive;
+
+  /// No description provided for @userYou.
+  ///
+  /// In en, this message translates to:
+  /// **'You'**
+  String get userYou;
+
+  /// No description provided for @userOutOfScope.
+  ///
+  /// In en, this message translates to:
+  /// **'Beyond your permissions'**
+  String get userOutOfScope;
+
+  /// No description provided for @userNew.
+  ///
+  /// In en, this message translates to:
+  /// **'New user'**
+  String get userNew;
+
+  /// No description provided for @userEdit.
+  ///
+  /// In en, this message translates to:
+  /// **'User'**
+  String get userEdit;
+
+  /// No description provided for @userFieldName.
+  ///
+  /// In en, this message translates to:
+  /// **'Name'**
+  String get userFieldName;
+
+  /// No description provided for @userFieldEmail.
+  ///
+  /// In en, this message translates to:
+  /// **'Email'**
+  String get userFieldEmail;
+
+  /// No description provided for @userFieldPassword.
+  ///
+  /// In en, this message translates to:
+  /// **'Password'**
+  String get userFieldPassword;
+
+  /// No description provided for @userFieldNewPassword.
+  ///
+  /// In en, this message translates to:
+  /// **'New password (optional)'**
+  String get userFieldNewPassword;
+
+  /// No description provided for @userFieldNewPasswordHelper.
+  ///
+  /// In en, this message translates to:
+  /// **'Leave empty to keep the current one. A new password signs the user out on every device.'**
+  String get userFieldNewPasswordHelper;
+
+  /// No description provided for @userFieldRole.
+  ///
+  /// In en, this message translates to:
+  /// **'Role'**
+  String get userFieldRole;
+
+  /// No description provided for @userFieldActive.
+  ///
+  /// In en, this message translates to:
+  /// **'Active account'**
+  String get userFieldActive;
+
+  /// No description provided for @userFieldActiveHelper.
+  ///
+  /// In en, this message translates to:
+  /// **'An inactive user can\'t sign in, and their sessions end at once.'**
+  String get userFieldActiveHelper;
+
+  /// No description provided for @userRolesLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Roles could not be loaded'**
+  String get userRolesLoadFailed;
+
+  /// No description provided for @userRolesReload.
+  ///
+  /// In en, this message translates to:
+  /// **'Reload roles'**
+  String get userRolesReload;
+
+  /// No description provided for @userSelfDeactivate.
+  ///
+  /// In en, this message translates to:
+  /// **'You can\'t deactivate your own account.'**
+  String get userSelfDeactivate;
+
+  /// No description provided for @userSelfRole.
+  ///
+  /// In en, this message translates to:
+  /// **'You can\'t change your own role.'**
+  String get userSelfRole;
+
+  /// No description provided for @userSelfDelete.
+  ///
+  /// In en, this message translates to:
+  /// **'You can\'t delete your own account.'**
+  String get userSelfDelete;
+
+  /// No description provided for @userCreated.
+  ///
+  /// In en, this message translates to:
+  /// **'User \"{name}\" created'**
+  String userCreated(String name);
+
+  /// No description provided for @userUpdated.
+  ///
+  /// In en, this message translates to:
+  /// **'User saved'**
+  String get userUpdated;
+
+  /// No description provided for @userSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not save the user: {message}'**
+  String userSaveFailed(String message);
+
+  /// No description provided for @userDeleteConfirmTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete user?'**
+  String get userDeleteConfirmTitle;
+
+  /// No description provided for @userDeleteConfirmBody.
+  ///
+  /// In en, this message translates to:
+  /// **'{name} ({email}) will be deleted and signed out on every device.'**
+  String userDeleteConfirmBody(String name, String email);
+
+  /// No description provided for @userDeleted.
+  ///
+  /// In en, this message translates to:
+  /// **'{name} deleted'**
+  String userDeleted(String name);
+
+  /// No description provided for @userDeleteFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not delete the user: {message}'**
+  String userDeleteFailed(String message);
 }
 
 class _AppLocalizationsDelegate

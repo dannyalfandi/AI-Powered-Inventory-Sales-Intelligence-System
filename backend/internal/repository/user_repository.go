@@ -12,7 +12,8 @@ import (
 	"github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/backend/internal/model"
 )
 
-// UserMutation changes a locked user in place. activeSuperAdmins is the
+// UserMutation changes a locked user in place. u.Role is loaded with its
+// permission keys (empty for the system role). activeSuperAdmins is the
 // number of active users holding a system role, counted while those rows
 // are locked, so "don't remove the last Super Admin" holds even when two
 // admins demote each other at the same moment. Return revokeSessions=true to
@@ -152,7 +153,8 @@ func (r *userRepository) Delete(ctx context.Context, id uint, fn UserMutation) e
 
 // lockUser locks every active Super Admin (in id order, so two transactions
 // always take the locks in the same order), then the target user, and
-// returns the target with its role and the number of active Super Admins.
+// returns the target with its role (permission keys filled) and the number
+// of active Super Admins.
 func lockUser(tx *gorm.DB, id uint) (*model.User, int64, error) {
 	var adminIDs []uint
 	err := tx.Raw(`
@@ -173,7 +175,13 @@ func lockUser(tx *gorm.DB, id uint) (*model.User, int64, error) {
 	if err := tx.First(&role, u.RoleID).Error; err != nil {
 		return nil, 0, fmt.Errorf("load role of user %d: %w", id, translate(err))
 	}
-	u.Role = &role
+	// The service compares the target's permissions with the caller's
+	// (a non-Super-Admin may only touch users whose role they could grant).
+	roles := []model.Role{role}
+	if err := fillPermissionKeys(tx, roles); err != nil {
+		return nil, 0, err
+	}
+	u.Role = &roles[0]
 	return &u, int64(len(adminIDs)), nil
 }
 

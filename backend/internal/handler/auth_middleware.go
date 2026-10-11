@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -120,20 +121,58 @@ func RequireStatusPermission(authz service.Authorizer) gin.HandlerFunc {
 			return
 		}
 
-		for _, permission := range []auth.Permission{auth.SalesOrdersConfirm, auth.SalesOrdersShip, auth.SalesOrdersCancel} {
-			err := authz.Authorize(ctx, p.UserID, permission)
-			if err == nil {
-				c.Next()
-				return
-			}
-			if !errors.Is(err, service.ErrForbidden) {
-				writeError(c, err) // 401 or a database error: no point trying the others
-				return
-			}
+		if err := authorizeAny(ctx, authz, p.UserID,
+			auth.SalesOrdersConfirm, auth.SalesOrdersShip, auth.SalesOrdersCancel); err != nil {
+			writeError(c, err)
+			return
 		}
-		writeError(c, fmt.Errorf("%w: %s", service.ErrForbidden, i18n.T(ctx, i18n.KeyAuthForbidden,
-			"sales_orders.confirm / sales_orders.ship / sales_orders.cancel")))
+		c.Next()
 	}
+}
+
+// RequireAnyPermission is RequirePermission for a route that several
+// permissions open: the request goes through if the caller's role grants at
+// least one of them (a Super Admin always passes). It must run after
+// Authenticate.
+//
+//	none of them granted                 → 403 forbidden, naming all of them
+//	user deactivated/deleted since login → 401 unauthorized
+func RequireAnyPermission(authz service.Authorizer, permissions ...auth.Permission) gin.HandlerFunc {
+	if len(permissions) == 0 {
+		panic("RequireAnyPermission: no permission given") // a wiring bug, caught at startup
+	}
+	return func(c *gin.Context) {
+		p, ok := auth.PrincipalFrom(c.Request.Context())
+		if !ok {
+			writeError(c, authFailure(c, service.ErrUnauthorized, i18n.KeyAuthMissingToken))
+			return
+		}
+		if err := authorizeAny(c.Request.Context(), authz, p.UserID, permissions...); err != nil {
+			writeError(c, err)
+			return
+		}
+		c.Next()
+	}
+}
+
+// authorizeAny asks for each permission in order and stops at the first
+// grant. Only a 403 moves on to the next one: a 401 (user gone) or a
+// database error ends the search, since asking again can't change it.
+func authorizeAny(ctx context.Context, authz service.Authorizer, userID uint, permissions ...auth.Permission) error {
+	for _, permission := range permissions {
+		err := authz.Authorize(ctx, userID, permission)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, service.ErrForbidden) {
+			return err
+		}
+	}
+	names := make([]string, len(permissions))
+	for i, permission := range permissions {
+		names[i] = string(permission)
+	}
+	return fmt.Errorf("%w: %s", service.ErrForbidden, i18n.T(ctx, i18n.KeyAuthForbidden, strings.Join(names, " / ")))
 }
 
 // authFailure builds a service-style error ("<sentinel>: <message>") in the

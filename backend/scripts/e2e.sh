@@ -13,8 +13,11 @@
 # ADMIN_EMAIL / ADMIN_PASSWORD default to the seeder's defaults.
 # LOW_STOCK_DEFAULT_THRESHOLD must match the API's value (default 10).
 # Every run uses unique names/SKUs/emails, so it can be re-run against the same
-# DB. Created products/categories/users are soft-deleted at the end. Their
+# DB. Created products/categories/customers are soft-deleted at the end. Their
 # stock_movements and inventories rows stay, because movements are immutable.
+# The run's users and roles are removed for good at the end (go run
+# ./cmd/seed --clean-e2e-run=$RUN, needs Go and backend/.env pointing at the
+# API's database); set E2E_SKIP_CLEANUP=1 to keep them.
 # Exits 1 if any check fails.
 B=${API_URL:-http://localhost:8080/api/v1}
 THRESHOLD=${LOW_STOCK_DEFAULT_THRESHOLD:-10}
@@ -51,6 +54,17 @@ check() { # label expected-code [grep-pattern]
   fi
 }
 jid() { grep -o '"id":[0-9]*' <<<"$body" | head -1 | cut -d: -f2; }
+# jnum KEY -> the first integer value of KEY in $body
+jnum() { grep -o "\"$1\":[0-9]*" <<<"$body" | head -1 | cut -d: -f2; }
+# no_count LABEL -> passes when $body (a user answer) has no user_count:
+# that field belongs to the role endpoints, never to a role inside a user.
+no_count() {
+  if [ "${code:0:1}" = 2 ] && ! grep -q '"user_count"' <<<"$body"; then
+    pass=$((pass+1)); echo "PASS  $1: no user_count in the embedded role"
+  else
+    fail=$((fail+1)); echo "FAIL  $1 -> $code: $body"
+  fi
+}
 # login EMAIL PASSWORD -> sets $ACCESS and $REFRESH (empty on failure)
 login() {
   as "" POST /auth/login "{\"email\":\"$1\",\"password\":\"$2\"}"
@@ -183,6 +197,7 @@ req PUT /roles/$ROLE/permissions '{"permission_keys":["products.view"]}'; check 
 as "$G" GET /products;                                    check "same token, new permission applies at once" 200
 as "$G" GET /inventory/low-stock;                         check "same token, removed permission denied at once" 403
 req DELETE /roles/$ROLE;                                  check "delete a role in use" 409 'masih terhubung dengan 1 pengguna'
+req GET /roles/$ROLE;                                     check "user_count matches the 409 (1)" 200 '"user_count":1'
 
 echo "== RBAC: the Super Admin role is locked"
 req DELETE /roles/$ADMIN_ROLE;                            check "delete system role" 409 'role sistem'
@@ -197,6 +212,7 @@ req PATCH /users/$ADMIN_ID "{\"role_id\":$STAFF_ROLE}";   check "can't change yo
 req DELETE /users/$ADMIN_ID;                              check "can't delete yourself" 409
 req GET /users/$ADMIN_ID;                                 check "self-protection: account unchanged (active, still Super Admin)" 200 "\"role_id\":$ADMIN_ROLE,\"role\":{\"id\":$ADMIN_ROLE,\"name\":\"Super Admin\""
 grep -q '"is_active":true' <<<"$body" && { pass=$((pass+1)); echo "PASS  self-protection: still active"; } || { fail=$((fail+1)); echo "FAIL  admin changed: $body"; }
+grep -q '"user_count"' <<<"$body" && { fail=$((fail+1)); echo "FAIL  a role inside a user claims a user_count: $body"; } || { pass=$((pass+1)); echo "PASS  a role inside a user has no (false) user_count"; }
 req PATCH /users/$GUDANG '{"is_active":false}';           check "deactivate a user" 200 '"is_active":false'
 as "$G" GET /products;                                    check "their live access token stops at once" 401 'tidak aktif'
 as "" POST /auth/refresh "{\"refresh_token\":\"$GR\"}";   check "their refresh token was revoked" 401
@@ -207,11 +223,45 @@ req GET "/users?search=e2e.staff.$RUN";                   check "list users with
 # The only user of ROLE is now soft-deleted; it still holds role_id as history.
 req DELETE /roles/$ROLE;                                  check "role used only by a DELETED user still can't be deleted" 409 'termasuk yang sudah dihapus'
 req GET /roles/$ROLE;                                     check "that role is still there" 200 "\"id\":$ROLE"
+expect "user_count still counts the soft-deleted user (same number as the 409)" "$(jnum user_count)" 1
+
+echo "== user_count: users per role, in GET /roles and GET /roles/:id"
+# user_count = every user row that references the role, soft-deleted ones
+# included: exactly the rows that make DELETE /roles/:id answer 409.
+req POST /roles "{\"name\":\"E2E Count $RUN\"}";          check "create a role to count" 201 '"user_count":0'
+COUNT_ROLE=$(jid)
+req GET /roles/$COUNT_ROLE;                               check "detail: a new role has user_count 0" 200 '"user_count":0'
+for n in 1 2 3; do
+  req POST /users "{\"email\":\"e2e.count$n.$RUN@example.test\",\"password\":\"rahasia123\",\"name\":\"E2E Count $n $RUN\",\"role_id\":$COUNT_ROLE}"
+  eval "COUNT_U$n=\$(jid)"
+done
+no_count "POST /users"
+req GET "/users?search=e2e.count1.$RUN";                  no_count "GET /users"
+req GET /users/$COUNT_U1;                                 no_count "GET /users/:id"
+req GET "/roles?search=E2E%20Count%20$RUN";               check "list: the role with 3 users" 200 '"total":1'
+expect "list: user_count 3" "$(jnum user_count)" 3
+req GET /roles/$COUNT_ROLE;                               expect "detail: user_count 3 (same number as the list)" "$(jnum user_count)" 3
+req PATCH /users/$COUNT_U1 '{"is_active":false}';         no_count "PATCH /users/:id keeping the role"
+req GET /roles/$COUNT_ROLE;                               expect "an inactive user still counts" "$(jnum user_count)" 3
+req DELETE /users/$COUNT_U2
+req GET /roles/$COUNT_ROLE;                               expect "a soft-deleted user still counts" "$(jnum user_count)" 3
+req DELETE /roles/$COUNT_ROLE;                            check "the 409 names the same count" 409 'masih terhubung dengan 3 pengguna'
+req PATCH /users/$COUNT_U3 "{\"role_id\":$STAFF_ROLE}";   no_count "PATCH /users/:id changing the role"
+login "e2e.count3.$RUN@example.test" rahasia123;          no_count "POST /auth/login"
+as "$ACCESS" GET /auth/me;                                no_count "GET /auth/me"
+req GET /roles/$COUNT_ROLE;                               expect "moving a user to another role lowers it" "$(jnum user_count)" 2
+req GET "/roles?search=Super%20Admin";                    check "the Super Admin role has a count too" 200 '"user_count":[1-9]'
+LANG_HEADER=en req DELETE /roles/$COUNT_ROLE;             check "409 in English says deleted users count" 409 'including deleted ones'
+unset LANG_HEADER
 
 echo "== Guardrail: only a Super Admin can hand out Super Admin power"
-# A "user manager" holds every users.* permission but is not a Super Admin.
+# A "user manager" holds every users.* permission plus everything Staff has
+# (so it may manage Staff accounts), but is not a Super Admin.
+req GET /roles/$STAFF_ROLE
+STAFF_KEYS=$(grep -o '"permissions":\[[^]]*\]' <<<"$body" | sed 's/^"permissions":\[//; s/\]$//')
+UM_KEYS="\"users.view\",\"users.create\",\"users.update\",\"users.delete\",$STAFF_KEYS"
 req POST /roles "{\"name\":\"E2E UserMgr $RUN\"}"; UM_ROLE=$(jid)
-req PUT /roles/$UM_ROLE/permissions '{"permission_keys":["users.view","users.create","users.update","users.delete"]}'; check "user-manager role" 200 '"users.delete"'
+req PUT /roles/$UM_ROLE/permissions "{\"permission_keys\":[$UM_KEYS]}"; check "user-manager role (users.* + Staff's permissions)" 200 '"users.delete"'
 UM_EMAIL="e2e.usermgr.$RUN@example.test"
 req POST /users "{\"email\":\"$UM_EMAIL\",\"password\":\"rahasia123\",\"name\":\"E2E UserMgr $RUN\",\"role_id\":$UM_ROLE}"; UM_USER=$(jid)
 login "$UM_EMAIL" rahasia123; UM=$ACCESS
@@ -228,6 +278,54 @@ as "$UM" DELETE /users/$ADMIN_ID;                            check "user manager
 req GET /users/$UM_STAFF;                                    check "the Staff user is still Staff" 200 "\"role_id\":$STAFF_ROLE"
 login "$ADMIN_EMAIL" "$ADMIN_PASSWORD";                      check "the Super Admin password is unchanged" 200
 req GET "/users?search=e2e.um-boss.$RUN";                    check "no Super Admin was created" 200 '"total":0'
+
+echo "== Roles list for a user manager (users.create/update, no roles.view)"
+as "$UM" GET /roles;                                         check "user manager CAN list roles (for the role dropdown)" 200 '"user_count":'
+grep -q '"name":"Staff"' <<<"$body" && { pass=$((pass+1)); echo "PASS  the list carries the roles"; } || { fail=$((fail+1)); echo "FAIL  role list: $body"; }
+as "$UM" GET /roles/$STAFF_ROLE;                             check "but NOT the role detail" 403 'roles.view'
+as "$UM" GET /permissions;                                   check "nor the permission catalog" 403 'roles.view'
+as "$UM" POST /roles '{"name":"E2E Hack"}';                  check "nor create roles" 403 'roles.create'
+req POST /roles "{\"name\":\"E2E UsersView $RUN\"}"; UV_ROLE=$(jid)
+req PUT /roles/$UV_ROLE/permissions '{"permission_keys":["users.view"]}'
+req POST /users "{\"email\":\"e2e.usersview.$RUN@example.test\",\"password\":\"rahasia123\",\"name\":\"E2E UsersView $RUN\",\"role_id\":$UV_ROLE}"; UV_USER=$(jid)
+login "e2e.usersview.$RUN@example.test" rahasia123; UV=$ACCESS
+as "$UV" GET /roles;                                         check "users.view alone can't list roles" 403 'roles.view / users.create / users.update'
+as "$STAFF" GET /roles;                                      check "Staff can't list roles" 403
+LANG_HEADER=en as "$UV" GET /roles;                          check "the any-of 403 in English" 403 'you do not have the roles.view / users.create / users.update permission'
+unset LANG_HEADER
+
+echo "== Guardrail: a non-Super-Admin can only give, change or delete what they hold"
+# "Power" holds everything the user manager has plus two permissions it
+# lacks. "Weak" holds users.* only, so even Staff is beyond it.
+req POST /roles "{\"name\":\"E2E Power $RUN\"}"; POWER_ROLE=$(jid)
+req PUT /roles/$POWER_ROLE/permissions "{\"permission_keys\":[$UM_KEYS,\"products.delete\",\"roles.assign_permissions\"]}"; check "a role stronger than the user manager" 200 '"products.delete"'
+POWER_EMAIL="e2e.power.$RUN@example.test"
+req POST /users "{\"email\":\"$POWER_EMAIL\",\"password\":\"rahasia123\",\"name\":\"E2E Power $RUN\",\"role_id\":$POWER_ROLE}"; check "the Super Admin creates a Power user" 201
+POWER_USER=$(jid)
+as "$UM" POST /users "{\"email\":\"e2e.um-power.$RUN@example.test\",\"password\":\"rahasia123\",\"name\":\"X\",\"role_id\":$POWER_ROLE}"
+check "user manager can't CREATE a user with a stronger role" 403 "memberikan role ..E2E Power $RUN"
+as "$UM" PATCH /users/$UM_STAFF "{\"role_id\":$POWER_ROLE}"; check "user manager can't GIVE a stronger role" 403 "memberikan role ..E2E Power $RUN"
+as "$UM" PATCH /users/$UM_USER "{\"role_id\":$POWER_ROLE}";  check "nor to themselves (still the self rule: 409)" 409 'role akun sendiri'
+as "$UM" PATCH /users/$POWER_USER '{"password":"dibajak123"}'; check "user manager can't RESET a stronger user's password" 403 "pengguna dengan role ..E2E Power $RUN"
+login "$POWER_EMAIL" dibajak123;                             check "so nobody can log in as Power with a password they set" 401
+login "$POWER_EMAIL" rahasia123;                             check "the Power password is unchanged" 200
+as "$UM" PATCH /users/$POWER_USER '{"is_active":false}';     check "user manager can't DEACTIVATE a stronger user" 403 'pengguna dengan role'
+as "$UM" PATCH /users/$POWER_USER "{\"role_id\":$STAFF_ROLE}"; check "nor demote them (it changes a stronger account)" 403 'pengguna dengan role'
+as "$UM" DELETE /users/$POWER_USER;                          check "user manager can't DELETE a stronger user" 403 'pengguna dengan role'
+req GET /users/$POWER_USER;                                  check "the Power user is untouched (still Power)" 200 "\"role_id\":$POWER_ROLE"
+grep -q '"is_active":true' <<<"$body" && { pass=$((pass+1)); echo "PASS  Power user still active"; } || { fail=$((fail+1)); echo "FAIL  Power user changed: $body"; }
+LANG_HEADER=en as "$UM" DELETE /users/$POWER_USER;           check "target-side 403 in English" 403 "you can't change or delete a user with the"
+unset LANG_HEADER
+as "$UM" PATCH /users/$UM_STAFF '{"name":"E2E UM Staff renamed"}'; check "control: a Staff user is within scope" 200 'renamed'
+as "$UM" PATCH /users/$UM_USER '{"name":"E2E UserMgr self"}';    check "control: editing yourself is not limited by the scope" 200 'self'
+req POST /roles "{\"name\":\"E2E Weak $RUN\"}"; WEAK_ROLE=$(jid)
+req PUT /roles/$WEAK_ROLE/permissions '{"permission_keys":["users.view","users.create","users.update","users.delete"]}'
+req POST /users "{\"email\":\"e2e.weak.$RUN@example.test\",\"password\":\"rahasia123\",\"name\":\"E2E Weak $RUN\",\"role_id\":$WEAK_ROLE}"; WEAK_USER=$(jid)
+login "e2e.weak.$RUN@example.test" rahasia123; WEAK=$ACCESS
+as "$WEAK" POST /users "{\"email\":\"e2e.weak-staff.$RUN@example.test\",\"password\":\"rahasia123\",\"name\":\"X\",\"role_id\":$STAFF_ROLE}"
+check "users.* alone can't create even a Staff user" 403 'memberikan role ..Staff'
+LANG_HEADER=en as "$WEAK" PATCH /users/$UM_STAFF '{"password":"dibajak123"}'; check "nor reset a Staff password (English)" 403 "you can't change or delete a user with the ..Staff.. role"
+unset LANG_HEADER
 
 echo "== Guardrail: a non-Super-Admin can only grant permissions they hold"
 # A "role manager" may assign permissions but only holds a few itself.
@@ -247,7 +345,7 @@ req GET /roles/$RM_ROLE
 grep -q '"users.update"' <<<"$body" && { fail=$((fail+1)); echo "FAIL  role manager escalated: $body"; } || { pass=$((pass+1)); echo "PASS  own role still without users.update"; }
 as "$RM" PUT /roles/$STAFF_ROLE/permissions '{"permission_keys":["users.view"]}'; check "can't grant it to another role (Staff)" 403
 as "$RM" PUT /roles/$ADMIN_ROLE/permissions '{"permission_keys":[]}';            check "can't touch the system role" 409
-for id in $UM_STAFF $UM_USER $RM_USER; do req DELETE /users/$id; done
+for id in $UM_STAFF $UM_USER $RM_USER $UV_USER $POWER_USER $WEAK_USER $COUNT_U1 $COUNT_U3; do req DELETE /users/$id; done
 
 echo "== Category"
 req POST /categories "{\"name\":\"  E2E Minuman $RUN \",\"description\":\"kopi & teh\"}"; check "create category (trimmed)" 201 "\"name\":\"E2E Minuman $RUN\""
@@ -645,6 +743,22 @@ req GET /auth/me;                                         check "the main admin 
 req PATCH /users/$ADMIN2 '{"is_active":false}';           check "deactivating one of two Super Admins is allowed" 200
 login "$ADMIN2_EMAIL" rahasia123;                         check "the deactivated admin can't log in" 401
 req DELETE /users/$ADMIN2;                                check "remove the second Super Admin" 204
+
+echo "== Cleanup: this run's users and roles (hard delete)"
+# The API can't remove roles this run's soft-deleted users still reference
+# (409, tested above), so they are removed in the database, scoped to this
+# run only. E2E_SKIP_CLEANUP=1 keeps them for inspection.
+if [ -n "$E2E_SKIP_CLEANUP" ]; then
+  echo "      skipped (E2E_SKIP_CLEANUP); later: go run ./cmd/seed --clean-e2e-run=$RUN"
+else
+  if (cd "$(dirname "$0")/.." && go run ./cmd/seed --clean-e2e-run="$RUN") >"$CODES" 2>&1; then
+    pass=$((pass+1)); echo "PASS  go run ./cmd/seed --clean-e2e-run=$RUN"
+  else
+    fail=$((fail+1)); echo "FAIL  cleanup:"; sed 's/^/      /' "$CODES"
+  fi
+  req GET "/roles?search=$RUN&page_size=100";             check "no role of this run is left" 200 '"total":0'
+  req GET "/users?search=.$RUN@example.test";             check "no user of this run is left" 200 '"total":0'
+fi
 
 echo; echo "RESULT: $pass passed, $fail failed  (products $PA,$PB,$P1,$P2,$P3 categories $CAT,$CAT2 customers $CUST,$CUST2,$CUST3 orders $OA,$OB,$OC,$OD)"
 [ "$fail" -eq 0 ]

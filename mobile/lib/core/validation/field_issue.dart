@@ -17,6 +17,7 @@ enum FieldIssueKind {
   priceTooLarge,
   categoryInvalid,
   orderTransitionInvalid,
+  emailRequired,
   emailInvalid,
   emailTooLong,
   phoneInvalid,
@@ -34,6 +35,10 @@ enum FieldIssueKind {
   itemsRequired,
   itemsTooMany,
   itemsDuplicateProduct,
+  passwordRequired,
+  passwordTooShort,
+  passwordTooLong,
+  roleRequired,
 }
 
 /// One rejected field. [max] fills the number in messages that mention a

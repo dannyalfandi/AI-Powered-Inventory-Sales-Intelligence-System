@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -14,22 +15,39 @@ import (
 	"github.com/dannyalfandi/AI-Powered-Inventory-Sales-Intelligence-System/backend/internal/repository"
 )
 
-// Callers used across the user tests: a Super Admin (id 1) and a
-// non-system "user manager" (id 5) who holds users.* but is not a Super Admin.
+// Roles and callers used across the user tests. Ordered by power:
+//
+//	guestRole        no permission at all
+//	staffRole        products.view, sales_orders.create
+//	weakManagerRole  users.* only            — can't cover Staff
+//	userManagerRole  users.* + Staff's keys  — covers Guest and Staff
+//	powerRole        more than any manager   — only a Super Admin covers it
+//	superAdminRole   system role
 var (
-	userManagerRole = &model.Role{ID: 3, Name: "User Manager", Permissions: []string{"users.view", "users.create", "users.update", "users.delete"}}
-	callerAdmin     = &model.User{ID: 1, Email: "admin@example.com", RoleID: 1, Role: superAdminRole, IsActive: true}
-	callerManager   = &model.User{ID: 5, Email: "manager@example.com", RoleID: 3, Role: userManagerRole, IsActive: true}
-	otherAdmin      = &model.User{ID: 2, Email: "admin2@example.com", RoleID: 1, Role: superAdminRole, IsActive: true}
-	staffUser       = &model.User{ID: 7, Email: "staff@example.com", RoleID: 2, Role: staffRole, IsActive: true}
+	usersAll        = []string{"users.view", "users.create", "users.update", "users.delete"}
+	guestRole       = &model.Role{ID: 10, Name: "Tamu", Permissions: []string{}}
+	weakManagerRole = &model.Role{ID: 8, Name: "Weak Manager", Permissions: usersAll}
+	userManagerRole = &model.Role{ID: 3, Name: "User Manager", Permissions: append(append([]string{}, usersAll...), "products.view", "sales_orders.create")}
+	powerRole       = &model.Role{ID: 9, Name: "Power", Permissions: append(append([]string{}, usersAll...),
+		"products.view", "products.delete", "sales_orders.create", "roles.assign_permissions")}
+
+	callerAdmin       = &model.User{ID: 1, Email: "admin@example.com", RoleID: 1, Role: superAdminRole, IsActive: true}
+	callerManager     = &model.User{ID: 5, Email: "manager@example.com", RoleID: 3, Role: userManagerRole, IsActive: true}
+	callerWeakManager = &model.User{ID: 8, Email: "weak@example.com", RoleID: 8, Role: weakManagerRole, IsActive: true}
+	otherAdmin        = &model.User{ID: 2, Email: "admin2@example.com", RoleID: 1, Role: superAdminRole, IsActive: true}
+	staffUser         = &model.User{ID: 7, Email: "staff@example.com", RoleID: 2, Role: staffRole, IsActive: true}
+	guestUser         = &model.User{ID: 11, Email: "guest@example.com", RoleID: 10, Role: guestRole, IsActive: true}
+	powerUser         = &model.User{ID: 12, Email: "power@example.com", RoleID: 9, Role: powerRole, IsActive: true}
 )
 
 func newUserFixture() (UserService, *mockUserRepo, *mockRoleRepo) {
 	users, roles := &mockUserRepo{}, &mockRoleRepo{}
-	users.On("FindByID", mock.Anything, callerAdmin.ID).Return(copyUser(callerAdmin), nil).Maybe()
-	users.On("FindByID", mock.Anything, callerManager.ID).Return(copyUser(callerManager), nil).Maybe()
-	roles.On("FindByID", mock.Anything, superAdminRole.ID).Return(superAdminRole, nil).Maybe()
-	roles.On("FindByID", mock.Anything, staffRole.ID).Return(staffRole, nil).Maybe()
+	for _, caller := range []*model.User{callerAdmin, callerManager, callerWeakManager} {
+		users.On("FindByID", mock.Anything, caller.ID).Return(copyUser(caller), nil).Maybe()
+	}
+	for _, r := range []*model.Role{superAdminRole, staffRole, guestRole, weakManagerRole, userManagerRole, powerRole} {
+		roles.On("FindByID", mock.Anything, r.ID).Return(r, nil).Maybe()
+	}
 	roles.On("FindByID", mock.Anything, uint(99)).Return(nil, repository.ErrNotFound).Maybe()
 	return NewUserService(users, roles), users, roles
 }
@@ -334,4 +352,55 @@ func TestUserService_List(t *testing.T) {
 	assert.Len(t, got, 1)
 	assert.Equal(t, int64(1), total)
 	assert.Equal(t, 1, used.Page)
+}
+
+// user_count belongs to the role endpoints. A role embedded in a user (the
+// answer to POST /users and PATCH /users/:id) never carries it — the role
+// repository counts users, and after a create that count is one too low.
+// Its permission keys are left as they were.
+func TestUserService_EmbeddedRoleHasNoUserCount(t *testing.T) {
+	counted := func(r *model.Role, n int64) *model.Role {
+		c := *r
+		c.UserCount = &n
+		return &c
+	}
+	tests := []struct {
+		name string
+		run  func(svc UserService) (*model.User, error)
+		want []string // permission keys still on the embedded role
+	}{
+		{"POST /users", func(svc UserService) (*model.User, error) {
+			return svc.Create(asUser(callerAdmin.ID), model.CreateUserInput{
+				Email: "baru@example.com", Password: "rahasia123", Name: "Baru", RoleID: staffRole.ID})
+		}, staffRole.Permissions},
+		{"PATCH /users/:id changing the role", func(svc UserService) (*model.User, error) {
+			return svc.Update(asUser(callerAdmin.ID), guestUser.ID, model.UpdateUserInput{RoleID: ptr(staffRole.ID)})
+		}, staffRole.Permissions},
+		{"PATCH /users/:id keeping the role", func(svc UserService) (*model.User, error) {
+			return svc.Update(asUser(callerAdmin.ID), guestUser.ID, model.UpdateUserInput{Name: ptr("Tamu Baru")})
+		}, guestRole.Permissions},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			users, roles := &mockUserRepo{}, &mockRoleRepo{}
+			users.On("FindByID", mock.Anything, callerAdmin.ID).Return(copyUser(callerAdmin), nil)
+			roles.On("FindByID", mock.Anything, staffRole.ID).Return(counted(staffRole, 7), nil)
+			users.On("Create", mock.Anything, mock.Anything).Return(nil).Maybe()
+			// The locked user as the repository hands it over: a role with
+			// permission keys (and, defensively here, a count).
+			locked := copyUser(guestUser)
+			locked.Role = counted(guestRole, 3)
+			users.On("Mutate", mock.Anything, guestUser.ID).Return(locked, int64(2), nil).Maybe()
+
+			got, err := tt.run(NewUserService(users, roles))
+			require.NoError(t, err)
+			require.NotNil(t, got.Role)
+			assert.Nil(t, got.Role.UserCount, "no user_count inside a user")
+			assert.Equal(t, tt.want, got.Role.Permissions, "permissions are left as they were")
+
+			b, err := json.Marshal(got)
+			require.NoError(t, err)
+			assert.NotContains(t, string(b), "user_count")
+		})
+	}
 }

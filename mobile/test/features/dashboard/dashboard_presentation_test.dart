@@ -14,6 +14,7 @@ import 'package:inventory_intel/features/dashboard/presentation/providers/dashbo
 import 'package:inventory_intel/features/dashboard/presentation/screens/dashboard_screen.dart';
 import 'package:mocktail/mocktail.dart';
 
+import '../../helpers/auth_fixtures.dart';
 import '../../helpers/dashboard_fixtures.dart';
 import '../../helpers/l10n_harness.dart';
 
@@ -145,7 +146,9 @@ void main() {
         ],
       );
       return ProviderScope(
-        overrides: [dashboardRepositoryProvider.overrideWithValue(repo)],
+        // Every section is gated by its analytics permission: a Super Admin
+        // sees them all, as these tests expect.
+        overrides: [dashboardRepositoryProvider.overrideWithValue(repo), signedInAs(superAdmin)],
         retry: (_, _) => null,
         child: localizedApp(routerConfig: router),
       );

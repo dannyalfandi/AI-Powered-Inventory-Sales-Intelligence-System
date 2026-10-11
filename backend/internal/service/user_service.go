@@ -23,6 +23,12 @@ const maxUserNameLength = 255
 //     (the one way to lock yourself out, or to promote yourself);
 //   - only a Super Admin can grant the Super Admin role or change a Super
 //     Admin's account, so a custom "user manager" role can't take over;
+//   - a non-Super-Admin can only give a user a role whose permissions they
+//     hold themselves, and can only change (password, role, is_active, …) or
+//     delete users whose role they hold in full — otherwise "create an
+//     account with a stronger role" or "reset a stronger account's password"
+//     would be a way to log in with more than they have (see grantScope).
+//     Editing your own account is exempt: your role is your own scope;
 //   - at least one active Super Admin always remains.
 type UserService interface {
 	Create(ctx context.Context, in model.CreateUserInput) (*model.User, error)
@@ -65,6 +71,13 @@ func (s *userService) Create(ctx context.Context, in model.CreateUserInput) (*mo
 	if role.IsSystem && !isSuperAdmin(actor) {
 		return nil, ruleError(ctx, ErrForbidden, i18n.KeySystemRoleRequiresSuperAdmin)
 	}
+	scope, err := grantScopeOf(ctx, s.roles, actor)
+	if err != nil {
+		return nil, err
+	}
+	if k := scope.firstMissingOf(role); k != "" {
+		return nil, ruleError(ctx, ErrForbidden, i18n.KeyRoleExceedsOwnPermissions, role.Name, k)
+	}
 
 	if u.PasswordHash, err = auth.HashPassword(in.Password); err != nil {
 		return nil, err
@@ -72,7 +85,7 @@ func (s *userService) Create(ctx context.Context, in model.CreateUserInput) (*mo
 	if err := s.users.Create(ctx, u); err != nil {
 		return nil, mapUserRepoError(ctx, err, 0)
 	}
-	u.Role = role
+	u.Role = embeddedRole(role)
 	return u, nil
 }
 
@@ -128,11 +141,17 @@ func (s *userService) Update(ctx context.Context, id uint, in model.UpdateUserIn
 		}
 	}
 
+	// Read the caller's scope before taking the locks.
+	scope, err := grantScopeOf(ctx, s.roles, actor)
+	if err != nil {
+		return nil, err
+	}
+
 	self := actor.ID == id
 	u, err := s.users.Mutate(ctx, id, func(u *model.User, activeSuperAdmins int64) (bool, error) {
 		wasSuperAdmin := u.IsActive && u.Role.IsSystem
-		if u.Role.IsSystem && !isSuperAdmin(actor) {
-			return false, ruleError(ctx, ErrForbidden, i18n.KeySystemRoleRequiresSuperAdmin)
+		if err := checkTargetInScope(ctx, actor, scope, u, self); err != nil {
+			return false, err
 		}
 
 		if newRole != nil && newRole.ID != u.RoleID {
@@ -141,6 +160,9 @@ func (s *userService) Update(ctx context.Context, id uint, in model.UpdateUserIn
 			}
 			if newRole.IsSystem && !isSuperAdmin(actor) {
 				return false, ruleError(ctx, ErrForbidden, i18n.KeySystemRoleRequiresSuperAdmin)
+			}
+			if k := scope.firstMissingOf(newRole); k != "" {
+				return false, ruleError(ctx, ErrForbidden, i18n.KeyRoleExceedsOwnPermissions, newRole.Name, k)
 			}
 			u.RoleID, u.Role = newRole.ID, newRole
 		}
@@ -170,6 +192,11 @@ func (s *userService) Update(ctx context.Context, id uint, in model.UpdateUserIn
 	if err != nil {
 		return nil, mapUserRepoError(ctx, err, id)
 	}
+	// Whichever role the user ended up with (a new one from the role
+	// repository, or the locked one), it is answered as an embedded role.
+	if u.Role != nil {
+		u.Role = embeddedRole(u.Role)
+	}
 	return u, nil
 }
 
@@ -181,9 +208,13 @@ func (s *userService) Delete(ctx context.Context, id uint) error {
 	if actor.ID == id {
 		return ruleError(ctx, ErrConflict, i18n.KeyCannotDeactivateSelf)
 	}
+	scope, err := grantScopeOf(ctx, s.roles, actor)
+	if err != nil {
+		return err
+	}
 	err = s.users.Delete(ctx, id, func(u *model.User, activeSuperAdmins int64) (bool, error) {
-		if u.Role.IsSystem && !isSuperAdmin(actor) {
-			return false, ruleError(ctx, ErrForbidden, i18n.KeySystemRoleRequiresSuperAdmin)
+		if err := checkTargetInScope(ctx, actor, scope, u, false); err != nil {
+			return false, err
 		}
 		if u.IsActive && u.Role.IsSystem && activeSuperAdmins <= 1 {
 			return false, ruleError(ctx, ErrConflict, i18n.KeyLastSuperAdmin)
@@ -194,6 +225,36 @@ func (s *userService) Delete(ctx context.Context, id uint) error {
 		return mapUserRepoError(ctx, err, id)
 	}
 	return nil
+}
+
+// checkTargetInScope refuses to let a non-Super-Admin change or delete a
+// user whose current role they don't hold in full: a Super Admin account
+// (the existing, more specific message), or any role with a permission
+// outside the caller's scope. u is the locked target, its role loaded with
+// permission keys. Your own account is not checked here — the self rules
+// (no role change, no deactivation, no deletion) already apply to it.
+func checkTargetInScope(ctx context.Context, actor *model.User, scope grantScope, u *model.User, self bool) error {
+	if u.Role.IsSystem && !isSuperAdmin(actor) {
+		return ruleError(ctx, ErrForbidden, i18n.KeySystemRoleRequiresSuperAdmin)
+	}
+	if self {
+		return nil
+	}
+	if k := scope.firstMissingOf(u.Role); k != "" {
+		return ruleError(ctx, ErrForbidden, i18n.KeyUserRoleExceedsOwnPermissions, u.Role.Name, k)
+	}
+	return nil
+}
+
+// embeddedRole is a role as it appears inside a user: a copy without
+// user_count. The roles a request names come from the role repository, which
+// counts users, but inside a user that number is out of place and, after a
+// create, stale (counted before the insert). user_count belongs to the role
+// endpoints only. The permission keys are left as they are.
+func embeddedRole(r *model.Role) *model.Role {
+	c := *r
+	c.UserCount = nil
+	return &c
 }
 
 // resolveRole loads the role a request names, recording a field error on

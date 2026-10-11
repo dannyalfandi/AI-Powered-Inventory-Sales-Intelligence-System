@@ -25,7 +25,34 @@ import (
 // router without a row here fails TestEveryRouteHasAnAccessDecision.
 type routeRule struct {
 	method, path string
-	permission   auth.Permission
+	permission   auth.Permission // the first one asked; see anyOfRoutes
+}
+
+// anyOfRoutes are the routes that open for any one of several permissions
+// (RequireAnyPermission), asked in this order. Their row in routePermissions
+// names the first one.
+var anyOfRoutes = map[string][]auth.Permission{
+	// Also what a user manager picks a role from in the user form.
+	"GET /api/v1/roles": {auth.RolesView, auth.UsersCreate, auth.UsersUpdate},
+}
+
+// asked is what the route asks the Authorizer when every answer is "no".
+func (r routeRule) asked() []auth.Permission {
+	if perms, ok := anyOfRoutes[r.method+" "+r.path]; ok {
+		return perms
+	}
+	return []auth.Permission{r.permission}
+}
+
+func (r routeRule) label() string {
+	names := []string{}
+	for _, p := range r.asked() {
+		names = append(names, string(p))
+	}
+	if len(names) == 1 {
+		return names[0]
+	}
+	return "any of " + strings.Join(names, " / ")
 }
 
 var routePermissions = []struct {
@@ -83,7 +110,7 @@ var routePermissions = []struct {
 		{"DELETE", "/api/v1/users/1", auth.UsersDelete},
 	}},
 	{"roles", []routeRule{
-		{"GET", "/api/v1/roles", auth.RolesView},
+		{"GET", "/api/v1/roles", auth.RolesView}, // or users.create / users.update: see anyOfRoutes
 		{"GET", "/api/v1/roles/1", auth.RolesView},
 		{"GET", "/api/v1/permissions", auth.RolesView},
 		{"POST", "/api/v1/roles", auth.RolesCreate},
@@ -177,10 +204,10 @@ func TestRoutePermissions(t *testing.T) {
 					assert.Equal(t, http.StatusUnauthorized, w.Code, w.Body.String())
 					assert.Empty(t, authz.reset(), "no permission lookup without a token")
 				})
-				t.Run(name+" checks "+string(rt.permission), func(t *testing.T) {
+				t.Run(name+" checks "+rt.label(), func(t *testing.T) {
 					w := serve(engine, rt.method, rt.path, token, "{}")
 					assert.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
-					assert.Equal(t, []auth.Permission{rt.permission}, authz.reset())
+					assert.Equal(t, rt.asked(), authz.reset())
 				})
 			}
 		})

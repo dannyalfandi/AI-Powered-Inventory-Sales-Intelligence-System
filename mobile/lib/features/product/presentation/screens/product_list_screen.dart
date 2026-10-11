@@ -5,14 +5,17 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/auth/permissions.dart';
 import '../../../../core/error/failure.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/router/app_router.dart';
 import '../../../../shared/theme/app_spacing.dart';
 import '../../../../shared/widgets/app_refresh_indicator.dart';
 import '../../../../shared/widgets/press_effect.dart';
+import '../../../../shared/widgets/settings_action.dart';
 import '../../../../shared/widgets/skeleton.dart';
 import '../../../../shared/widgets/state_views.dart';
+import '../../../auth/presentation/providers/auth_controller.dart';
 import '../../domain/entities/product.dart';
 import '../providers/product_list_provider.dart';
 import '../widgets/product_tile.dart';
@@ -101,10 +104,12 @@ class _ProductListScreenState extends ConsumerState<ProductListScreen> {
   @override
   Widget build(BuildContext context) {
     final products = ref.watch(productListProvider);
+    final canDelete = ref.hasPermission(Permissions.productsDelete);
 
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.productsTitle),
+        actions: const [SettingsAction()],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(64),
           child: Padding(
@@ -133,12 +138,14 @@ class _ProductListScreenState extends ConsumerState<ProductListScreen> {
           ),
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        heroTag: 'product_fab',
-        onPressed: () => context.pushNamed(AppRoutes.productCreate),
-        icon: const Icon(Icons.add),
-        label: Text(l10n.productsTitle),
-      ),
+      floatingActionButton: ref.hasPermission(Permissions.productsCreate)
+          ? FloatingActionButton.extended(
+              heroTag: 'product_fab',
+              onPressed: () => context.pushNamed(AppRoutes.productCreate),
+              icon: const Icon(Icons.add),
+              label: Text(l10n.productsTitle),
+            )
+          : null,
       body: products.when(
         loading: () => const SkeletonList(),
         error: (e, _) => _Refreshable(
@@ -171,6 +178,17 @@ class _ProductListScreenState extends ConsumerState<ProductListScreen> {
               itemBuilder: (context, i) {
                 if (i == state.items.length) return _ListFooter(state: state);
                 final p = state.items[i];
+                final tile = PressEffect(
+                  child: ProductTile(
+                    product: p,
+                    onTap: () => context.pushNamed(
+                      AppRoutes.productDetail,
+                      pathParameters: {'id': '${p.id}'},
+                    ),
+                  ),
+                );
+                // Without products.delete the row simply doesn't swipe.
+                if (!canDelete) return KeyedSubtree(key: ValueKey(p.id), child: tile);
                 return Dismissible(
                   key: ValueKey(p.id),
                   direction: DismissDirection.endToStart,
@@ -182,15 +200,7 @@ class _ProductListScreenState extends ConsumerState<ProductListScreen> {
                   ),
                   confirmDismiss: (_) => _confirmDelete(p),
                   onDismissed: (_) => _delete(p),
-                  child: PressEffect(
-                    child: ProductTile(
-                      product: p,
-                      onTap: () => context.pushNamed(
-                        AppRoutes.productDetail,
-                        pathParameters: {'id': '${p.id}'},
-                      ),
-                    ),
-                  ),
+                  child: tile,
                 );
               },
             ),

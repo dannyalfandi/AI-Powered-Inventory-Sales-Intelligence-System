@@ -6,13 +6,38 @@ import 'core/l10n/l10n.dart';
 import 'core/locale/locale_provider.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/appearance_provider.dart';
+import 'features/auth/presentation/providers/permission_refresher.dart';
 import 'shared/theme/app_theme.dart';
 
-class InventoryApp extends ConsumerWidget {
+class InventoryApp extends ConsumerStatefulWidget {
   const InventoryApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<InventoryApp> createState() => _InventoryAppState();
+}
+
+class _InventoryAppState extends ConsumerState<InventoryApp> {
+  late final AppLifecycleListener _lifecycle;
+
+  @override
+  void initState() {
+    super.initState();
+    // Permissions are read at start-up and login; a Super Admin may change
+    // them while the app is in the background. Back in the foreground,
+    // re-read them (throttled), so tabs and buttons follow without a new
+    // login. Reading the refresher here also starts its 403 listener.
+    final refresher = ref.read(permissionRefresherProvider);
+    _lifecycle = AppLifecycleListener(onResume: refresher.onResumed);
+  }
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     // The locale comes from the user's choice (stored), not from the device:
     // the same setting also decides the Accept-Language of every API call, so
     // the UI and the server's messages always speak the same language.

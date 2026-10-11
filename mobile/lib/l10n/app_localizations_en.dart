@@ -320,7 +320,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get validationPriceTooLarge => 'Price is too large';
 
   @override
+  String get validationEmailRequired => 'Email is required';
+
+  @override
   String get validationEmailInvalid => 'That email address is not valid';
+
+  @override
+  String get validationPasswordRequired => 'Password is required';
 
   @override
   String validationEmailTooLong(int max) {
@@ -1054,5 +1060,350 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String trendDownPercent(int percent) {
     return 'Down $percent%';
+  }
+
+  @override
+  String get loginTitle => 'Sign in';
+
+  @override
+  String get loginSubtitle => 'Use the account your administrator gave you.';
+
+  @override
+  String get loginEmail => 'Email';
+
+  @override
+  String get loginPassword => 'Password';
+
+  @override
+  String get loginSubmit => 'Sign in';
+
+  @override
+  String get loginShowPassword => 'Show password';
+
+  @override
+  String get loginHidePassword => 'Hide password';
+
+  @override
+  String get loginInvalidCredentials =>
+      'Wrong email or password. Check both and try again.';
+
+  @override
+  String loginFailed(String message) {
+    return 'Could not sign in: $message';
+  }
+
+  @override
+  String get splashCheckingSession => 'Checking your session…';
+
+  @override
+  String get settingsAccountSection => 'Account';
+
+  @override
+  String settingsAccountRole(String role) {
+    return 'Role: $role';
+  }
+
+  @override
+  String get settingsLogout => 'Sign out';
+
+  @override
+  String get noAccessTitle => 'Nothing to show yet';
+
+  @override
+  String noAccessMessage(String role) {
+    return 'Your role ($role) doesn\'t include permission to view any data. Ask an administrator to add one; the app picks up the change when you return to it.';
+  }
+
+  @override
+  String validationPasswordTooShort(int min) {
+    return 'Password must be at least $min characters';
+  }
+
+  @override
+  String validationPasswordTooLong(int max) {
+    return 'Password must be at most $max bytes';
+  }
+
+  @override
+  String get validationRoleRequired => 'Choose a role';
+
+  @override
+  String get settingsAdminSection => 'Administration';
+
+  @override
+  String get settingsAdminRoles => 'Roles & permissions';
+
+  @override
+  String get settingsAdminRolesSubtitle => 'Decide who can do what';
+
+  @override
+  String get settingsAdminUsers => 'Users';
+
+  @override
+  String get settingsAdminUsersSubtitle => 'Accounts, their role and access';
+
+  @override
+  String get rolesTitle => 'Roles & permissions';
+
+  @override
+  String get rolesAdd => 'Add role';
+
+  @override
+  String get rolesEmpty => 'No roles yet.';
+
+  @override
+  String get roleSystemBadge => 'System';
+
+  @override
+  String rolePermissionCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count permissions',
+      one: '1 permission',
+      zero: 'No permissions',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get roleAllPermissions => 'All permissions';
+
+  @override
+  String roleUserCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count linked users',
+      one: '1 linked user',
+      zero: 'No linked users',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get roleNew => 'New role';
+
+  @override
+  String get roleEdit => 'Role';
+
+  @override
+  String get roleFieldName => 'Name';
+
+  @override
+  String get roleFieldDescription => 'Description (optional)';
+
+  @override
+  String get roleSystemNote =>
+      'This is the system role. It always holds every permission, and it can\'t be renamed, deleted or given a permission list.';
+
+  @override
+  String roleCreated(String name) {
+    return 'Role \"$name\" created';
+  }
+
+  @override
+  String get roleUpdated => 'Role saved';
+
+  @override
+  String roleSaveFailed(String message) {
+    return 'Could not save the role: $message';
+  }
+
+  @override
+  String get rolePermissionsSection => 'Permissions';
+
+  @override
+  String get roleEditPermissions => 'Edit permissions';
+
+  @override
+  String get roleNoPermissionsYet => 'This role has no permissions yet.';
+
+  @override
+  String get roleDeleteConfirmTitle => 'Delete role?';
+
+  @override
+  String roleDeleteConfirmBody(String name) {
+    return 'The role \"$name\" will be deleted.';
+  }
+
+  @override
+  String roleDeleted(String name) {
+    return 'Role \"$name\" deleted';
+  }
+
+  @override
+  String get roleDeleteBlockedTitle => 'Role can\'t be deleted';
+
+  @override
+  String roleDeleteFailed(String message) {
+    return 'Could not delete the role: $message';
+  }
+
+  @override
+  String permissionEditorTitle(String role) {
+    return 'Permissions · $role';
+  }
+
+  @override
+  String get permissionEditorSave => 'Save permissions';
+
+  @override
+  String get permissionEditorSaved => 'Permissions saved';
+
+  @override
+  String permissionEditorSelected(int count, int total) {
+    return '$count of $total selected';
+  }
+
+  @override
+  String get permissionEditorNotHeld =>
+      'Greyed-out permissions are ones you don\'t hold yourself, so you can\'t grant them.';
+
+  @override
+  String permissionEditorSaveFailed(String message) {
+    return 'Could not save the permissions: $message';
+  }
+
+  @override
+  String get permissionGroupProducts => 'Products';
+
+  @override
+  String get permissionGroupCategories => 'Categories';
+
+  @override
+  String get permissionGroupInventory => 'Inventory';
+
+  @override
+  String get permissionGroupCustomers => 'Customers';
+
+  @override
+  String get permissionGroupSalesOrders => 'Sales orders';
+
+  @override
+  String get permissionGroupAnalytics => 'Analytics';
+
+  @override
+  String get permissionGroupUsers => 'Users';
+
+  @override
+  String get permissionGroupRoles => 'Roles';
+
+  @override
+  String get usersTitle => 'Users';
+
+  @override
+  String get usersAdd => 'Add user';
+
+  @override
+  String get usersSearchHint => 'Search name or email';
+
+  @override
+  String get usersEmpty => 'No users yet.';
+
+  @override
+  String usersEmptyForSearch(String query) {
+    return 'No user matches \"$query\"';
+  }
+
+  @override
+  String usersCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count users',
+      one: '1 user',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get userActive => 'Active';
+
+  @override
+  String get userInactive => 'Inactive';
+
+  @override
+  String get userYou => 'You';
+
+  @override
+  String get userOutOfScope => 'Beyond your permissions';
+
+  @override
+  String get userNew => 'New user';
+
+  @override
+  String get userEdit => 'User';
+
+  @override
+  String get userFieldName => 'Name';
+
+  @override
+  String get userFieldEmail => 'Email';
+
+  @override
+  String get userFieldPassword => 'Password';
+
+  @override
+  String get userFieldNewPassword => 'New password (optional)';
+
+  @override
+  String get userFieldNewPasswordHelper =>
+      'Leave empty to keep the current one. A new password signs the user out on every device.';
+
+  @override
+  String get userFieldRole => 'Role';
+
+  @override
+  String get userFieldActive => 'Active account';
+
+  @override
+  String get userFieldActiveHelper =>
+      'An inactive user can\'t sign in, and their sessions end at once.';
+
+  @override
+  String get userRolesLoadFailed => 'Roles could not be loaded';
+
+  @override
+  String get userRolesReload => 'Reload roles';
+
+  @override
+  String get userSelfDeactivate => 'You can\'t deactivate your own account.';
+
+  @override
+  String get userSelfRole => 'You can\'t change your own role.';
+
+  @override
+  String get userSelfDelete => 'You can\'t delete your own account.';
+
+  @override
+  String userCreated(String name) {
+    return 'User \"$name\" created';
+  }
+
+  @override
+  String get userUpdated => 'User saved';
+
+  @override
+  String userSaveFailed(String message) {
+    return 'Could not save the user: $message';
+  }
+
+  @override
+  String get userDeleteConfirmTitle => 'Delete user?';
+
+  @override
+  String userDeleteConfirmBody(String name, String email) {
+    return '$name ($email) will be deleted and signed out on every device.';
+  }
+
+  @override
+  String userDeleted(String name) {
+    return '$name deleted';
+  }
+
+  @override
+  String userDeleteFailed(String message) {
+    return 'Could not delete the user: $message';
   }
 }

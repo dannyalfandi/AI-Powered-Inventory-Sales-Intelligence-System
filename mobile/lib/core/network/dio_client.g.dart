@@ -63,4 +63,53 @@ final class DioProvider extends $FunctionalProvider<Dio, Dio, Dio>
   }
 }
 
-String _$dioHash() => r'a5bb59349a67188b8d641272c0a0789a9bf601d9';
+String _$dioHash() => r'6f1ed937eaa77f7cc5f2e7250c2c5f9fcc7112e9';
+
+/// The session's tokens. `main()` overrides this with a [SecureTokenStore]
+/// loaded before the first frame; the in-memory default is what tests get.
+
+@ProviderFor(tokenStore)
+final tokenStoreProvider = TokenStoreProvider._();
+
+/// The session's tokens. `main()` overrides this with a [SecureTokenStore]
+/// loaded before the first frame; the in-memory default is what tests get.
+
+final class TokenStoreProvider
+    extends $FunctionalProvider<TokenStore, TokenStore, TokenStore>
+    with $Provider<TokenStore> {
+  /// The session's tokens. `main()` overrides this with a [SecureTokenStore]
+  /// loaded before the first frame; the in-memory default is what tests get.
+  TokenStoreProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'tokenStoreProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$tokenStoreHash();
+
+  @$internal
+  @override
+  $ProviderElement<TokenStore> $createElement($ProviderPointer pointer) =>
+      $ProviderElement(pointer);
+
+  @override
+  TokenStore create(Ref ref) {
+    return tokenStore(ref);
+  }
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(TokenStore value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<TokenStore>(value),
+    );
+  }
+}
+
+String _$tokenStoreHash() => r'a1690dabba9c7b113a1394f42cd480e908bc5787';

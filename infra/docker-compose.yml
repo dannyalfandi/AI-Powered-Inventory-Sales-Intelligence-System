@@ -1,6 +1,25 @@
 # Local dev infrastructure for Inventory & Sales Intelligence Platform.
 # All credentials/ports come from ./.env (copy from .env.example).
+#
+#   docker compose up -d                          Postgres + Redis + ML service
+#   docker compose --profile app up -d --build    + migrate (one-shot) + Go API
+#   docker compose --profile seed run --rm seed   demo data (runs migrate first)
 name: ${COMPOSE_PROJECT_NAME:-inventory-intel}
+
+# Settings shared by the three backend commands (api, migrate, seed). Built
+# from the Postgres/Redis variables below, never copied from backend/.env:
+# inside this network the hosts are the service names, not localhost.
+x-backend-env: &backend-env
+  DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+  REDIS_ADDR: redis:6379
+  REDIS_PASSWORD: ${REDIS_PASSWORD}
+  APP_TIMEZONE: ${TZ:-Asia/Jakarta}
+
+# migrate/seed/api share one image; building it once is enough.
+x-backend-build: &backend-build
+  build:
+    context: ../backend
+  image: ${COMPOSE_PROJECT_NAME:-inventory-intel}-backend:local
 
 services:
   postgres:
@@ -28,7 +47,14 @@ services:
     container_name: ${COMPOSE_PROJECT_NAME:-inventory-intel}-redis
     restart: unless-stopped
     # AOF persistence so queued jobs/cache survive restarts; password from .env.
-    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"]
+    command:
+      [
+        "redis-server",
+        "--appendonly",
+        "yes",
+        "--requirepass",
+        "${REDIS_PASSWORD:?REDIS_PASSWORD is required}",
+      ]
     environment:
       REDISCLI_AUTH: ${REDIS_PASSWORD}
     ports:
@@ -40,6 +66,100 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # Python forecasting service (/ml-service). No profile: it starts with the
+  # infrastructure, so an API run on the host reaches it at
+  # localhost:${ML_PORT} (the default ML_SERVICE_URL of backend/.env).
+  ml:
+    build:
+      context: ../ml-service
+    image: ${COMPOSE_PROJECT_NAME:-inventory-intel}-ml:local
+    container_name: ${COMPOSE_PROJECT_NAME:-inventory-intel}-ml
+    restart: unless-stopped
+    environment:
+      PORT: "8000"
+      TZ: ${TZ:-Asia/Jakarta}
+    ports:
+      - "${ML_PORT:-8000}:8000"
+    # The image has no curl; its own Python calls the existing GET /health.
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # One-shot: AutoMigrate + permission catalog sync. Idempotent, so it runs
+  # before every `--profile app up` and before every seed.
+  migrate:
+    <<: *backend-build
+    profiles: ["app", "seed"]
+    command: ["/app/migrate"]
+    environment:
+      <<: *backend-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    healthcheck:
+      disable: true
+
+  api:
+    <<: *backend-build
+    container_name: ${COMPOSE_PROJECT_NAME:-inventory-intel}-api
+    profiles: ["app"]
+    # Bounded: a crash is retried 3 times, then the container stays
+    # "Exited (1)" instead of looping forever on e.g. a bad JWT_SECRET.
+    restart: on-failure:3
+    environment:
+      <<: *backend-env
+      PORT: "8080"
+      GIN_MODE: release
+      ML_SERVICE_URL: http://ml:8000
+      # Not `:?` on purpose: compose interpolates every service, so a required
+      # variable here would block plain `docker compose up` as well. The API
+      # validates it at startup instead (empty or < 32 chars => exit 1 with
+      # "invalid configuration: JWT_SECRET ..." in `docker compose logs api`,
+      # then 3 restarts, then it stays exited).
+      JWT_SECRET: ${JWT_SECRET:-}
+    ports:
+      - "${API_PORT:-8080}:8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      ml:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  # One-shot demo data (roles, Super Admin/Staff accounts, products, 75 days of
+  # sales). Flags go after the service name, e.g.
+  #   docker compose --profile seed run --rm seed --auth-only
+  # (entrypoint rather than command: no binary path to type, which Git Bash
+  # would otherwise rewrite into a Windows path.)
+  seed:
+    <<: *backend-build
+    profiles: ["seed"]
+    entrypoint: ["/app/seed"]
+    environment:
+      <<: *backend-env
+      # Empty = the seeder's documented default credential (it logs a warning).
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+    healthcheck:
+      disable: true
 
 volumes:
   postgres_data:

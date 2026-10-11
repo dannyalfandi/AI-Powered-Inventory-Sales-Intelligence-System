@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/auth/permissions.dart';
 import '../../../../core/error/failure.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/router/app_router.dart';
@@ -12,8 +13,10 @@ import '../../../../shared/theme/app_spacing.dart';
 import '../../../../shared/widgets/app_refresh_indicator.dart';
 import '../../../../shared/widgets/paged_list.dart';
 import '../../../../shared/widgets/press_effect.dart';
+import '../../../../shared/widgets/settings_action.dart';
 import '../../../../shared/widgets/skeleton.dart';
 import '../../../../shared/widgets/state_views.dart';
+import '../../../auth/presentation/providers/auth_controller.dart';
 import '../../domain/entities/customer.dart';
 import '../providers/customer_list_provider.dart';
 
@@ -115,11 +118,14 @@ class _CustomerListScreenState extends ConsumerState<CustomerListScreen> {
   @override
   Widget build(BuildContext context) {
     final customers = ref.watch(customerListProvider);
+    final canEdit = ref.hasPermission(Permissions.customersUpdate);
+    final canDelete = ref.hasPermission(Permissions.customersDelete);
     final search = ref.watch(customerSearchQueryProvider);
 
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.customersTitle),
+        actions: const [SettingsAction()],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(64),
           child: Padding(
@@ -146,12 +152,14 @@ class _CustomerListScreenState extends ConsumerState<CustomerListScreen> {
           ),
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        heroTag: 'customer_fab',
-        onPressed: () => context.pushNamed(AppRoutes.customerCreate),
-        icon: const Icon(Icons.person_add_alt),
-        label: Text(l10n.customersTitle),
-      ),
+      floatingActionButton: ref.hasPermission(Permissions.customersCreate)
+          ? FloatingActionButton.extended(
+              heroTag: 'customer_fab',
+              onPressed: () => context.pushNamed(AppRoutes.customerCreate),
+              icon: const Icon(Icons.person_add_alt),
+              label: Text(l10n.customersTitle),
+            )
+          : null,
       body: customers.when(
         loading: () => const SkeletonList(),
         error: (e, _) => RefreshableView(
@@ -187,6 +195,16 @@ class _CustomerListScreenState extends ConsumerState<CustomerListScreen> {
                   );
                 }
                 final c = state.items[i];
+                final tile = PressEffect(
+                  child: CustomerTile(
+                    customer: c,
+                    // The row opens the edit form: only for users who may edit.
+                    onTap: canEdit
+                        ? () => context.pushNamed(AppRoutes.customerEdit, pathParameters: {'id': '${c.id}'})
+                        : null,
+                  ),
+                );
+                if (!canDelete) return KeyedSubtree(key: ValueKey(c.id), child: tile);
                 return Dismissible(
                   key: ValueKey(c.id),
                   direction: DismissDirection.endToStart,
@@ -198,13 +216,7 @@ class _CustomerListScreenState extends ConsumerState<CustomerListScreen> {
                   ),
                   // The provider already removed the row once the server confirmed.
                   confirmDismiss: (_) => _confirmAndDelete(c),
-                  child: PressEffect(
-                    child: CustomerTile(
-                      customer: c,
-                      onTap: () =>
-                          context.pushNamed(AppRoutes.customerEdit, pathParameters: {'id': '${c.id}'}),
-                    ),
-                  ),
+                  child: tile,
                 );
               },
             ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/auth/permissions.dart';
 import '../../../../core/error/failure.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/router/app_router.dart';
@@ -11,9 +12,11 @@ import '../../../../shared/theme/app_spacing.dart';
 import '../../../../shared/widgets/app_refresh_indicator.dart';
 import '../../../../shared/widgets/paged_list.dart';
 import '../../../../shared/widgets/press_effect.dart';
+import '../../../../shared/widgets/settings_action.dart';
 import '../../../../shared/widgets/skeleton.dart';
 import '../../../../shared/widgets/state_views.dart';
 import '../../../customer/presentation/widgets/customer_picker.dart';
+import '../../../auth/presentation/providers/auth_controller.dart';
 import '../../domain/entities/sales_order.dart';
 import '../providers/sales_order_list_provider.dart';
 import '../widgets/order_status_badge.dart';
@@ -59,11 +62,16 @@ class _SalesOrderListScreenState extends ConsumerState<SalesOrderListScreen> {
     final l10n = context.l10n;
     final orders = ref.watch(salesOrderListProvider);
     final filter = ref.watch(salesOrderFiltersProvider);
+    // The customer picker lists GET /customers, which needs customers.view.
+    // Without it the picker isn't offered; a filter already set still shows,
+    // and can still be cleared.
+    final canPickCustomer = ref.hasPermission(Permissions.customersView);
     final filtered = filter.status != null || filter.customerId != null;
 
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.ordersTitle),
+        actions: const [SettingsAction()],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(56),
           child: SizedBox(
@@ -72,19 +80,19 @@ class _SalesOrderListScreenState extends ConsumerState<SalesOrderListScreen> {
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.xs, AppSpacing.lg, AppSpacing.md),
               children: [
-                if (filter.customerId == null)
+                if (filter.customerId == null && canPickCustomer)
                   ActionChip(
                     key: const Key('order_filter_customer'),
                     avatar: const Icon(Icons.person_search_outlined, size: 18),
                     label: Text(l10n.ordersFilterCustomerClear),
                     onPressed: _pickCustomerFilter,
                   )
-                else
+                else if (filter.customerId != null)
                   InputChip(
                     key: const Key('order_filter_customer'),
                     avatar: const Icon(Icons.person_outline, size: 18),
                     label: Text(filter.customerName ?? l10n.orderCustomerFallback('${filter.customerId}')),
-                    onPressed: _pickCustomerFilter,
+                    onPressed: canPickCustomer ? _pickCustomerFilter : null,
                     onDeleted: () => ref.read(salesOrderFiltersProvider.notifier).clearCustomer(),
                   ),
                 const SizedBox(width: AppSpacing.sm),
@@ -109,12 +117,14 @@ class _SalesOrderListScreenState extends ConsumerState<SalesOrderListScreen> {
           ),
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        heroTag: 'order_fab',
-        onPressed: () => context.pushNamed(AppRoutes.salesOrderCreate),
-        icon: const Icon(Icons.add_shopping_cart),
-        label: Text(l10n.ordersTitle),
-      ),
+      floatingActionButton: ref.hasPermission(Permissions.salesOrdersCreate)
+          ? FloatingActionButton.extended(
+              heroTag: 'order_fab',
+              onPressed: () => context.pushNamed(AppRoutes.salesOrderCreate),
+              icon: const Icon(Icons.add_shopping_cart),
+              label: Text(l10n.ordersTitle),
+            )
+          : null,
       body: orders.when(
         skipLoadingOnReload: true,
         loading: () => const SkeletonList(),

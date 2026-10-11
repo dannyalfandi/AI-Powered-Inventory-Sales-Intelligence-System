@@ -7,6 +7,7 @@ import 'package:inventory_intel/features/category/presentation/screens/category_
 import 'package:inventory_intel/features/category/presentation/screens/category_list_screen.dart';
 import 'package:mocktail/mocktail.dart';
 
+import '../../../../helpers/auth_fixtures.dart';
 import '../../../../helpers/category_fixtures.dart';
 import '../../../../helpers/l10n_harness.dart';
 
@@ -17,7 +18,7 @@ void main() {
   setUp(() => repo = MockCategoryRepository());
 
   Widget app(Widget home) => ProviderScope(
-        overrides: [categoryRepositoryProvider.overrideWithValue(repo)],
+        overrides: [categoryRepositoryProvider.overrideWithValue(repo), signedInAs(superAdmin)],
         retry: (_, _) => null,
         child: localizedApp(home: home),
       );

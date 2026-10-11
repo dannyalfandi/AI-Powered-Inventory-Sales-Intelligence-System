@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../../core/auth/permissions.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/locale/locale_provider.dart';
+import '../../../../core/router/app_router.dart';
 import '../../../../core/theme/appearance_provider.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../shared/theme/app_accent.dart';
@@ -11,8 +14,10 @@ import '../../../../shared/theme/app_spacing.dart';
 import '../../../../shared/theme/app_status_colors.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/theme/app_typography.dart';
+import '../../../auth/domain/entities/auth_user.dart';
+import '../../../auth/presentation/providers/auth_controller.dart';
 
-/// Settings: language and appearance.
+/// Settings: the account (who is logged in, sign out), language and appearance.
 ///
 /// It is reached from the Dashboard app bar rather than a sixth tab — five
 /// destinations already fill the bottom bar on a phone, and settings are
@@ -37,6 +42,37 @@ class SettingsScreen extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.only(bottom: AppSpacing.xl),
         children: [
+          if (ref.watch(currentUserProvider) case final user?) ...[
+            _SectionHeader(title: l10n.settingsAccountSection),
+            _AccountSection(user: user),
+            const Divider(height: AppSpacing.xl),
+          ],
+
+          // Each entry shows only for users holding at least one permission
+          // of its area; with neither, the section isn't there at all.
+          if (ref.hasAnyPermission(Permissions.roleManagement) || ref.hasAnyPermission(Permissions.userManagement)) ...[
+            _SectionHeader(title: l10n.settingsAdminSection),
+            if (ref.hasAnyPermission(Permissions.roleManagement))
+              ListTile(
+                key: const Key('settings_admin_roles'),
+                leading: const Icon(Icons.admin_panel_settings_outlined),
+                title: Text(l10n.settingsAdminRoles),
+                subtitle: Text(l10n.settingsAdminRolesSubtitle),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => context.pushNamed(AppRoutes.roles),
+              ),
+            if (ref.hasAnyPermission(Permissions.userManagement))
+              ListTile(
+                key: const Key('settings_admin_users'),
+                leading: const Icon(Icons.manage_accounts_outlined),
+                title: Text(l10n.settingsAdminUsers),
+                subtitle: Text(l10n.settingsAdminUsersSubtitle),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => context.pushNamed(AppRoutes.users),
+              ),
+            const Divider(height: AppSpacing.xl),
+          ],
+
           _SectionHeader(title: l10n.settingsLanguageSection, subtitle: l10n.settingsLanguageSubtitle),
           RadioGroup<AppLanguage>(
             groupValue: language,
@@ -138,6 +174,59 @@ class SettingsScreen extends ConsumerWidget {
         AppAccent.amber => l10n.settingsAccentAmber,
         AppAccent.slate => l10n.settingsAccentSlate,
       };
+}
+
+/// Who is logged in, and the way out. Signing out needs no confirmation: it
+/// loses nothing but the session, and logging back in is one form away.
+class _AccountSection extends ConsumerStatefulWidget {
+  const _AccountSection({required this.user});
+
+  final AuthUser user;
+
+  @override
+  ConsumerState<_AccountSection> createState() => _AccountSectionState();
+}
+
+class _AccountSectionState extends ConsumerState<_AccountSection> {
+  bool _busy = false;
+
+  Future<void> _logout() async {
+    setState(() => _busy = true);
+    // No navigation here: the router's guard sends a logged-out user to /login.
+    await ref.read(authControllerProvider.notifier).logout();
+    if (mounted) setState(() => _busy = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final user = widget.user;
+    final error = Theme.of(context).colorScheme.error;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ListTile(
+          key: const Key('settings_account'),
+          leading: CircleAvatar(child: Text(user.name.isEmpty ? '?' : user.name.characters.first.toUpperCase())),
+          title: Text(user.name),
+          subtitle: Text('${l10n.settingsAccountRole(user.role.name)}\n${user.email}'),
+          isThreeLine: true,
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+          child: OutlinedButton.icon(
+            key: const Key('settings_logout'),
+            style: OutlinedButton.styleFrom(foregroundColor: error, side: BorderSide(color: error)),
+            onPressed: _busy ? null : _logout,
+            icon: _busy
+                ? const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.logout),
+            label: Text(l10n.settingsLogout),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class _SectionHeader extends StatelessWidget {

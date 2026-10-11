@@ -121,11 +121,6 @@ func (m *mockRoleRepo) Delete(ctx context.Context, id uint) error {
 	return m.Called(ctx, id).Error(0)
 }
 
-func (m *mockRoleRepo) CountUsers(ctx context.Context, id uint) (int64, error) {
-	args := m.Called(ctx, id)
-	return args.Get(0).(int64), args.Error(1)
-}
-
 func (m *mockRoleRepo) ReplacePermissions(ctx context.Context, id uint, keys []string) error {
 	return m.Called(ctx, id, keys).Error(0)
 }

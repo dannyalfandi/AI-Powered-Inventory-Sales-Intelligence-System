@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/auth/permissions.dart';
 import '../../../../core/error/failure.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/router/app_router.dart';
@@ -11,6 +12,7 @@ import '../../../../shared/widgets/app_refresh_indicator.dart';
 import '../../../../shared/widgets/paged_list.dart';
 import '../../../../shared/widgets/skeleton.dart';
 import '../../../../shared/widgets/state_views.dart';
+import '../../../auth/presentation/providers/auth_controller.dart';
 import '../../../product/domain/entities/product.dart';
 import '../../../product/presentation/providers/product_form_provider.dart';
 import '../providers/inventory_provider.dart';
@@ -99,19 +101,23 @@ class _ProductStockScreenState extends ConsumerState<ProductStockScreen> {
       appBar: AppBar(
         title: Text(p.name, overflow: TextOverflow.ellipsis),
         actions: [
-          IconButton(
-            tooltip: context.l10n.inventoryEditProduct,
-            icon: const Icon(Icons.edit_outlined),
-            onPressed: () => context.pushNamed(AppRoutes.productEdit, pathParameters: {'id': '$_id'}),
-          ),
+          if (ref.hasPermission(Permissions.productsUpdate))
+            IconButton(
+              key: const Key('edit_product_button'),
+              tooltip: context.l10n.inventoryEditProduct,
+              icon: const Icon(Icons.edit_outlined),
+              onPressed: () => context.pushNamed(AppRoutes.productEdit, pathParameters: {'id': '$_id'}),
+            ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        key: const Key('record_movement_button'),
-        onPressed: _recordMovement,
-        icon: const Icon(Icons.swap_vert),
-        label: Text(context.l10n.productStockRecordMovement),
-      ),
+      floatingActionButton: ref.hasPermission(Permissions.inventoryRecordMovement)
+          ? FloatingActionButton.extended(
+              key: const Key('record_movement_button'),
+              onPressed: _recordMovement,
+              icon: const Icon(Icons.swap_vert),
+              label: Text(context.l10n.productStockRecordMovement),
+            )
+          : null,
       body: AppRefreshIndicator(
         onRefresh: _refresh,
         child: CustomScrollView(
