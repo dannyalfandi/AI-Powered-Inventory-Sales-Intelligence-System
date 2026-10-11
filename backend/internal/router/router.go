@@ -113,7 +113,11 @@ func New(h Handlers, g Guard) *gin.Engine {
 
 		roles := api.Group("/roles")
 		roles.POST("", can(auth.RolesCreate), h.Role.Create)
-		roles.GET("", can(auth.RolesView), h.Role.List)
+		// The list is also what a user manager picks a role from when creating
+		// or editing a user. Which role they may actually assign is enforced
+		// by the user service (only roles within their own permissions). The
+		// detail route and everything else stay roles.* only.
+		roles.GET("", handler.RequireAnyPermission(g.Authorizer, auth.RolesView, auth.UsersCreate, auth.UsersUpdate), h.Role.List)
 		roles.GET("/:id", can(auth.RolesView), h.Role.GetByID)
 		roles.PATCH("/:id", can(auth.RolesUpdate), h.Role.Update)
 		roles.DELETE("/:id", can(auth.RolesDelete), h.Role.Delete)

@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/auth/permissions.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/router/app_router.dart';
 import '../../../../shared/theme/app_spacing.dart';
 import '../../../../shared/widgets/app_refresh_indicator.dart';
 import '../../../../shared/widgets/skeleton.dart';
+import '../../../auth/presentation/providers/auth_controller.dart';
 import '../../domain/entities/dashboard.dart';
 import '../../domain/entities/forecast.dart';
 import '../providers/dashboard_data_providers.dart';
@@ -23,6 +25,13 @@ import '../widgets/top_products_section.dart';
 
 /// Home tab: sales analytics for a date range, one section per endpoint.
 ///
+/// Each section needs the permission its endpoint demands (backend
+/// router.go): analytics.view for summary, low stock, trend, top products and
+/// categories; analytics.insights for insights; analytics.forecast for the
+/// forecast. A section the user may not see is neither shown nor *subscribed
+/// to*, so it sends no request at all (a 403 would only end up on screen).
+/// With none of the three the Dashboard tab itself is hidden (HomeTab).
+///
 /// Each section is its own `ConsumerWidget` so a rebuild caused by one
 /// provider (or by the granularity toggle) does not rebuild the other four —
 /// with five parallel calls on this page that matters.
@@ -34,13 +43,18 @@ class DashboardScreen extends ConsumerWidget {
     // Subscribe (without rebuilding on data) so every section stays alive while
     // the page is: scrolling a card out of the ListView would otherwise dispose
     // its provider, and a date change would reload it late, on scroll back.
-    ref.listen(dashboardSummaryProvider, (_, _) {});
-    ref.listen(dashboardSalesTrendProvider, (_, _) {});
-    ref.listen(dashboardTopProductsProvider, (_, _) {});
-    ref.listen(dashboardCategoryBreakdownProvider, (_, _) {});
-    ref.listen(dashboardLowStockCountProvider, (_, _) {});
-    ref.listen(dashboardForecastProvider, (_, _) {});
-    ref.listen(dashboardInsightsProvider, (_, _) {});
+    final canView = ref.hasPermission(Permissions.analyticsView);
+    final canInsights = ref.hasPermission(Permissions.analyticsInsights);
+    final canForecast = ref.hasPermission(Permissions.analyticsForecast);
+    if (canView) {
+      ref.listen(dashboardSummaryProvider, (_, _) {});
+      ref.listen(dashboardSalesTrendProvider, (_, _) {});
+      ref.listen(dashboardTopProductsProvider, (_, _) {});
+      ref.listen(dashboardCategoryBreakdownProvider, (_, _) {});
+      ref.listen(dashboardLowStockCountProvider, (_, _) {});
+    }
+    if (canForecast) ref.listen(dashboardForecastProvider, (_, _) {});
+    if (canInsights) ref.listen(dashboardInsightsProvider, (_, _) {});
 
     final l10n = context.l10n;
     return Scaffold(
@@ -64,15 +78,12 @@ class DashboardScreen extends ConsumerWidget {
         onRefresh: () async => _refreshAll(ref),
         child: ListView(
           padding: const EdgeInsets.only(bottom: AppSpacing.xl),
-          children: const [
-            _DateRangeSection(),
-            _SummarySection(),
-            _LowStockSection(),
-            _SalesTrendSection(),
-            _InsightsSection(),
-            _ForecastSection(),
-            _TopProductsSection(),
-            _CategorySection(),
+          children: [
+            const _DateRangeSection(),
+            if (canView) ...const [_SummarySection(), _LowStockSection(), _SalesTrendSection()],
+            if (canInsights) const _InsightsSection(),
+            if (canForecast) const _ForecastSection(),
+            if (canView) ...const [_TopProductsSection(), _CategorySection()],
           ],
         ),
       ),
@@ -125,9 +136,12 @@ class _LowStockSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // The count is analytics; the list it opens is GET /inventory/low-stock,
+    // which needs inventory.view.
+    final canOpen = ref.hasPermission(Permissions.inventoryView);
     return LowStockCard(
       count: ref.watch(dashboardLowStockCountProvider),
-      onTap: () => context.pushNamed(AppRoutes.lowStock),
+      onTap: canOpen ? () => context.pushNamed(AppRoutes.lowStock) : null,
       onRetry: () => ref.invalidate(dashboardLowStockCountProvider),
     );
   }

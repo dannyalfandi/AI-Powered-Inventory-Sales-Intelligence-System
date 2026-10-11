@@ -9,36 +9,69 @@ import '../../../../core/auth/permissions.dart';
 import '../../../../core/error/failure.dart';
 import '../../../../core/l10n/field_issue_text.dart';
 import '../../../../core/l10n/l10n.dart';
+import '../../../../core/router/app_router.dart';
 import '../../../../shared/theme/app_spacing.dart';
 import '../../../../shared/widgets/skeleton.dart';
 import '../../../../shared/widgets/state_views.dart';
+import '../../../auth/domain/entities/auth_user.dart';
 import '../../../auth/presentation/providers/auth_controller.dart';
 import '../../../role_management/domain/entities/role.dart';
 import '../../../role_management/presentation/providers/role_list_provider.dart';
 import '../../domain/entities/managed_user.dart';
+import '../../domain/grant_scope.dart';
 import '../providers/user_form_provider.dart';
+import '../providers/user_scope_provider.dart';
 
 /// Create a user (`userId == null`), or view/edit one. Editable: name,
 /// email, a new password (optional), role and whether the account is active
 /// — everything PATCH /users/:id accepts.
-class UserFormScreen extends ConsumerWidget {
+class UserFormScreen extends ConsumerStatefulWidget {
   const UserFormScreen({super.key, this.userId});
 
   final int? userId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<UserFormScreen> createState() => _UserFormScreenState();
+}
+
+class _UserFormScreenState extends ConsumerState<UserFormScreen> {
+  bool _leaving = false;
+
+  /// The list never opens a user beyond the caller's scope, but a deep link
+  /// can. Then: back to the list with the same short message the list shows,
+  /// rather than a form whose every save the backend refuses (403).
+  void _leaveOutOfScope() {
+    if (_leaving) return;
+    _leaving = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(context.l10n.userOutOfScope)));
+      context.canPop() ? context.pop() : context.goNamed(AppRoutes.users);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final userId = widget.userId;
     final user = ref.watch(userFormProvider(userId));
+    final me = ref.watch(currentUserProvider);
+    final target = user.value;
+    final outOfScope =
+        me != null && target != null && canManageUser(me, target, ref.watch(knownRolesProvider)) == ManageAccess.denied;
+    if (outOfScope) _leaveOutOfScope();
+
     return Scaffold(
-      appBar: AppBar(title: Text(user.value?.name ?? (userId == null ? context.l10n.userNew : context.l10n.userEdit))),
-      body: user.when(
-        skipLoadingOnRefresh: true,
-        skipLoadingOnReload: true,
-        loading: () => const SkeletonForm(fields: 5),
-        error: (e, _) =>
-            ErrorView(message: errorMessage(context, e), onRetry: () => ref.invalidate(userFormProvider(userId))),
-        data: (u) => _UserForm(userId: userId, initial: u),
-      ),
+      appBar: AppBar(title: Text(target?.name ?? (userId == null ? context.l10n.userNew : context.l10n.userEdit))),
+      body: outOfScope
+          ? const SizedBox.shrink(key: Key('user_form_out_of_scope'))
+          : user.when(
+              skipLoadingOnRefresh: true,
+              skipLoadingOnReload: true,
+              loading: () => const SkeletonForm(fields: 5),
+              error: (e, _) =>
+                  ErrorView(message: errorMessage(context, e), onRetry: () => ref.invalidate(userFormProvider(userId))),
+              data: (u) => _UserForm(userId: userId, initial: u),
+            ),
     );
   }
 }
@@ -126,7 +159,10 @@ class _UserFormState extends ConsumerState<_UserForm> {
       _formKey.currentState!.validate();
     } on Failure catch (f) {
       if (!mounted) return;
-      final refused = f is ServerFailure && (f.isConflict || f.statusCode == 403);
+      // 403 (a role beyond the caller's permissions, a user out of scope)
+      // and 409 carry the backend's sentence, already in the app's
+      // language: shown as is, never matched on.
+      final refused = f is ServerFailure && (f.isConflict || f.isForbidden);
       setState(() => _formError = refused ? f.message : l10n.userSaveFailed(errorMessage(context, f)));
     } finally {
       if (mounted) setState(() => _submitting = false);
@@ -192,7 +228,7 @@ class _UserFormState extends ConsumerState<_UserForm> {
             // picker says why instead of failing on save.
             enabled: editable && !isSelf,
             helper: isSelf ? l10n.userSelfRole : null,
-            allowSystemRoles: actor?.role.isSystem ?? false,
+            actor: actor,
             onChanged: (id) => setState(() {
               _roleId = id;
               _serverErrors = {..._serverErrors}..remove('role_id');
@@ -230,16 +266,22 @@ class _UserFormState extends ConsumerState<_UserForm> {
   }
 }
 
-/// The role dropdown, from GET /roles (needs `roles.view`). A non-system
-/// user isn't offered the system role: the backend refuses (403) anyone but
-/// a Super Admin granting it.
+/// The role dropdown, from GET /roles, which the backend answers for
+/// `roles.view`, `users.create` or `users.update` ([Permissions.roleList]).
+/// Without any of those the list is never requested (it would be a 403) and
+/// the picker shows only the user's current role.
+///
+/// A non-Super-Admin is offered only the roles they may grant
+/// ([canGrantRole]): never the system role, nor one with a permission they
+/// don't hold — the backend refuses both (403). The current role stays
+/// listed so the field can show it.
 class _RolePicker extends ConsumerWidget {
   const _RolePicker({
     required this.value,
     required this.currentRoleName,
     required this.enabled,
     required this.helper,
-    required this.allowSystemRoles,
+    required this.actor,
     required this.onChanged,
     required this.validator,
   });
@@ -248,17 +290,19 @@ class _RolePicker extends ConsumerWidget {
   final String? currentRoleName;
   final bool enabled;
   final String? helper;
-  final bool allowSystemRoles;
+  final AuthUser? actor;
   final ValueChanged<int?> onChanged;
   final FormFieldValidator<int?> validator;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
-    final options = ref.watch(roleOptionsProvider);
+    final me = actor;
+    final canList = me?.canAny(Permissions.roleList) ?? false;
+    final options = canList ? ref.watch(roleOptionsProvider) : const AsyncValue<List<Role>>.data([]);
     final roles = <Role>[
       for (final r in options.value ?? const <Role>[])
-        if (allowSystemRoles || !r.isSystem || r.id == value) r,
+        if (r.id == value || (me != null && canGrantRole(me, r))) r,
     ];
     final items = [for (final r in roles) DropdownMenuItem<int?>(value: r.id, child: Text(r.name))];
     // Keep the current role representable while loading or if it can't be

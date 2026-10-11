@@ -91,8 +91,9 @@ class _RoleListScreenState extends ConsumerState<RoleListScreen> {
     final roles = ref.watch(roleListProvider);
     final canCreate = ref.hasPermission(Permissions.rolesCreate);
     final canDelete = ref.hasPermission(Permissions.rolesDelete);
-    // The user count comes from GET /users, which needs users.view.
-    final canCountUsers = ref.hasPermission(Permissions.usersView);
+    // A role's page loads GET /roles/:id, which only roles.view may read.
+    // Without it (e.g. a user manager), the list is all there is.
+    final canOpen = ref.hasPermission(Permissions.rolesView);
 
     return Scaffold(
       appBar: AppBar(title: Text(l10n.rolesTitle)),
@@ -129,12 +130,16 @@ class _RoleListScreenState extends ConsumerState<RoleListScreen> {
                 final tile = PressEffect(
                   child: _RoleTile(
                     role: role,
-                    showUserCount: canCountUsers,
-                    onTap: () => context.pushNamed(AppRoutes.roleEdit, pathParameters: {'id': '${role.id}'}),
+                    onTap: canOpen
+                        ? () => context.pushNamed(AppRoutes.roleEdit, pathParameters: {'id': '${role.id}'})
+                        : null,
                   ),
                 );
-                // The system role can never be deleted: no swipe to offer.
-                if (!canDelete || role.isSystem) return KeyedSubtree(key: ValueKey(role.id), child: tile);
+                // No swipe for what the backend would refuse anyway: the
+                // system role, and a role any user (deleted ones included)
+                // still points at. The 409 handling stays for a user given
+                // the role in the meantime.
+                if (!canDelete || !_isDeletable(role)) return KeyedSubtree(key: ValueKey(role.id), child: tile);
                 return Dismissible(
                   key: ValueKey(role.id),
                   direction: DismissDirection.endToStart,
@@ -157,19 +162,23 @@ class _RoleListScreenState extends ConsumerState<RoleListScreen> {
   }
 }
 
-class _RoleTile extends ConsumerWidget {
-  const _RoleTile({required this.role, required this.showUserCount, required this.onTap});
+/// Whether a role may be offered for deletion at all, whatever the caller's
+/// permissions: never the system role, and only with no user linked to it.
+bool _isDeletable(Role role) => !role.isSystem && role.userCount == 0;
+
+class _RoleTile extends StatelessWidget {
+  const _RoleTile({required this.role, required this.onTap});
 
   final Role role;
-  final bool showUserCount;
-  final VoidCallback onTap;
+
+  /// Null when the caller can't open the role (no roles.view).
+  final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final l10n = context.l10n;
     final theme = Theme.of(context);
     final permissions = role.isSystem ? l10n.roleAllPermissions : l10n.rolePermissionCount(role.permissions.length);
-    final users = showUserCount ? ref.watch(roleUserCountProvider(role.id)).value : null;
     return ListTile(
       key: ValueKey('role_tile_${role.id}'),
       leading: Icon(role.isSystem ? Icons.verified_user_outlined : Icons.badge_outlined),
@@ -186,8 +195,11 @@ class _RoleTile extends ConsumerWidget {
           ],
         ],
       ),
-      subtitle: Text(users == null ? permissions : '$permissions · ${l10n.roleUserCount(users)}'),
-      trailing: const Icon(Icons.chevron_right),
+      subtitle: Text(
+        '$permissions · ${l10n.roleUserCount(role.userCount)}',
+        key: ValueKey('role_subtitle_${role.id}'),
+      ),
+      trailing: onTap == null ? null : const Icon(Icons.chevron_right),
       onTap: onTap,
     );
   }

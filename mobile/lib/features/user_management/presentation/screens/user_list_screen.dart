@@ -17,7 +17,9 @@ import '../../../../shared/widgets/skeleton.dart';
 import '../../../../shared/widgets/state_views.dart';
 import '../../../auth/presentation/providers/auth_controller.dart';
 import '../../domain/entities/managed_user.dart';
+import '../../domain/grant_scope.dart';
 import '../providers/user_list_provider.dart';
+import '../providers/user_scope_provider.dart';
 
 /// Every account: name, email, role and whether it can sign in. Opened from
 /// Settings → Administration.
@@ -95,10 +97,11 @@ class _UserListScreenState extends ConsumerState<UserListScreen> {
       return true;
     } on Failure catch (f) {
       if (!mounted) return false;
-      // 403 (a Super Admin, for a non-Super-Admin) and 409 carry the
-      // backend's own sentence, already in the app's language.
+      // 403 (a Super Admin or a user beyond the caller's permissions, for a
+      // non-Super-Admin) and 409 carry the backend's own sentence, already
+      // in the app's language: shown as is, never matched on.
       final reason = errorMessage(context, f);
-      final forbiddenOrConflict = f is ServerFailure && (f.isConflict || f.statusCode == 403);
+      final forbiddenOrConflict = f is ServerFailure && (f.isConflict || f.isForbidden);
       messenger.showSnackBar(SnackBar(content: Text(forbiddenOrConflict ? reason : l10n.userDeleteFailed(reason))));
       return false;
     }
@@ -111,7 +114,11 @@ class _UserListScreenState extends ConsumerState<UserListScreen> {
     final search = ref.watch(userSearchQueryProvider);
     final canCreate = ref.hasPermission(Permissions.usersCreate);
     final canDelete = ref.hasPermission(Permissions.usersDelete);
-    final me = ref.watch(currentUserProvider)?.id;
+    final actor = ref.watch(currentUserProvider);
+    final me = actor?.id;
+    // Roles by id, to tell which users the caller may manage; null while
+    // unknown, and then nothing is locked (the backend still decides).
+    final knownRoles = ref.watch(knownRolesProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -184,14 +191,23 @@ class _UserListScreenState extends ConsumerState<UserListScreen> {
                 }
                 final u = state.items[i];
                 final isSelf = u.id == me;
+                // Beyond the caller's permissions (a Super Admin, or a role
+                // they don't hold in full): the backend would refuse any
+                // change or delete (403), so the row is locked instead.
+                final locked = actor != null && canManageUser(actor, u, knownRoles) == ManageAccess.denied;
                 final tile = PressEffect(
                   child: UserTile(
                     user: u,
                     isSelf: isSelf,
-                    onTap: () => context.pushNamed(AppRoutes.userEdit, pathParameters: {'id': '${u.id}'}),
+                    locked: locked,
+                    onTap: locked
+                        ? () => ScaffoldMessenger.of(context)
+                            ..hideCurrentSnackBar()
+                            ..showSnackBar(SnackBar(content: Text(l10n.userOutOfScope)))
+                        : () => context.pushNamed(AppRoutes.userEdit, pathParameters: {'id': '${u.id}'}),
                   ),
                 );
-                if (!canDelete) return KeyedSubtree(key: ValueKey(u.id), child: tile);
+                if (!canDelete || locked) return KeyedSubtree(key: ValueKey(u.id), child: tile);
                 return Dismissible(
                   key: ValueKey(u.id),
                   direction: DismissDirection.endToStart,
@@ -214,10 +230,13 @@ class _UserListScreenState extends ConsumerState<UserListScreen> {
 }
 
 class UserTile extends StatelessWidget {
-  const UserTile({super.key, required this.user, required this.isSelf, this.onTap});
+  const UserTile({super.key, required this.user, required this.isSelf, this.locked = false, this.onTap});
 
   final ManagedUser user;
   final bool isSelf;
+
+  /// Out of the caller's scope: a lock and a short note under the role.
+  final bool locked;
   final VoidCallback? onTap;
 
   @override
@@ -234,9 +253,23 @@ class UserTile extends StatelessWidget {
             const SizedBox(width: AppSpacing.sm),
             Text('(${l10n.userYou})', style: TextStyle(color: scheme.primary)),
           ],
+          if (locked) ...[
+            const SizedBox(width: AppSpacing.sm),
+            Icon(
+              Icons.lock_outline,
+              key: ValueKey('user_locked_${user.id}'),
+              size: 16,
+              color: scheme.onSurfaceVariant,
+              semanticLabel: l10n.userOutOfScope,
+            ),
+          ],
         ],
       ),
-      subtitle: Text('${user.email}\n${user.roleName}', maxLines: 2, overflow: TextOverflow.ellipsis),
+      subtitle: Text(
+        locked ? '${user.email}\n${user.roleName} · ${l10n.userOutOfScope}' : '${user.email}\n${user.roleName}',
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      ),
       isThreeLine: true,
       trailing: Chip(
         key: ValueKey('user_status_${user.id}'),

@@ -1107,6 +1107,14 @@ class AppLocalizationsId extends AppLocalizations {
   String get settingsLogout => 'Keluar';
 
   @override
+  String get noAccessTitle => 'Belum ada yang bisa ditampilkan';
+
+  @override
+  String noAccessMessage(String role) {
+    return 'Role kamu ($role) belum punya izin untuk melihat data apa pun. Minta admin menambah izin; app akan mengikutinya saat kamu kembali membukanya.';
+  }
+
+  @override
   String validationPasswordTooShort(int min) {
     return 'Kata sandi minimal $min karakter';
   }
@@ -1165,8 +1173,8 @@ class AppLocalizationsId extends AppLocalizations {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '$count pengguna',
-      zero: 'Belum ada pengguna',
+      other: '$count pengguna terhubung',
+      zero: 'Belum ada pengguna terhubung',
     );
     return '$_temp0';
   }
@@ -1309,6 +1317,9 @@ class AppLocalizationsId extends AppLocalizations {
 
   @override
   String get userYou => 'Kamu';
+
+  @override
+  String get userOutOfScope => 'Di luar wewenang kamu';
 
   @override
   String get userNew => 'Pengguna baru';

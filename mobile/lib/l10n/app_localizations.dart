@@ -1904,6 +1904,18 @@ abstract class AppLocalizations {
   /// **'Sign out'**
   String get settingsLogout;
 
+  /// No description provided for @noAccessTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing to show yet'**
+  String get noAccessTitle;
+
+  /// No description provided for @noAccessMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Your role ({role}) doesn\'t include permission to view any data. Ask an administrator to add one; the app picks up the change when you return to it.'**
+  String noAccessMessage(String role);
+
   /// No description provided for @validationPasswordTooShort.
   ///
   /// In en, this message translates to:
@@ -1991,7 +2003,7 @@ abstract class AppLocalizations {
   /// No description provided for @roleUserCount.
   ///
   /// In en, this message translates to:
-  /// **'{count, plural, =0{No users} =1{1 user} other{{count} users}}'**
+  /// **'{count, plural, =0{No linked users} =1{1 linked user} other{{count} linked users}}'**
   String roleUserCount(int count);
 
   /// No description provided for @roleNew.
@@ -2227,6 +2239,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'You'**
   String get userYou;
+
+  /// No description provided for @userOutOfScope.
+  ///
+  /// In en, this message translates to:
+  /// **'Beyond your permissions'**
+  String get userOutOfScope;
 
   /// No description provided for @userNew.
   ///

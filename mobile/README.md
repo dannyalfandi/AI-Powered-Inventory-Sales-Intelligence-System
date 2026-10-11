@@ -43,12 +43,15 @@ lib/
     auth/token_store.dart         AuthTokens, TokenStore, MemoryTokenStore (tests)
     auth/secure_token_store.dart  SecureTokenStore: Keychain / Keystore, loaded in main()
     auth/token_refresher.dart     TokenRefresher: single-flight /auth/refresh
-    auth/session_events.dart      sessionEndedProvider: the network layer says the server ended the session
+    auth/session_events.dart      sessionEndedProvider / permissionDeniedProvider: the network layer says the
+                                  server ended the session / answered 403
     auth/permissions.dart         Permissions: the backend's permission keys
     network/page_meta_model.dart  {"page","page_size","total"} meta of list responses
     pagination/paged.dart         PageResult<T> (domain) + PagedState<T> (infinite-scroll lists)
     router/app_router.dart        appRouterProvider (go_router), AppRoutes
-    router/home_shell.dart        bottom navigation: Dashboard · Produk · Kategori · Pelanggan · Pesanan
+    router/home_shell.dart        bottom navigation: the allowed tabs of Dashboard · Produk · Kategori · Pelanggan · Pesanan
+    router/home_tabs.dart         HomeTab: each tab's path and the *.view permissions that open it
+    utils/clock.dart              clockProvider: the current time, injectable for tests
     utils/                        formatRupiah(), formatDateTime()
   features/auth/
     domain/      AuthUser (+ can()), AuthRole, LoginRules; usecases Login, GetCurrentUser, Logout
@@ -59,17 +62,19 @@ lib/
   features/role_management/
     domain/      Role, CatalogPermission, PermissionGroup + groupPermissions(), RoleInput/RolePatch, RoleRules;
                  usecases GetRoles, GetRole, CreateRole, UpdateRole, DeleteRole, SetRolePermissions,
-                 GetPermissionCatalog, CountRoleUsers
+                 GetPermissionCatalog
     data/        RoleModel, CatalogPermissionModel, request models; RoleRemoteDataSource, RoleRepositoryImpl
     presentation/
-      providers/ role_providers.dart (DI), roleListProvider, roleOptionsProvider, roleUserCountProvider(id),
+      providers/ role_providers.dart (DI), roleListProvider, roleOptionsProvider,
                  permissionCatalogProvider, roleFormProvider(id) (+ savePermissions)
       screens/   RoleListScreen, RoleFormScreen, RolePermissionEditorScreen
   features/user_management/
-    domain/      ManagedUser, UserInput, UserPatch, UserRules; usecases GetUsers, GetUser, CreateUser, UpdateUser, DeleteUser
+    domain/      ManagedUser, UserInput, UserPatch, UserRules; grant_scope.dart (canGrantRole, canManageUser);
+                 usecases GetUsers, GetUser, CreateUser, UpdateUser, DeleteUser
     data/        UserModel (+ embedded UserRoleModel), request models; UserRemoteDataSource, UserRepositoryImpl
     presentation/
-      providers/ user_providers.dart (DI), userListProvider, userSearchQueryProvider, userFormProvider(id)
+      providers/ user_providers.dart (DI), userListProvider, userSearchQueryProvider, userFormProvider(id),
+                 knownRolesProvider (the role list by id, or null when unknown)
       screens/   UserListScreen, UserFormScreen
   features/product/
     domain/      entities (Product + ProductCategory, ProductPage, ProductInput, ProductPatch, ProductRules),
@@ -148,10 +153,11 @@ Screens and routes:
 | `/splash` | Shown at start-up only, while a stored session is checked (`GET /auth/me`) |
 | `/admin/roles`, `/admin/roles/new`, `/admin/roles/:id`, `/admin/roles/:id/permissions` | Role management: list, form/detail, permission editor (see [Administration](#administration-roles--users)) |
 | `/admin/users`, `/admin/users/new`, `/admin/users/:id` | User management: list, form |
+| `/no-access` | A role that opens no tab at all: what is going on, plus Settings and Sign out. Left automatically as soon as a tab opens up |
 | `/` (tab) | Dashboard: summary cards, date range (7/30/90 hari or custom), sales trend (daily/weekly), business insights, demand forecast, top 10 products, revenue per category, low-stock badge |
 | `/products` (tab) | Products: search, infinite scroll, swipe delete. Tapping a product opens its detail. |
 | `/categories` (tab) | Categories: search, infinite scroll, swipe delete |
-| `/low-stock` | Products with `quantity <= low_stock_threshold`, opened from the dashboard card. |
+| `/low-stock` | Products with `quantity <= low_stock_threshold`, opened from the dashboard card (needs `inventory.view`). |
 | `/products/new`, `/products/:id/edit` | Product form with a category dropdown ("Tanpa Kategori" + all categories) |
 | `/products/:id` | Product detail: category, current stock, low-stock status, "Catat pergerakan" and movement history |
 | `/categories/new`, `/categories/:id/edit` | Category form |
@@ -161,7 +167,8 @@ Screens and routes:
 | `/sales-orders/new` | Order form: customer picker, product picker, quantities, running total |
 | `/sales-orders/:id` | Order detail: status + timeline, customer, items with snapshot prices, total, action buttons |
 
-Bottom navigation (5 tabs): Dashboard · Produk · Kategori · Pelanggan · Pesanan.
+Bottom navigation: Dashboard · Produk · Kategori · Pelanggan · Pesanan — **only the tabs the role may open**
+(see [Tabs follow the permissions](#tabs-follow-the-permissions)); with a single tab there is no bar.
 Stok Menipis is no longer a tab: it is opened from the low-stock card on the dashboard (`context.pushNamed(AppRoutes.lowStock)`), which keeps the dashboard as the home screen without a sixth tab.
 
 Behaviour worth knowing:
@@ -193,8 +200,8 @@ Behaviour worth knowing:
 
 - **Dashboard**: five endpoints load in parallel, each in its own provider and its own section. A section that fails shows only its own message and "Coba lagi"; the others keep their data. While a section reloads (after a date change) its previous data stays on screen under a thin progress bar.
   The date range is one provider that the four range-based sections watch, so changing it reloads them together; the granularity toggle is a separate provider, so daily↔weekly costs exactly one request.
-  The low-stock count is not range-bound (it is current stock), so it does not reload on a date change, and its card stays tappable even when the count fails.
-  `DashboardScreen` keeps all five providers subscribed with `ref.listen`, so scrolling a card out of the `ListView` does not dispose it and refetch on scroll back.
+  The low-stock count is not range-bound (it is current stock), so it does not reload on a date change, and its card stays tappable even when the count fails (with `inventory.view`, which the list it opens needs).
+  `DashboardScreen` keeps the providers of its *visible* sections subscribed with `ref.listen`, so scrolling a card out of the `ListView` does not dispose it and refetch on scroll back. A section the role may not see is neither shown nor subscribed, so it sends no request (see [Tabs follow the permissions](#tabs-follow-the-permissions)).
   Money is formatted with `formatRupiah`; chart axes use `formatRupiahCompact` ("Rp 928rb"). Products without a category arrive as `category_id: null` and are shown as an italic grey "Tanpa Kategori" slice.
 - **Forecast and insights** (`Prediksi Permintaan`, `Insight Bisnis`) come from the Go API endpoints backed by the Python ML service, so they have a state the other sections do not: **unavailable**. Three "nothing to show" cases are deliberately different:
   - `forecast_available` / `insights_available` false (the ML service is down) → `UnavailableView`: grey panel, muted icon, no red, and a low-emphasis "Coba lagi". It is not a bug and not the user's fault, so it must not look like `ErrorView`.
@@ -207,13 +214,14 @@ Dependency direction: `presentation → domain ← data`. `domain` imports nothi
 ## Language (English / Bahasa Indonesia)
 
 The app ships in both languages and **starts in English**. The choice is in **Settings**, reached from the
-Dashboard app bar — five destinations already fill the bottom bar on a phone, and settings are somewhere
-you visit now and then rather than a place you navigate between. Switching applies immediately, with no
+settings button in every tab's app bar (and from the no-access screen) — not a tab: five destinations already
+fill the bottom bar on a phone, and settings are somewhere you visit now and then rather than a place you
+navigate between. Switching applies immediately, with no
 restart, and is remembered in `shared_preferences` under `app_language`.
 
 One switch covers both halves of the app:
 
-- **the app's own labels** come from `lib/l10n/app_en.arb` / `app_id.arb` (377 keys), read as `context.l10n.<key>`.
+- **the app's own labels** come from `lib/l10n/app_en.arb` / `app_id.arb` (380 keys), read as `context.l10n.<key>`.
   `app_en.arb` is the template, so a key must exist there first; `flutter gen-l10n` then writes
   `lib/l10n/app_localizations*.dart` (committed, like the other generated files).
 - **the sentences the backend writes** come back already translated: `AcceptLanguageInterceptor` puts
@@ -382,7 +390,7 @@ says what is loading, which is most of the benefit.
 
 ## Prerequisites
 
-- Flutter 3.47+ (Dart 3.13+)
+- Flutter 3.47+ (Dart `^3.13.2`, the SDK constraint in `pubspec.yaml`)
 - Backend running: `../infra` (`docker compose up -d`) and `../backend` (`go run ./cmd/migrate`, then `go run ./cmd/api`)
 - For the two ML-backed dashboard sections (Prediksi Permintaan, Insight Bisnis) also start the Python service: `cd ../ml-service && uvicorn app.main:app --port 8000`. Without it those two sections show their "sedang tidak tersedia" state and everything else works normally.
 
@@ -504,6 +512,28 @@ flutter analyze              # lints incl. riverpod_lint
   validation, and self-protection. `test/features/admin_navigation_test.dart`: the Settings entries for Staff,
   Super Admin and partial custom roles, and admin deep links bounced without the permission (real router).
   Turning off the role-list delete gate, the Settings entry gate or the route guard makes these fail.
+- "Only what you hold" and `user_count` (captured 2026-10-09, `test/helpers/admin_json.dart`):
+  `grant_scope_test.dart` is the matrix of `canGrantRole` / `canManageUser` (Super Admin, a manager whose
+  permissions cover Staff and Gudang, a manager with only `users.*`, against Staff / a subset role / a role
+  beyond / Super Admin / your own account / a role not in the list). `role_list_http_test.dart` runs the
+  role list over the real datasource with a recording HTTP adapter: exactly one `GET /roles`, no `GET /users`.
+  The screen tests cover swipe-delete for `user_count` 0 vs more vs the system role, the filtered / full /
+  `users.create`-only role picker, locked user rows, the deep-link bounce, and the 403 sentences in the form
+  banner and the delete path; the navigation test checks that a user manager never triggers
+  `GET /roles/:id` or `GET /permissions`. `test/core/l10n/arb_parity_test.dart`: the same keys and
+  placeholders in both ARB files. Removing the picker's subset filter, the `user_count == 0` delete condition,
+  the Super Admin case of `canManageUser`, or the `roles.view` gate on the role page makes these fail.
+- Tabs and permission refresh: `test/core/router/home_tabs_test.dart` runs the real router and shell — which tabs
+  Super Admin, Staff, Gudang (`products.view` only), mixed roles and a role with no view permission see, where
+  each opens, deep links bounced to the first allowed tab or `/no-access`, every Dashboard section per
+  permission with `verifyNever` on the endpoints it must not call, the low-stock link, and the Orders customer
+  filter. `test/features/auth/permission_refresh_test.dart`: the throttle on a fake clock, the 403 debounce, no
+  overlapping calls, what `refreshPermissions` does with new / unchanged / failed answers, the 403 → one
+  `/auth/me` path and the 401 → session-ended path over the real Dio client and a fake backend, and the whole
+  app (`InventoryApp`) sent to the background and back: a permission removed meanwhile hides its tab and moves
+  the user, and a second resume within 60 s sends nothing. Removing the tab filter, the section guards, the
+  tab route guard, the throttle or the debounce — or reading the user from `currentUserProvider` in the
+  guards — makes them fail.
 - `test/core/router/auth_guard_test.dart`: `authRedirect` as a table, and the real router: splash at
   start-up, login from any page, a session ended from a deep screen lands on `/login` **once**, login lands on
   the Dashboard, logout from Settings. `test/core/auth/secure_token_store_test.dart`: `current` changes
@@ -576,10 +606,20 @@ name, the one role and the permission keys from `GET /auth/me`.
 - **Session ended by the server:** the network layer calls `onSessionEnded`, which signals
   `sessionEndedProvider` in `core/` (so `core/` doesn't import the feature). `AuthController` listens to it and
   drops the user, whichever request noticed, from whichever screen.
+- **Permissions refreshed without a new login** (`PermissionRefresher`): `AuthController.refreshPermissions()`
+  re-reads `GET /auth/me` when the app returns to the foreground (`AppLifecycleListener` in `app.dart`, at most
+  once per 60 s, clock injectable through `clockProvider`) and once after a 403 from a business endpoint
+  (`ForbiddenInterceptor` → `permissionDeniedProvider`, debounced 800 ms so a burst of 403s is one call;
+  `/auth/*` never counts). It goes through the same Dio client, so an expired access token is refreshed by
+  the shared single-flight `TokenRefresher` on the way. A new answer replaces the user (tabs, sections and
+  buttons follow, and the router moves off a tab that is no longer allowed); the same answer changes nothing;
+  offline or a 5xx keeps the current state; a 401 goes through the session-ended path above.
 
 **Routing guard.** `appRouter` re-runs `authRedirect` (a pure function, tested as a table) whenever the auth
 state changes. Checking the session → `/splash`. Nobody logged in → `/login`, from any route. Logged in on
-`/login` or `/splash` → the Dashboard. Already on `/login` → no redirect, so a burst of 401s never loops. No
+`/login` or `/splash` → the Dashboard (and from there to the first allowed tab). Every route-level guard
+reads the user from the same notifier the router was just told about, not from `currentUserProvider`, which
+can still hold the previous user during that notification. Already on `/login` → no redirect, so a burst of 401s never loops. No
 screen navigates on login or logout itself; the guard follows the state.
 
 **Permission-based UI.** `ref.hasPermission(Permissions.productsDelete)` (`auth_controller.dart`) checks the
@@ -596,8 +636,39 @@ do, never show it disabled without a reason; the backend enforces every permissi
 | Order detail | Confirm · Ship · Cancel (per the state machine) | `sales_orders.confirm` · `.ship` · `.cancel` |
 
 An order whose next steps the user may not perform shows no action bar at all. "No more actions" stays
-reserved for final orders. There is no user or role management screen yet, so there is no entry point to hide.
-Settings shows the logged-in user's name, role and email, and the Sign out button.
+reserved for final orders. The user and role management entries are gated too, see
+[Administration](#administration-roles--users). Settings shows the logged-in user's name, role and email,
+and the Sign out button.
+
+### Tabs follow the permissions
+
+A tab is shown — and its route opens — only when the role holds a permission its endpoint demands
+(`backend/internal/router/router.go`). One table, `HomeTab` in `core/router/home_tabs.dart`, feeds both the
+bottom bar (`HomeShell`) and the route guards (`requireTab`):
+
+| Tab | Endpoint | Shown with |
+|---|---|---|
+| Dashboard | `GET /analytics/*` | `analytics.view`, `analytics.insights` or `analytics.forecast` |
+| Products (+ product create/detail/edit) | `GET /products` | `products.view` |
+| Categories (+ form) | `GET /categories` | `categories.view` |
+| Customers (+ form) | `GET /customers` | `customers.view` |
+| Orders (+ create, detail) | `GET /sales-orders` | `sales_orders.view` |
+
+- The app opens on the **first allowed tab**. A deep link to a tab (or one of its screens) the role may not
+  open lands there too. With no tab at all → `/no-access` (Settings and Sign out).
+- **Dashboard sections** each need their own permission: `analytics.view` for summary, low stock, trend, top
+  products and categories; `analytics.insights` for insights; `analytics.forecast` for the forecast. A section
+  without it is not rendered and its provider is never subscribed, so it sends no request.
+- Inside a tab, a picker that reads another resource follows that resource's permission too: the Orders tab
+  offers the customer filter (`GET /customers`) only with `customers.view`; the low-stock card opens its list
+  (`GET /inventory/low-stock`) only with `inventory.view`.
+- Settings is not a tab; every tab's app bar has the settings button (`SettingsAction`).
+- **Not gated yet** (known limitation): other parts inside a screen that read another resource — the customer
+  and product pickers in the order form (`customers.view` / `products.view`), the category dropdown in the
+  product form (`categories.view`), and the stock and movement history in a product's detail
+  (`inventory.view`). A role without those permissions sees the server's 403 message in that part.
+- When permissions change (refreshed on resume and after a 403, see above), the bar, the sections and the
+  current location follow without a new login.
 
 ## Administration: roles & users
 
@@ -605,16 +676,22 @@ Settings has an **Administration** section with two entries. Each shows on its o
 least one permission of its area (`Permissions.roleManagement` = any `roles.*`, `Permissions.userManagement` =
 any `users.*`), through the same `ref.hasAnyPermission()` as the rest of the app. With neither, the section
 isn't there. Every admin route also checks the permission itself (`requireAny` in `app_router.dart`), so a
-deep link can't open a screen whose entry is hidden: it lands back on `/settings`.
+deep link can't open a screen whose entry is hidden: it lands back on `/settings`. A role's page and its
+permission editor additionally need `roles.view` (they load `GET /roles/:id` and `GET /permissions`, which
+answer to nothing else), so no path in the app sends a request that can only be refused.
 
 **Role management** (`features/role_management/`):
 
 - **Role list** (`/admin/roles`): name, permission count ("All permissions" for the system role, with a
-  *System* badge), and the number of users. The roles endpoint doesn't report the user count, so each row
-  reads it from `GET /users?role_id=…&page_size=1`. That needs `users.view`; without it the count is left out.
+  *System* badge), and the number of **linked users**, from each role's `user_count`. One `GET /roles` loads
+  the whole screen; nothing asks `GET /users` (it used to, once per role). `user_count` counts inactive and
+  deleted users too, because a deleted user keeps its `role_id` and the backend's foreign key refuses to
+  delete the role while any such row exists ([backend/README.md](../backend/README.md#user_count)). So the
+  label says "linked", never "active", and it is exactly the number behind the delete's 409. Rows open the
+  role's page only for `roles.view`; without it (a user manager) the list is all there is.
 - **Role form** (`/admin/roles/new`, `/admin/roles/:id`): name and description. It doubles as the detail page:
   what the role grants, and "Edit permissions". A new role continues on its own page after saving, since
-  permissions are assigned there. The system role is explained, its name is locked, and it has no permission
+  permissions are assigned there — for `roles.view` holders; anyone else goes back to the list. The system role is explained, its name is locked, and it has no permission
   editor, because the backend never lets it be renamed, deleted or given a list.
 - **Permission editor** (`/admin/roles/:id/permissions`): the catalog from `GET /permissions`, grouped by the
   API's own `resource_group` (only the group *names* are translated; an unknown group shows under its code).
@@ -622,33 +699,56 @@ deep link can't open a screen whose entry is hidden: it lands back on `/settings
   of keys, in catalog order, to `PUT /roles/:id/permissions`, which replaces rather than merges. A
   non-Super-Admin can only grant what they hold (the backend answers 403 otherwise), so those boxes are
   shown but locked, with a note.
-- **Delete**: swipe on the list. Never offered for the system role. A 409 ("still linked to N users, including
-  deleted ones") is shown exactly as the backend wrote it, already in the app's language.
+- **Delete**: swipe on the list, offered only for a role with `user_count` 0 that isn't the system role —
+  the backend would refuse anything else. A 409 can still happen (someone was given the role meanwhile); it
+  is shown exactly as the backend wrote it ("still linked to N users, including deleted ones"), already in the
+  app's language, and so is a 403.
 
 **User management** (`features/user_management/`):
 
 - **User list** (`/admin/users`): name, email, role, an Active/Inactive chip, and a "(You)" mark on your own
-  row. Search by name or email, infinite scroll, swipe to delete.
+  row. Search by name or email, infinite scroll, swipe to delete. A user beyond your scope (see below) shows a
+  lock and "Beyond your permissions"; it has no swipe, and a tap only repeats that note.
 - **User form** (`/admin/users/new`, `/admin/users/:id`): name, email, password (a new, optional one when
   editing; `PATCH /users/:id` accepts it, and it signs the user out everywhere), role (from `GET /roles`),
   and the active switch. On edit only the changed fields are sent.
 - **Self-protection, before the request:** on your own account the role picker and the active switch are
   locked with the reason shown, and swiping your own row says you can't delete yourself. The backend
-  refuses all three too (409). A non-Super-Admin isn't offered the Super Admin role (backend 403). Other
-  refusals (403/409, e.g. a duplicate email) appear in the form as the backend's sentence.
+  refuses all three too (409). Other refusals (403/409, e.g. a duplicate email) appear in the form banner as
+  the backend's sentence, already in the app's language; the app never matches on it or translates it.
+- **Only what you hold** (`domain/grant_scope.dart`, the app's copy of the backend's `grant_scope.go`):
+  a non-Super-Admin may give a user only a role whose permissions they all hold, and change or delete only
+  users whose role they hold in full. One definition behind two pure functions:
+  - `canGrantRole(me, role)`: the role picker offers only these (a Super Admin sees every role; nobody else
+    ever sees the system role). The user's current role stays listed so the field can show it.
+  - `canManageUser(me, user, rolesById)` → `allowed` / `denied` / `unknown`. The role inside a user has no
+    permissions (`null` in `GET /users`), so they come from the role list by `role_id`. When that list isn't
+    available (not loaded yet, failed, or the caller can't read it) the answer is `unknown` and **nothing is
+    hidden**: the backend decides (403). A Super Admin target is `denied` even then, from the user's own
+    `is_system`. Your own account is always `allowed` here; the self rules above still lock its role, active
+    switch and delete.
+  - A form opened by deep link for a `denied` user goes back to the list with the same note.
+- **Role picker loading:** `GET /roles` answers to `roles.view`, `users.create` or `users.update`
+  (`Permissions.roleList`). Without any of those (e.g. `users.view` only) the app never requests it; the
+  picker just shows the user's current role.
 
 | Where | Action | Permission |
 |---|---|---|
 | Settings | "Roles & permissions" entry | any `roles.*` |
 | Settings | "Users" entry | any `users.*` |
-| Role list | add · swipe to delete (not the system role) · user count | `roles.create` · `roles.delete` · `users.view` |
+| Role list | add · swipe to delete (not the system role, only with 0 linked users) · open a role | `roles.create` · `roles.delete` · `roles.view` |
+| Role list | the list itself, with the user counts | `roles.view`, `users.create` or `users.update` |
 | Role form | save changes · "Edit permissions" (not the system role) | `roles.update` · `roles.assign_permissions` |
-| Permission editor | open · a checkbox (non-Super-Admin) | `roles.assign_permissions` · holding that permission |
-| User list | add · swipe to delete | `users.create` · `users.delete` |
+| Permission editor | open · a checkbox (non-Super-Admin) | `roles.view` + `roles.assign_permissions` · holding that permission |
+| User list | add · swipe to delete · open | `users.create` · `users.delete` + the user within your scope · the user within your scope |
 | User form | save changes (role, active, password…) | `users.update` (create: `users.create`) |
+| User form | a role in the picker | you hold all of its permissions (Super Admin: any) |
 
 Reading a list needs its `*.view` permission on the backend. A user with only, say, `roles.create` sees
-the entry, but the list shows the server's 403 message; the form still works.
+the entry, but the list shows the server's 403 message; the form still works. One exception: `GET /roles`
+(the list, which the user form's role picker uses) is also open to `users.create` and `users.update`, so a
+user manager without `roles.view` can still pick a role. The role detail and the permission catalog stay
+`roles.view` only.
 
 ## Error handling
 

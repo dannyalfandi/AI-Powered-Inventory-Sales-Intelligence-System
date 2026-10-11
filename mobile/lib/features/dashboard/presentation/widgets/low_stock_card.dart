@@ -15,7 +15,8 @@ class LowStockCard extends StatelessWidget {
   const LowStockCard({super.key, required this.count, required this.onTap, required this.onRetry});
 
   final AsyncValue<int> count;
-  final VoidCallback onTap;
+  /// Null when the user can't open the low-stock list (no inventory.view).
+  final VoidCallback? onTap;
   final VoidCallback onRetry;
 
   @override
@@ -47,7 +48,7 @@ class LowStockCard extends StatelessWidget {
               const SkeletonBox(width: 34, height: 22, radius: 999)
             else
               _CountBadge(count: value!, color: color),
-            const Icon(Icons.chevron_right),
+            if (onTap != null) const Icon(Icons.chevron_right),
           ],
         ),
       ),

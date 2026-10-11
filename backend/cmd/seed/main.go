@@ -8,6 +8,7 @@
 //	go run ./cmd/seed --clean    # remove test/demo leftovers (explicit, never automatic)
 //	go run ./cmd/seed            # create the demo data (safe to re-run)
 //	go run ./cmd/seed --auth-only  # only roles + the Super Admin/Staff accounts
+//	go run ./cmd/seed --clean-e2e-run=1791500000  # users + roles of one e2e run (scripts/e2e.sh calls it)
 //
 // Orders go through the same service layer the API uses, so stock movements,
 // order numbers and every invariant are produced by the real business logic.
@@ -39,8 +40,16 @@ func main() {
 	authOnly := flag.Bool("auth-only", false, "create only the roles and the Super Admin/Staff accounts, no demo data")
 	days := flag.Int("days", 75, "how many days of sales history to generate")
 	randomSeed := flag.Uint64("seed", 20260920, "PRNG seed; the same seed always produces the same data")
+	cleanRun := flag.String("clean-e2e-run", "", "hard-delete the users and roles of one scripts/e2e.sh run (its run id), then exit")
 	flag.Parse()
 
+	if *cleanRun != "" {
+		if err := runCleanE2E(*cleanRun); err != nil {
+			slog.Error("clean e2e run failed", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(*clean, *authOnly, *days, *randomSeed); err != nil {
 		slog.Error("seed failed", "error", err)
 		os.Exit(1)
@@ -80,6 +89,22 @@ func run(clean, authOnly bool, days int, randomSeed uint64) error {
 		return fmt.Errorf("--days must be at least 14 so the trend comparison has two periods, got %d", days)
 	}
 	return seed(ctx, db, cfg, loc, days, randomSeed)
+}
+
+func runCleanE2E(run string) error {
+	ctx := context.Background()
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	db, err := database.NewPostgres(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return err
+	}
+	if sqlDB, err := db.DB(); err == nil {
+		defer sqlDB.Close()
+	}
+	return cleanE2ERun(ctx, db, run)
 }
 
 // --- cleaning --------------------------------------------------------------

@@ -1107,6 +1107,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsLogout => 'Sign out';
 
   @override
+  String get noAccessTitle => 'Nothing to show yet';
+
+  @override
+  String noAccessMessage(String role) {
+    return 'Your role ($role) doesn\'t include permission to view any data. Ask an administrator to add one; the app picks up the change when you return to it.';
+  }
+
+  @override
   String validationPasswordTooShort(int min) {
     return 'Password must be at least $min characters';
   }
@@ -1166,9 +1174,9 @@ class AppLocalizationsEn extends AppLocalizations {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '$count users',
-      one: '1 user',
-      zero: 'No users',
+      other: '$count linked users',
+      one: '1 linked user',
+      zero: 'No linked users',
     );
     return '$_temp0';
   }
@@ -1317,6 +1325,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get userYou => 'You';
+
+  @override
+  String get userOutOfScope => 'Beyond your permissions';
 
   @override
   String get userNew => 'New user';

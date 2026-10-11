@@ -14,6 +14,7 @@ _RoleModel _$RoleModelFromJson(Map<String, dynamic> json) => _RoleModel(
   permissions: (json['permissions'] as List<dynamic>?)
       ?.map((e) => e as String)
       .toList(),
+  userCount: (json['user_count'] as num).toInt(),
   createdAt: DateTime.parse(json['created_at'] as String),
   updatedAt: DateTime.parse(json['updated_at'] as String),
 );
@@ -25,6 +26,7 @@ Map<String, dynamic> _$RoleModelToJson(_RoleModel instance) =>
       'description': instance.description,
       'is_system': instance.isSystem,
       'permissions': instance.permissions,
+      'user_count': instance.userCount,
       'created_at': instance.createdAt.toIso8601String(),
       'updated_at': instance.updatedAt.toIso8601String(),
     };

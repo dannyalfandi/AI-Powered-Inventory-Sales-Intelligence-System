@@ -76,14 +76,16 @@ const (
 	KeyAuthAccountDisabled    Key = "auth.account_disabled"
 	KeyAuthForbidden          Key = "auth.forbidden"
 
-	KeyUserEmailTaken               Key = "rule.user_email_taken"
-	KeyCannotDeactivateSelf         Key = "rule.cannot_deactivate_self"
-	KeyCannotChangeOwnRole          Key = "rule.cannot_change_own_role"
-	KeyLastSuperAdmin               Key = "rule.last_super_admin"
-	KeySystemRoleRequiresSuperAdmin Key = "rule.system_role_requires_super_admin"
-	KeySystemRoleLocked             Key = "rule.system_role_locked"
-	KeyRoleInUse                    Key = "rule.role_in_use"
-	KeyPermissionNotHeld            Key = "rule.permission_not_held"
+	KeyUserEmailTaken                Key = "rule.user_email_taken"
+	KeyCannotDeactivateSelf          Key = "rule.cannot_deactivate_self"
+	KeyCannotChangeOwnRole           Key = "rule.cannot_change_own_role"
+	KeyLastSuperAdmin                Key = "rule.last_super_admin"
+	KeySystemRoleRequiresSuperAdmin  Key = "rule.system_role_requires_super_admin"
+	KeySystemRoleLocked              Key = "rule.system_role_locked"
+	KeyRoleInUse                     Key = "rule.role_in_use"
+	KeyPermissionNotHeld             Key = "rule.permission_not_held"
+	KeyRoleExceedsOwnPermissions     Key = "rule.role_exceeds_own_permissions"
+	KeyUserRoleExceedsOwnPermissions Key = "rule.user_role_exceeds_own_permissions"
 
 	KeyEntityUser     Key = "entity.user"
 	KeyEntityRole     Key = "entity.role"
@@ -373,6 +375,14 @@ var catalog = map[Key]map[Lang]string{
 	KeyPermissionNotHeld: {
 		ID: "tidak bisa memberikan izin %q yang tidak anda miliki sendiri",
 		EN: "you can't grant the %q permission because you don't hold it yourself",
+	},
+	KeyRoleExceedsOwnPermissions: {
+		ID: "tidak bisa memberikan role %q karena role itu punya izin %q yang tidak anda miliki sendiri",
+		EN: "you can't assign the %q role because it has the %q permission, which you don't hold yourself",
+	},
+	KeyUserRoleExceedsOwnPermissions: {
+		ID: "tidak bisa mengubah atau menghapus pengguna dengan role %q karena role itu punya izin %q yang tidak anda miliki sendiri",
+		EN: "you can't change or delete a user with the %q role because it has the %q permission, which you don't hold yourself",
 	},
 	KeyEntityUser: {
 		ID: "pengguna %d",

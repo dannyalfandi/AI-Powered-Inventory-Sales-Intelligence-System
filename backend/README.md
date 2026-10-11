@@ -27,7 +27,7 @@ Request flow: `router → handler → service → repository → model`.
 
 ## Prerequisites
 
-- Go **1.25+**
+- Go **1.26+** (`go 1.26.0` in `go.mod`)
 - Postgres + Redis running from `../infra` (`docker compose up -d`, see `../infra/README.md`)
 
 ## Setup
@@ -155,6 +155,13 @@ Notes:
   when it is created, so edits made through the API survive a re-seed.
   Running `scripts/e2e.sh` after seeding adds its own test rows back — clean
   and re-seed before a demo.
+- `--clean-e2e-run=<run id>` is the narrow version that `scripts/e2e.sh` calls
+  at the end of every run: it hard-deletes only that run's users
+  (`e2e.*.<run>@example.test`) and roles (`E2E * <run>`). The API can't
+  remove those roles itself — the run's soft-deleted users still reference
+  them, so `DELETE /roles/:id` answers 409 by design — which is why earlier
+  runs left `E2E …` roles behind. A role still referenced by a user outside
+  the run is kept, and the command fails loudly.
 - Flags: `--days` (default 75, minimum 14) and `--seed` (PRNG seed; the same
   seed always produces the same dataset).
 
@@ -260,6 +267,8 @@ The catalog is fixed in code (`internal/auth/permissions.go`) and synced into `p
 | `users` | `users.view`, `users.create`, `users.update` (includes role and `is_active`), `users.delete` |
 | `roles` | `roles.view` (also `GET /permissions`), `roles.create`, `roles.update` (name/description), `roles.delete`, `roles.assign_permissions` |
 
+`GET /api/v1/roles` (the list) is the one route that opens for any of several permissions: `roles.view`, `users.create` or `users.update`, because a user manager picks a user's role from it. The middleware is `RequireAnyPermission`; it asks in that order and stops at the first grant (up to three permission queries for a caller who has none). The detail route `GET /roles/:id`, `GET /permissions` and every role write stay `roles.*` only. Which role a user manager may actually *assign* is decided by the user service (see the rules below), not by what the list shows.
+
 32 permissions in total.
 
 ### Roles
@@ -277,7 +286,7 @@ Managing roles (as a Super Admin):
 # a role for the warehouse: stock only
 curl -s -X POST -H "$AUTH" -H "Content-Type: application/json" \
   http://localhost:8080/api/v1/roles -d '{"name":"Gudang","description":"Staf gudang"}'
-# 201 {"data":{"id":3,"name":"Gudang","is_system":false,"permissions":[],…}}
+# 201 {"data":{"id":3,"name":"Gudang","is_system":false,"user_count":0,"permissions":[],…}}
 
 # set its permissions — REPLACES the list (send [] to clear it)
 curl -s -X PUT -H "$AUTH" -H "Content-Type: application/json" \
@@ -292,17 +301,47 @@ curl -s -X POST -H "$AUTH" -H "Content-Type: application/json" \
   -d '{"email":"gudang@example.com","password":"rahasia123","name":"Budi Gudang","role_id":3}'
 ```
 
+#### `user_count`
+
+Every role returned by a **role endpoint** (`GET /roles`, `GET /roles/:id`, `POST /roles`, `PATCH /roles/:id`, `PUT /roles/:id/permissions`) carries `user_count`: the number of users whose `role_id` is that role, **soft-deleted users included** (inactive users are included too).
+
+```json
+{"id":82,"name":"Gudang","description":"","is_system":false,"user_count":2,
+ "created_at":"…","updated_at":"…","permissions":["products.view","products.delete","users.view"]}
+```
+
+A role **embedded in a user** never carries `user_count` — not in `GET /users`, `GET /users/:id`, `POST /users` or `PATCH /users/:id` (inside a user the number is out of place, and right after a create it would be one too low). `GET /auth/me` and the login answer describe the role as `{"id","name","is_system"}` only. The embedded role's `permissions` are unchanged: `null` in `GET /users` and `GET /users/:id`, the role's keys in the `POST`/`PATCH` answers.
+
+```json
+// POST /users → 201
+{"data":{"id":12,"email":"budi@example.com","name":"Budi","role_id":82,
+ "role":{"id":82,"name":"Gudang","description":"","is_system":false,"created_at":"…","updated_at":"…",
+         "permissions":["products.view","products.delete","users.view"]},
+ "is_active":true,"created_at":"…","updated_at":"…"}}
+```
+
+It counts deleted users on purpose, so that it is the same number that decides `DELETE /roles/:id`. A deleted user keeps `role_id` as history and `users.role_id` is `ON DELETE RESTRICT`, so Postgres itself refuses to delete a role while any user row — deleted or not — points at it. A count of live users only would show `0` for a role that still answers 409. So `user_count > 0` ⇔ the delete answers 409, and the 409 message quotes that number (`role 82 masih terhubung dengan 2 pengguna (termasuk yang sudah dihapus)`). There is one definition (`roleColumnsWithUserCount` in `internal/repository/role_repository.go`), computed in the same `SELECT` that loads the roles (a correlated subquery on the `users.role_id` index), so a page of roles costs the same three statements whatever its size: the total, the page with its counts, the permission keys. `role_repository_integration_test.go` checks both the definition and the statement count against Postgres.
+
 Rules the service enforces:
 
 | Rule | Response |
 |---|---|
 | The Super Admin role can't be deleted, renamed or given a permission list | 409 |
-| A role can't be deleted while any user has it, including soft-deleted users (they keep `role_id` as history) | 409 |
+| A role can't be deleted while `user_count > 0` — any user has it, including soft-deleted users (they keep `role_id` as history) | 409 |
 | Nobody can deactivate, delete, or change the role of **their own** account | 409 |
 | At least one active Super Admin must remain. Enforced under a lock on every Super Admin row, so two admins demoting each other at once can't both succeed | 409 |
 | Only a Super Admin can grant the Super Admin role, or change or delete a Super Admin account | 403 |
 | Someone with `roles.assign_permissions` who is not a Super Admin can only grant permissions they hold themselves | 403 |
+| A non-Super-Admin can only **give** a user (create, or change `role_id`) a role whose permissions they all hold themselves | 403 `rule.role_exceeds_own_permissions` |
+| A non-Super-Admin can only **change** (any field: password, role, `is_active`, name, email) or **delete** a user whose current role they hold in full. Without this, `users.update` could reset a stronger account's password and log in as it | 403 `rule.user_role_exceeds_own_permissions` |
 | Roles created through the API are never system roles | — |
+
+The three "only what you hold" rules share one definition of *subset* (`grantScope` in `internal/service/grant_scope.go`): a Super Admin covers every permission; anyone else covers exactly the keys of their own role at the time of the request. Editing your own account is not limited by it (your role is your scope); the self rules above still apply. The 403 body is the usual `{"error":{"code":"forbidden","message":"…"}}` — the i18n key in the table is not sent, only the translated sentence:
+
+```json
+{"error":{"code":"forbidden","message":"tidak bisa memberikan role \"Gudang\" karena role itu punya izin \"products.delete\" yang tidak anda miliki sendiri"}}
+{"error":{"code":"forbidden","message":"you can't change or delete a user with the \"Gudang\" role because it has the \"products.delete\" permission, which you don't hold yourself"}}
+```
 
 ## Languages (`Accept-Language`)
 
@@ -326,7 +365,9 @@ Rules:
 - The header is parsed the way browsers send it: `en`, `en-US`,
   `en-US,en;q=0.9,id;q=0.8`, `*`. The highest-quality supported language wins.
 - **Anything unknown or missing falls back to Indonesian**, so a client that
-  sends no header (the current Flutter app) keeps the behaviour it had.
+  sends no header keeps the behaviour it had before i18n. The Flutter app
+  does not rely on this: it sends the app's language on every request
+  (`AcceptLanguageInterceptor` in `mobile/lib/core/network/dio_client.dart`).
 - Every response carries `Content-Language` with the language actually used.
 - **Only sentences are translated.** Codes (`validation_failed`, `conflict`,
   `not_found`), field names (`category_id`, `items[0].quantity`), enum values
@@ -395,13 +436,13 @@ This table is also the **endpoint → permission map**. "public" needs no token.
 | GET | `/api/v1/analytics/low-stock-alert-count` | – | 200 | `analytics.view` |
 | GET | `/api/v1/analytics/forecast` | `?from=&to=&limit=10&horizon_days=7` | 200 | `analytics.forecast` |
 | GET | `/api/v1/analytics/insights` | `?from=&to=&limit=10` | 200 | `analytics.insights` |
-| POST | `/api/v1/users` | `{"email","password","name","role_id","is_active"}` (`is_active` defaults to true) | 201 | `users.create` |
+| POST | `/api/v1/users` | `{"email","password","name","role_id","is_active"}` (`is_active` defaults to true) | 201, **403 if the role is beyond the caller's permissions** | `users.create` |
 | GET | `/api/v1/users` | `?page=1&page_size=20&search=budi&role_id=2` (name or email) | 200 + `meta` (with `role`) | `users.view` |
 | GET | `/api/v1/users/:id` | – | 200 | `users.view` |
-| PATCH | `/api/v1/users/:id` | any subset of `{"email","password","name","role_id","is_active"}` | 200 | `users.update` |
-| DELETE | `/api/v1/users/:id` | – | 204 (soft delete + deactivate + revoke sessions), **409 for yourself** | `users.delete` |
-| GET | `/api/v1/roles` | `?page=1&page_size=20&search=staff` | 200 + `meta` (with `permissions`) | `roles.view` |
-| GET | `/api/v1/roles/:id` | – | 200 (with `permissions`) | `roles.view` |
+| PATCH | `/api/v1/users/:id` | any subset of `{"email","password","name","role_id","is_active"}` | 200, **403 if the user's current or new role is beyond the caller's permissions** | `users.update` |
+| DELETE | `/api/v1/users/:id` | – | 204 (soft delete + deactivate + revoke sessions), **409 for yourself**, **403 if the user's role is beyond the caller's permissions** | `users.delete` |
+| GET | `/api/v1/roles` | `?page=1&page_size=20&search=staff` | 200 + `meta` (with `permissions` and `user_count`) | `roles.view` **or** `users.create` **or** `users.update` |
+| GET | `/api/v1/roles/:id` | – | 200 (with `permissions` and `user_count`) | `roles.view` |
 | POST | `/api/v1/roles` | `{"name","description"}` | 201 | `roles.create` |
 | PATCH | `/api/v1/roles/:id` | `{"name","description"}` | 200 | `roles.update` |
 | DELETE | `/api/v1/roles/:id` | – | 204, **409 for the system role or while users have it** | `roles.delete` |
@@ -596,8 +637,10 @@ go test -run 'TestForecast|TestInsights' ./internal/service -v   # ML integratio
 go test ./internal/client -v                                     # the ML HTTP client (httptest)
 go test ./internal/auth -v                                       # JWT issue/parse/expiry/tampering, bcrypt, the catalog
 go test -run 'TestAuthService|TestUserService|TestRoleService' ./internal/service -v
+go test -run TestUserService_PrivilegeMatrix ./internal/service -v  # who may give/change/delete which role (60 cases)
 go test ./internal/handler -run 'TestAuthenticate|TestRequire' -v  # the middleware
-go test ./internal/router -v                                     # every route → its permission
+go test ./internal/handler -run 'TestRoleHandler|TestUserHandler' -v  # user_count in the JSON, the new 403s
+go test ./internal/router -v                                     # every route → its permission; GET /roles access matrix
 ```
 
 Smoke test against a real API. It needs Postgres, migrations, the seeded accounts and `go run ./cmd/api`, plus bash and curl (on Windows, use Git Bash):
@@ -606,13 +649,19 @@ Smoke test against a real API. It needs Postgres, migrations, the seeded account
 go run ./cmd/seed --auth-only    # once: roles + the Super Admin the script logs in as
 bash scripts/e2e.sh              # exit 1 on any failure
 ADMIN_EMAIL=... ADMIN_PASSWORD=... bash scripts/e2e.sh   # if you changed the admin credentials
+PORT=8090 go run ./cmd/api       # if 8080 is taken, then:
+API_URL=http://localhost:8090/api/v1 bash scripts/e2e.sh
+E2E_SKIP_CLEANUP=1 bash scripts/e2e.sh   # keep this run's users and roles for inspection
 ```
 
 The script logs in as the Super Admin first and sends that token on every request. It covers:
 - auth: 401 without or with a garbage token, wrong password vs. unknown email (same answer), refresh rotation (the old refresh token is single-use), logout then refresh (401), access and refresh tokens not interchangeable, and 5 parallel refreshes with one token (exactly one wins)
 - reuse detection, with a dedicated user and two sessions (phone, laptop): (a) the phone's refresh token works once, and its rotated successor works too (normal use never trips detection); (b) the phone's first token sent again gets a 401 that is byte-for-byte the answer to an ordinary failed refresh, **and** afterwards the laptop's refresh token and the phone's latest token are both refused, because every session of that user was revoked. The user can then log in again and refresh normally. Earlier sections trip the detection too (reusing a rotated or logged-out token, the losers of the parallel refresh race); they expect 401 either way, and the server log shows each detection
 - RBAC: a Staff user gets 403 on deletes, product creation and user/role management, but may create and confirm orders; a custom role whose permission list is replaced mid-session applies on the **same access token** at once (proof that nothing is cached); the Super Admin role can't be deleted, renamed or re-permissioned; nobody can deactivate, delete or re-role themselves; a deactivated user's live token and refresh token stop working immediately
-- guardrails: a user manager (all `users.*`, not a Super Admin) can create Staff users but gets 403 when creating or promoting a Super Admin, or when changing, deactivating or deleting one, and 409 when promoting themselves. A role manager (holds `roles.assign_permissions`) can grant what it holds, but gets 403 for anything else, on another role or its own, and the role is unchanged afterwards. A role whose only user is soft-deleted still can't be deleted. Two Super Admins demote each other in parallel for 5 rounds, and each round must end with exactly one winner and one Super Admin. At the HTTP level the loser is almost always stopped by its own permission check (403) before reaching the lock; the lock itself is proven by the `Guardrail` integration test below
+- no `user_count` in a role embedded in a user: `POST /users`, `GET /users`, `GET /users/:id`, `PATCH /users/:id` (keeping and changing the role), `POST /auth/login` and `GET /auth/me`
+- `user_count`: 0 on a new role; 3 after three users get it, in both the list and the detail; still 3 after one is deactivated and another soft-deleted; the 409 on delete quotes the same 3; 2 once a user moves to another role
+- roles list for a user manager (`users.create`/`users.update`, no `roles.view`): `GET /roles` 200 with `user_count`, but `GET /roles/:id`, `GET /permissions` and `POST /roles` 403. `users.view` alone and Staff get 403 on `GET /roles`, naming all three permissions (in both languages)
+- guardrails: a user manager (all `users.*` plus Staff's permissions, not a Super Admin) can create Staff users but gets 403 when creating or promoting a Super Admin, or when changing, deactivating or deleting one, and 409 when promoting themselves. Against a "Power" role holding two permissions the user manager lacks, it gets 403 for creating a Power user, giving the Power role, resetting a Power user's password (the new password then doesn't log in, the old one still does), deactivating, demoting and deleting one; a weaker manager with only `users.*` gets 403 even for Staff. Renaming a Staff user and editing their own account still work. A role manager (holds `roles.assign_permissions`) can grant what it holds, but gets 403 for anything else, on another role or its own, and the role is unchanged afterwards. A role whose only user is soft-deleted still can't be deleted. Two Super Admins demote each other in parallel for 5 rounds, and each round must end with exactly one winner and one Super Admin. At the HTTP level the loser is almost always stopped by its own permission check (403) before reaching the lock; the lock itself is proven by the `Guardrail` integration test below
 - Category, Product↔Category and Inventory, including 20 concurrent OUTs
 - Customers
 - the full sales order flow: create → confirm (stock down) → cancel (stock back) → ship, invalid transitions, and a rollback when one item is short
@@ -621,27 +670,30 @@ The script logs in as the Super Admin first and sends that token on every reques
 - forecasting: if the ML service answers on `/health`, the script asserts the happy path (`forecast_available: true`, 7 predicted days per product, an Indonesian `summary` per product). **If it does not answer, the script switches to the degradation checks instead** — 200 with `forecast_available: false` and a per-product error — so running it twice, once with the ML service up and once with it stopped, covers both paths.
 - concurrency: 5 orders racing for the same stock, one order confirmed 10× in parallel, and 20 parallel creates with unique order numbers
 
-It creates uniquely named data and soft-deletes products and categories at the end. Stock movements, inventory rows, orders and customers with orders stay behind.
+It creates uniquely named data and soft-deletes products and categories at the end. Stock movements, inventory rows, orders and customers with orders stay behind. Its users and roles are hard-deleted at the very end with `go run ./cmd/seed --clean-e2e-run=$RUN` (so it needs Go and this `.env` pointing at the API's database), and the last checks confirm no role or user of the run is left; `E2E_SKIP_CLEANUP=1` skips that step.
 
-The analytics SQL has its own tests against a real Postgres, because "only CONFIRMED and SHIPPED count" lives in the queries and a mock can't prove it. They skip unless `TEST_DATABASE_URL` is set, and run inside a transaction that is rolled back, so the database keeps its data:
+The analytics and role SQL have their own tests against a real Postgres, because "only CONFIRMED and SHIPPED count" and "user_count includes soft-deleted users, in one query" live in the queries and a mock can't prove them. They skip unless `TEST_DATABASE_URL` is set, and run inside a transaction that is rolled back, so the database keeps its data:
 
 ```bash
 TEST_DATABASE_URL="postgres://inventory:...@localhost:5432/inventory_intel?sslmode=disable" \
-  go test ./internal/repository -run 'Analytics|Guardrail' -v
+  go test ./internal/repository -run 'Analytics|Guardrail|RoleRepository' -v
 ```
+
+The `RoleRepository` tests seed a role with no user, one with an active, an inactive and a soft-deleted user (3), and one with only a soft-deleted user (1), and check `user_count` through both `FindByID` and `List`, and that exactly the non-zero ones are refused by the foreign key. A GORM logger records every statement: one role or three, `List` runs the same three statements, and only one of them reads `users` (inside the role `SELECT`, without a `deleted_at` filter). They also check that the locked user handed to the service's mutation carries its role's permission keys, which the "only what you hold" rule compares.
 
 The `Guardrail` tests cover the two access-control rules that live in the database, where a mock proves nothing. They need two connections that really commit, so instead of a rolled-back transaction each test creates a throwaway schema (`itest_guardrail_<nanos>`), migrates it, and drops it at the end.
 
 - `TwoSuperAdminsDemotingEachOther`: A's demotion of B is held open inside its transaction. B's demotion of A must then **wait** on the lock, and after A commits it must count one Super Admin (not two) and be refused. Removing `FOR UPDATE OF u` from `lockUser` makes this test fail.
 - `SuperAdminCountIgnoresInactiveAndDeleted`: inactive and soft-deleted Super Admins don't count toward "at least one remains".
-- `RoleOfSoftDeletedUserCantBeDeleted`: a soft-deleted user still counts in `CountUsers`, and the foreign key refuses the delete even without the service check.
+- `RoleOfSoftDeletedUserCantBeDeleted`: a soft-deleted user still counts in the role's `user_count`, and the foreign key refuses the delete even without the service check.
 - `RevokeAllForUser` (reuse detection): revokes exactly the victim's live tokens and reports how many. An already revoked token keeps its original `revoked_at`, and another user's session is untouched.
 
 Unit tests need no database. The service layer is tested with testify mocks of the repository interfaces.
 - Refresh-token rotation is tested against an in-memory store with the repository's semantics (`fakeSessions`), so the tests check behaviour: after a refresh, the old token is refused and the new one works exactly once.
 - Reuse detection (`TestAuthService_RefreshReuseRevokesEverySession`): two sessions of one user plus another user's session. The first use succeeds. Reusing the token returns an error identical to an ordinary failed refresh. Both other sessions of that user (including the rotated one) are then refused, the other user's session survives, and a fresh login works. `TestAuthService_RefreshFailuresThatAreNotReuse` checks that garbage, an access token, an unknown token and an expired token do **not** revoke anything. Replacing the revoke-all call with a no-op makes the first test fail.
 - The user mock's `Mutate`/`Delete` run the service's mutation on a copy with a given Super Admin count, and record whether the sessions were revoked.
-- The route→permission contract is a table in `internal/router/router_test.go`. It builds the real router with an authorizer that refuses everything and records what it was asked, then checks 401 without a token and the exact permission key for every route. A route with no entry fails the test.
+- The route→permission contract is a table in `internal/router/router_test.go`. It builds the real router with an authorizer that refuses everything and records what it was asked, then checks 401 without a token and the exact permission key for every route (for `GET /roles`, the three it accepts, in order). A route with no entry fails the test. `roles_access_test.go` then runs `GET /roles` and `GET /roles/:id` through the real router and the real `Authorize` (Super Admin bypass included) for callers holding `roles.view`, `users.create`, `users.update`, `users.view`, `users.delete`, nothing, or the system role.
+- `TestUserService_PrivilegeMatrix` is the escalation matrix: Super Admin / user manager covering Staff / user manager with only `users.*`, against Guest / Staff / Power / Super Admin roles, for create, assign role, reset password, deactivate and delete (60 cases). A refusal must save nothing and revoke no session. Disabling the guard (or one half of it) makes exactly the expected cells fail.
 - The inventory mock's `Mutate` runs the service's mutation against an in-memory row, the same way the real repository does inside its transaction.
 - The sales order tests use an in-memory store whose `InTx` runs the callback on a copy and commits it only on success. That lets the tests check that a failed confirm (short stock, or a write error half way) leaves stock, movements and status untouched.
 

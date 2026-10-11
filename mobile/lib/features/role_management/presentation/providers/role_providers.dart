@@ -4,7 +4,6 @@ import '../../../../core/network/dio_client.dart';
 import '../../data/datasources/role_remote_data_source.dart';
 import '../../data/repositories/role_repository_impl.dart';
 import '../../domain/repositories/role_repository.dart';
-import '../../domain/usecases/count_role_users.dart';
 import '../../domain/usecases/create_role.dart';
 import '../../domain/usecases/delete_role.dart';
 import '../../domain/usecases/get_permission_catalog.dart';
@@ -43,6 +42,3 @@ SetRolePermissions setRolePermissionsUseCase(Ref ref) => SetRolePermissions(ref.
 
 @Riverpod(keepAlive: true)
 GetPermissionCatalog getPermissionCatalogUseCase(Ref ref) => GetPermissionCatalog(ref.watch(roleRepositoryProvider));
-
-@Riverpod(keepAlive: true)
-CountRoleUsers countRoleUsersUseCase(Ref ref) => CountRoleUsers(ref.watch(roleRepositoryProvider));

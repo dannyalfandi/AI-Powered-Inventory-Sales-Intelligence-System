@@ -1,0 +1,5 @@
+# Shell scripts and Docker files are read by Linux (containers, Git Bash):
+# keep them LF even on Windows checkouts with core.autocrlf=true.
+*.sh            text eol=lf
+Dockerfile      text eol=lf
+.dockerignore   text eol=lf

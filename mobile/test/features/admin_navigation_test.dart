@@ -13,6 +13,7 @@ import 'package:inventory_intel/features/role_management/presentation/screens/ro
 import 'package:inventory_intel/features/role_management/presentation/screens/role_permission_editor_screen.dart';
 import 'package:inventory_intel/features/settings/presentation/screens/settings_screen.dart';
 import 'package:inventory_intel/features/user_management/presentation/providers/user_providers.dart';
+import 'package:inventory_intel/features/user_management/presentation/screens/user_form_screen.dart';
 import 'package:inventory_intel/features/user_management/presentation/screens/user_list_screen.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -65,6 +66,7 @@ void main() {
   group('the real router', () {
     late ProviderContainer container;
     late GoRouter router;
+    late MockRoleRepository roles;
 
     Future<void> start(WidgetTester tester, AuthUser user) async {
       SharedPreferences.setMockInitialValues({});
@@ -74,10 +76,9 @@ void main() {
       when(() => auth.currentUser()).thenAnswer((_) async => user);
       final dashboard = MockDashboardRepository();
       stubDashboard(dashboard);
-      final roles = MockRoleRepository();
+      roles = MockRoleRepository();
       when(() => roles.getRoles(page: any(named: 'page'), pageSize: any(named: 'pageSize')))
           .thenAnswer((_) async => rolePage([staffRole, gudangRole]));
-      when(() => roles.countUsers(any())).thenAnswer((_) async => 1);
       when(() => roles.getRole(any())).thenAnswer((_) async => gudangRole);
       when(() => roles.getPermissionCatalog()).thenAnswer((_) async => catalog);
       final users = MockUserRepository();
@@ -132,6 +133,55 @@ void main() {
         expect(location(), '/settings', reason: path);
         expect(find.byType(SettingsScreen), findsOneWidget);
       }
+    });
+
+    // GET /roles/:id and GET /permissions answer only to roles.view: without
+    // it, no path in the app may request them.
+    void expectNoRoleDetailRequests() {
+      verifyNever(() => roles.getRole(any()));
+      verifyNever(() => roles.getPermissionCatalog());
+    }
+
+    testWidgets('a user manager (users.*, no roles.*): the user form loads the role list, never the detail', (tester) async {
+      await start(tester, userWith({...Permissions.userManagement}));
+
+      router.go('/admin/users/new');
+      await tester.pumpAndSettle();
+      expect(find.byType(UserFormScreen), findsOneWidget);
+      verify(() => roles.getRoles(page: any(named: 'page'), pageSize: any(named: 'pageSize'))).called(greaterThan(0));
+
+      for (final path in ['/admin/roles', '/admin/roles/3', '/admin/roles/3/permissions']) {
+        router.go(path);
+        await tester.pumpAndSettle();
+        expect(location(), '/settings', reason: path);
+      }
+      expectNoRoleDetailRequests();
+    });
+
+    testWidgets('roles.create + users.create, no roles.view: the list opens, a row leads nowhere', (tester) async {
+      await start(tester, userWith({Permissions.rolesCreate, Permissions.usersCreate}));
+
+      router.go('/admin/roles');
+      await tester.pumpAndSettle();
+      expect(find.byType(RoleListScreen), findsOneWidget);
+      await tester.tap(find.text('Gudang'));
+      await tester.pumpAndSettle();
+      expect(location(), '/admin/roles');
+
+      router.go('/admin/roles/3');
+      await tester.pumpAndSettle();
+      expect(location(), '/settings');
+      expectNoRoleDetailRequests();
+    });
+
+    testWidgets('roles.assign_permissions without roles.view: the editor does not open', (tester) async {
+      await start(tester, userWith({Permissions.rolesAssignPermissions, Permissions.rolesUpdate}));
+      for (final path in ['/admin/roles/3', '/admin/roles/3/permissions']) {
+        router.go(path);
+        await tester.pumpAndSettle();
+        expect(location(), '/settings', reason: path);
+      }
+      expectNoRoleDetailRequests();
     });
 
     testWidgets('roles.view without roles.assign_permissions: the list opens, the editor does not', (tester) async {

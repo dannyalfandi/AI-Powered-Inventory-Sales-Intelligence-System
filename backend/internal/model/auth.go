@@ -18,6 +18,19 @@ type Role struct {
 	Name        string `gorm:"size:100;not null;uniqueIndex" json:"name"`
 	Description string `gorm:"type:text" json:"description"`
 	IsSystem    bool   `gorm:"not null;default:false" json:"is_system"`
+	// UserCount is how many users reference the role, soft-deleted users
+	// included — the same number that makes DELETE /roles/:id answer 409.
+	// Deleted users keep role_id as history and users.role_id is ON DELETE
+	// RESTRICT, so the database itself refuses to delete a role while any
+	// user row (deleted or not) points at it; counting fewer would show 0
+	// for a role that can't be deleted. Computed by the repository in the
+	// same query that loads the role (read-only, no column).
+	//
+	// A pointer so that it can be absent: every role endpoint sets it (0
+	// included), and a role embedded in a user never carries it (GET /users
+	// loads it without the count; the user service drops it on create and
+	// update) — it must not claim a "user_count" there.
+	UserCount *int64 `gorm:"->;-:migration" json:"user_count,omitempty"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -47,7 +60,8 @@ type RolePermission struct {
 
 // User is someone who can log in. Email is stored lowercase and is unique
 // among users that aren't deleted. A deleted user is also deactivated, and
-// keeps its role_id for history.
+// keeps its role_id for history — which is why the role stays undeletable
+// (OnDelete:RESTRICT below) and why Role.UserCount counts deleted users.
 type User struct {
 	ID           uint   `gorm:"primaryKey" json:"id"`
 	Email        string `gorm:"size:255;not null;uniqueIndex:idx_users_email_active,where:deleted_at IS NULL" json:"email"`

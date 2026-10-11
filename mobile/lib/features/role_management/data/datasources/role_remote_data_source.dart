@@ -20,9 +20,6 @@ abstract interface class RoleRemoteDataSource {
   Future<RoleModel> setPermissions(int id, SetRolePermissionsRequest body);
 
   Future<List<CatalogPermissionModel>> fetchPermissions();
-
-  /// `meta.total` of GET /users?role_id=…&page_size=1.
-  Future<int> countUsers(int roleId);
 }
 
 class RoleRemoteDataSourceImpl implements RoleRemoteDataSource {
@@ -66,15 +63,6 @@ class RoleRemoteDataSourceImpl implements RoleRemoteDataSource {
     return (res.data!['data'] as List<dynamic>)
         .map((e) => CatalogPermissionModel.fromJson(e as Map<String, dynamic>))
         .toList();
-  }
-
-  @override
-  Future<int> countUsers(int roleId) async {
-    final res = await _dio.get<Map<String, dynamic>>(
-      ApiConstants.usersPath,
-      queryParameters: {'role_id': roleId, 'page_size': 1},
-    );
-    return PageMetaModel.fromJson(res.data!['meta'] as Map<String, dynamic>).total;
   }
 
   RoleModel _unwrap(Response<Map<String, dynamic>> res) => RoleModel.fromJson(res.data!['data'] as Map<String, dynamic>);

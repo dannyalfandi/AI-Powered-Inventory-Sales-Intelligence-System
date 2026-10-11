@@ -62,14 +62,20 @@ abstract class _$RoleList extends $AsyncNotifier<List<Role>> {
   }
 }
 
-/// Every role, for the user form's role picker. Invalidated whenever roles
-/// are created, renamed or deleted.
+/// Every role, for the user form's role picker and for deciding which users
+/// the caller may manage (see `grant_scope.dart`). Invalidated whenever roles
+/// are created, renamed, re-permissioned or deleted. GET /roles answers for
+/// `Permissions.roleList` (roles.view, users.create or users.update); callers
+/// without one of those must not watch this.
 
 @ProviderFor(roleOptions)
 final roleOptionsProvider = RoleOptionsProvider._();
 
-/// Every role, for the user form's role picker. Invalidated whenever roles
-/// are created, renamed or deleted.
+/// Every role, for the user form's role picker and for deciding which users
+/// the caller may manage (see `grant_scope.dart`). Invalidated whenever roles
+/// are created, renamed, re-permissioned or deleted. GET /roles answers for
+/// `Permissions.roleList` (roles.view, users.create or users.update); callers
+/// without one of those must not watch this.
 
 final class RoleOptionsProvider
     extends
@@ -79,8 +85,11 @@ final class RoleOptionsProvider
           FutureOr<List<Role>>
         >
     with $FutureModifier<List<Role>>, $FutureProvider<List<Role>> {
-  /// Every role, for the user form's role picker. Invalidated whenever roles
-  /// are created, renamed or deleted.
+  /// Every role, for the user form's role picker and for deciding which users
+  /// the caller may manage (see `grant_scope.dart`). Invalidated whenever roles
+  /// are created, renamed, re-permissioned or deleted. GET /roles answers for
+  /// `Permissions.roleList` (roles.view, users.create or users.update); callers
+  /// without one of those must not watch this.
   RoleOptionsProvider._()
     : super(
         from: null,
@@ -107,89 +116,6 @@ final class RoleOptionsProvider
 }
 
 String _$roleOptionsHash() => r'e1e5f88cfe29b8ef6c7db3ff749b45f088b4ca0b';
-
-/// How many users have the role (non-deleted; from GET /users). Only watched
-/// by users who hold `users.view` — the call needs it.
-
-@ProviderFor(roleUserCount)
-final roleUserCountProvider = RoleUserCountFamily._();
-
-/// How many users have the role (non-deleted; from GET /users). Only watched
-/// by users who hold `users.view` — the call needs it.
-
-final class RoleUserCountProvider
-    extends $FunctionalProvider<AsyncValue<int>, int, FutureOr<int>>
-    with $FutureModifier<int>, $FutureProvider<int> {
-  /// How many users have the role (non-deleted; from GET /users). Only watched
-  /// by users who hold `users.view` — the call needs it.
-  RoleUserCountProvider._({
-    required RoleUserCountFamily super.from,
-    required int super.argument,
-  }) : super(
-         retry: null,
-         name: r'roleUserCountProvider',
-         isAutoDispose: true,
-         dependencies: null,
-         $allTransitiveDependencies: null,
-       );
-
-  @override
-  String debugGetCreateSourceHash() => _$roleUserCountHash();
-
-  @override
-  String toString() {
-    return r'roleUserCountProvider'
-        ''
-        '($argument)';
-  }
-
-  @$internal
-  @override
-  $FutureProviderElement<int> $createElement($ProviderPointer pointer) =>
-      $FutureProviderElement(pointer);
-
-  @override
-  FutureOr<int> create(Ref ref) {
-    final argument = this.argument as int;
-    return roleUserCount(ref, argument);
-  }
-
-  @override
-  bool operator ==(Object other) {
-    return other is RoleUserCountProvider && other.argument == argument;
-  }
-
-  @override
-  int get hashCode {
-    return argument.hashCode;
-  }
-}
-
-String _$roleUserCountHash() => r'1cd3d5bc7aaedff992f882849184fa774010cfe6';
-
-/// How many users have the role (non-deleted; from GET /users). Only watched
-/// by users who hold `users.view` — the call needs it.
-
-final class RoleUserCountFamily extends $Family
-    with $FunctionalFamilyOverride<FutureOr<int>, int> {
-  RoleUserCountFamily._()
-    : super(
-        retry: null,
-        name: r'roleUserCountProvider',
-        dependencies: null,
-        $allTransitiveDependencies: null,
-        isAutoDispose: true,
-      );
-
-  /// How many users have the role (non-deleted; from GET /users). Only watched
-  /// by users who hold `users.view` — the call needs it.
-
-  RoleUserCountProvider call(int roleId) =>
-      RoleUserCountProvider._(argument: roleId, from: this);
-
-  @override
-  String toString() => r'roleUserCountProvider';
-}
 
 /// The fixed permission catalog, descriptions in the app's language.
 

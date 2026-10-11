@@ -45,6 +45,33 @@ class AuthController extends _$AuthController {
     state = AsyncData(user);
   }
 
+  /// Re-reads `/auth/me` so a role whose permissions changed on the server
+  /// takes effect without logging in again: tabs, sections and buttons follow
+  /// the new state, and the router moves off a tab that is no longer allowed.
+  ///
+  /// The call goes through the same client as everything else, so an expired
+  /// access token is refreshed by the shared single-flight refresher on the
+  /// way. Failures keep the current state: offline or a 5xx changes nothing,
+  /// and a 401 has already ended the session through the network layer
+  /// ([sessionEndedProvider]). Use [PermissionRefresher], which throttles and
+  /// debounces, rather than calling this directly.
+  Future<void> refreshPermissions() async {
+    final before = state.value;
+    if (before == null) return;
+    final AuthUser? fresh;
+    try {
+      fresh = await ref.read(getCurrentUserUseCaseProvider)();
+    } on Failure {
+      return;
+    }
+    // No tokens (null), or logged out / someone else logged in while the
+    // call was in flight: this answer is about a session that is gone.
+    final now = state.value;
+    if (!ref.mounted || fresh == null || now == null || now.id != fresh.id) return;
+    // Unchanged → no new state, so nothing rebuilds and the router stays put.
+    if (fresh != now) state = AsyncData(fresh);
+  }
+
   /// Revokes the session on the server (best effort), forgets the tokens,
   /// and clears the user. Works offline.
   Future<void> logout() async {
