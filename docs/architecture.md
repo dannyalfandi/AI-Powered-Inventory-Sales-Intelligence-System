@@ -11,17 +11,23 @@ Products → Inventory → Sales Orders → Customers → Sales Data → Analyti
 ## 2. System Architecture
 
 ```
-Flutter (mobile) → Go REST API (Gin) → PostgreSQL
-                          ↓
-                    Redis (cache/queue)
-                          ↓
-               Python FastAPI (ML service)
-                          ↓
-                  Forecasting / Insight
+Flutter (mobile)
+      │  REST + Bearer JWT + Accept-Language
+      ▼
+Go REST API (Gin + GORM) ───────────────▶ PostgreSQL (hanya Go yang mengakses)
+      │
+      ├── cache ────────────────────────▶ Redis (cache saja)
+      │
+      └── REST JSON sinkron ────────────▶ Python FastAPI (ML service, stateless)
+          POST /forecast/demand,             forecast (moving average)
+          POST /insight/trend                + trend insight
+          (history harian di body)
 ```
 
+Panah menunjuk dari pemanggil ke yang dipanggil. Go memanggil ML service langsung (`internal/client/ml_service_client.go`, `ML_SERVICE_URL`); Redis tidak berada di antara Go dan Python, dan ML service tidak mengakses Redis maupun Postgres.
+
 - **Backend (Go/Gin/GORM):** REST API, satu-satunya service yang bicara langsung ke Postgres.
-- **Redis:** cache (dashboard aggregates) + queue (job forecasting async, misal `asynq`).
+- **Redis:** hanya cache (`pkg/cache`, lewat `go-redis`): agregasi dashboard summary + sales-trend (`ANALYTICS_CACHE_TTL`, default 5 menit) dan laporan forecast/insight yang 100% sukses (`FORECAST_CACHE_TTL`, default 10 menit). Tidak ada queue: forecast dihitung sinkron di dalam request.
 - **ML Service (Python/FastAPI):** stateless, tidak akses DB langsung — menerima data historis dari Go backend via request, mengembalikan hasil forecast/insight. Alasan: memisahkan concern (Go = source of truth, Python = komputasi), dan mudah dijelaskan saat interview.
 - **Mobile (Flutter):** satu-satunya consumer API untuk end user, tidak ada web frontend terpisah di fase awal.
 
@@ -49,34 +55,39 @@ Flutter ──Accept-Language: en──> Go API ──"lang":"en"──> ML serv
 - **ML service**: bahasa dikirim Go sebagai field `"lang"` di body (bukan header), karena Go sudah menyelesaikan negosiasi Accept-Language. Katalognya di `app/core/i18n.py`.
 - **Yang TIDAK diterjemahkan**: `code` (`validation_failed`, `conflict`, `not_found`), nama field (`category_id`, `items[0].quantity`), nilai enum (`PENDING`, `increasing`), SKU, nama produk, angka, dan teks yang tersimpan di DB (`stock_movements.reason` = jejak audit). Klien tetap bisa mencocokkan hal-hal itu.
 - **Default `id`** dipilih supaya klien lama yang tidak mengirim header tidak berubah perilakunya. Flutter app **selalu** mengirim header eksplisit, jadi tidak bergantung pada fallback ini — default app-nya English.
-- **Flutter**: `flutter_localizations` + ARB (`lib/l10n/app_en.arb` template + `app_id.arb`, 380 key) untuk label app; `AcceptLanguageInterceptor` mengirim bahasa aktif di setiap request Dio (dibaca per-request dari `languageControllerProvider`, jadi ganti bahasa langsung berlaku di panggilan berikutnya). Pilihan bahasa ada di halaman **Settings** (dibuka dari app bar Dashboard, bukan tab ke-6) dan disimpan di `shared_preferences`.
+- **Flutter**: `flutter_localizations` + ARB (`lib/l10n/app_en.arb` template + `app_id.arb`, 380 key) untuk label app; `AcceptLanguageInterceptor` mengirim bahasa aktif di setiap request Dio (dibaca per-request dari `languageControllerProvider`, jadi ganti bahasa langsung berlaku di panggilan berikutnya). Pilihan bahasa ada di halaman **Settings** (dibuka dari ikon di app bar setiap tab, `shared/widgets/settings_action.dart`; bukan tab tersendiri) dan disimpan di `shared_preferences`.
 - **Pembagian tanggung jawab di klien**: kalimat dari backend **ditampilkan apa adanya** (sudah diterjemahkan lewat `Accept-Language`); error yang dibuat app sendiri membawa `FailureIssue`/`FieldIssue` bertipe dan dirender dari ARB. Karena itu `domain/` tetap bebas Flutter. Ini menghapus 3 regex lama yang mencocokkan kalimat berbahasa Inggris (`used by (\d+) product`, `has (\d+) sales order`, `(\d+) available, (\d+) requested`) — regex tersebut berhenti cocok begitu server menjawab dalam bahasa Indonesia. Nama field (`items[1].quantity`) tetap di-parse karena bagian dari kontrak API dan tidak pernah diterjemahkan.
 - **Format angka di klien**: nominal tetap Rupiah bergaya `id_ID` (`Rp 45.000`) di kedua bahasa, tanggal tetap numerik (`20/09/2026`), sedangkan angka desimal biasa ikut bahasa (`1.5` vs `1,5`).
 - Test menjaga katalog tetap lengkap: setiap key wajib ada di kedua bahasa dengan jumlah placeholder yang sama (Go: `internal/i18n/i18n_test.go`, Python: `tests/test_i18n.py`). Di Flutter, widget test menegaskan _key ARB mana_ yang muncul (bukan kalimatnya), dan helper pesan error dijalankan untuk kedua locale (`test/helpers/l10n_harness.dart`).
 
 ## 4. Data Flow — Forecasting Pipeline
 
-1. Go backend mengumpulkan sales history per product (aggregated daily/weekly) dari Postgres.
-2. Go backend mengirim data historis ke FastAPI ML service (REST call).
-3. ML service menjalankan model (moving average → linear regression, upgrade path ke model lain nanti) dan mengembalikan hasil prediksi.
-4. Go backend menyimpan hasil (atau cache di Redis) dan mengekspos ke Flutter via endpoint insight/forecast.
-5. Insight text ("Product A naik 32% dalam 4 minggu") di-generate dari hasil ini — rule-based dulu, upgrade ke LLM call di fase lanjut kalau diperlukan.
+1. Go backend mengambil produk terlaris di rentang yang diminta, lalu menyusun history penjualan **harian** semua produk itu dalam satu query SQL (`ProductDailySales` di `internal/repository/analytics_repository.go`).
+2. Go backend mengirim history tiap produk ke ML service lewat REST JSON sinkron (`internal/client/ml_service_client.go`), paralel maksimal 8 sekaligus (`maxForecastConcurrency`).
+3. ML service menghitung forecast dengan **moving average** (window default 7 hari, proyeksi datar; horizon default 7, maksimal 90 dari Go). Model ada di balik `Forecaster` protocol + registry (`app/services/forecasting.py`); saat ini registry hanya berisi `moving_average`.
+4. Hasil **tidak disimpan ke database**. Go hanya meng-cache laporan yang 100% sukses di Redis selama `FORECAST_CACHE_TTL` (default 10 menit; `0` mematikan cache), dengan kunci `analytics:v1:forecast:<from>:<to>:<jumlah produk>:<horizon>` dan `analytics:v1:insights:<from>:<to>:<jumlah produk>`. Laporan yang sebagian gagal tidak di-cache. Flutter membacanya lewat `GET /api/v1/analytics/forecast` dan `/insights`.
+5. Insight text dihitung statistik di ML service (`app/services/trend.py`): total periode terakhir dibandingkan periode sebelumnya yang sama panjang (window default 14 hari, dipendekkan kalau history kurang), dan perubahan di bawah 5% dianggap stabil. Kalimatnya dari template dua bahasa, belum memakai LLM.
 
 ## 5. Repo Structure
 
 ```
 /backend        → Go (Gin, GORM, clean architecture: handler/service/repository)
 /mobile         → Flutter app
-/ml-service     → Python FastAPI + notebooks eksperimen model
-/infra          → docker-compose, GitHub Actions workflows
-/docs           → dokumen ini, ERD, API spec
+/ml-service     → Python FastAPI (forecasting + trend insight, stateless)
+/infra          → docker-compose (Postgres, Redis, ML service; profile app dan seed)
+/docs           → architecture.md (dokumen ini), ml-service-contract.md, PRESENTATION.md, screenshots/
+/.github/workflows → ci.yml dan e2e.yml (GitHub Actions)
 ```
 
 ## 6. Status
 
 > Update bagian ini setiap milestone selesai.
 
+Angka di dalam item-item di bawah (jumlah test, hasil e2e, jumlah key, dsb.) adalah catatan saat milestone itu selesai dan tidak diperbarui setelahnya; angka terkini ada di `CLAUDE.md` §8 "Angka Terukur".
+
 - [x] Infra: docker-compose Postgres + Redis + healthcheck, `/infra/.env.example`, `/infra/README.md` — **selesai**
+- [x] Docker untuk semua service — **selesai**. `docker compose up` menyalakan Postgres, Redis, dan ML service (`ml-service/Dockerfile`). Profile `app` menambah `migrate` (one-shot) dan Go API (`backend/Dockerfile`, satu image untuk api/migrate/seed); profile `seed` mengisi data demo. `JWT_SECRET` hanya wajib untuk profile `app`; port host lewat `POSTGRES_PORT` / `REDIS_PORT` / `ML_PORT` / `API_PORT`. Detail: `infra/README.md`.
+- [x] CI/CD (GitHub Actions) — **selesai**. `.github/workflows/ci.yml`: `go vet` + `go test` ke Postgres asli (gagal kalau ada test yang di-skip), `pytest`, `flutter analyze` + `flutter test`, `docker compose config` untuk ketiga mode; di pull request hanya job yang foldernya berubah. `.github/workflows/e2e.yml`: pada push ke `master`, membangun stack `--profile app`, seed, lalu `scripts/e2e.sh` dengan `E2E_SKIP_CLEANUP=1` (314 check).
 - [x] Backend: scaffold Go (handler/service/repository) + koneksi Postgres/Redis — **selesai** (`/health` 200, Product CRUD sebagai template slice, migration via `go run ./cmd/migrate`, unit test service/config/health)
 - [x] Core CRUD: Products, Category, Inventory, Stock Movement — **selesai di backend** (Category CRUD + tolak delete 409 selama masih dipakai produk; `products.category_id` nullable FK; Inventory 1-1 per produk + `stock_movements` immutable IN/OUT/ADJUSTMENT dalam satu transaction dengan row lock, stok tidak bisa negatif (CHECK + validasi service); endpoint low-stock; unit test service; dicoba end-to-end: `go run ./cmd/migrate` ke Postgres asli + 48 skenario HTTP ke API asli termasuk 20 OUT paralel). Layar Flutter: lihat item "Flutter: Category & Inventory".
 - [x] Sales Order & Customer — **selesai di backend** (Customer CRUD + tolak delete 409 selama ada order yang belum CANCELLED; Sales Order dengan snapshot harga, nomor `SO-YYYYMMDD-NNNN` dari counter per hari dalam transaksi yang sama, state machine PENDING→CONFIRMED→SHIPPED / →CANCELLED; stok dikurangi saat CONFIRMED dan dikembalikan saat CONFIRMED→CANCELLED, semua item dalam satu transaksi dengan row lock (order + inventory urut `product_id`), gagal satu item = rollback semua + 422 per item; `stock_movements.sales_order_id` untuk jejak. Unit test service (state machine lengkap 4×4, rollback, stok cukup/kurang, cancel mengembalikan stok). Dicoba end-to-end: migrate ke Postgres asli + `scripts/e2e.sh` 105/105 dua kali, termasuk 5 order berebut stok yang sama secara paralel (tepat 3 sukses), 1 order di-confirm 10× paralel (stok berkurang sekali), 20 create paralel (nomor unik tanpa celah); invariant DB dicek via SQL: saldo stok = replay movement, tidak ada stok negatif.) Layar Flutter: lihat item "Flutter: Customer & Sales Order".
@@ -89,7 +100,7 @@ Flutter ──Accept-Language: en──> Go API ──"lang":"en"──> ML serv
 - [x] Low-stock detection (threshold-based) — **selesai** (backend `GET /api/v1/inventory/low-stock`, threshold per produk + default `LOW_STOCK_DEFAULT_THRESHOLD`; di Flutter dibuka dari kartu badge di Dashboard, dicoba di emulator)
 - [x] ML service: forecasting sederhana — **selesai, termasuk integrasi ke Go backend** (`/ml-service`: FastAPI stateless, tidak akses Postgres — semua history dikirim Go di request body. Endpoint `POST /forecast/demand` (moving average, window default 7 hari, horizon default 7, proyeksi datar; model di balik `Forecaster` protocol + registry supaya bisa diganti regresi tanpa ubah kontrak API), `POST /insight/trend`, `GET /health`; hari tanpa penjualan diisi 0, minimal 3 data point / 4 hari, envelope error 422 disamakan dengan Go; 53 test pytest. Kontrak: `docs/ml-service-contract.md`. Integrasi Go (sinkron, on-demand saat dashboard dibuka, bukan cron): `internal/client/ml_service_client.go` + endpoint `GET /api/v1/analytics/forecast` dan `/insights` yang mengambil produk terlaris (reuse query top-products), menyusun history harian gap-filled untuk semua produk dalam SATU query SQL (`ProductDailySales`), lalu memanggil ML service paralel (errgroup, maksimal 8 bersamaan). Config baru `ML_SERVICE_URL`, `ML_SERVICE_TIMEOUT` (5 detik), `FORECAST_CACHE_TTL` (10 menit, hanya laporan yang 100% sukses yang di-cache). **Graceful degradation**: satu produk gagal → hanya produk itu yang punya field `error`; ML service mati total → tetap HTTP 200 dengan `forecast_available:false` / `insights_available:false`, bukan 500. Test: unit test client dengan `httptest` (422, 500, 503, 404, body rusak, connection refused, timeout, context dibatalkan) + unit test service dengan client palsu (sukses semua, partial failure 3 dari 4, total failure, caching, paralelisme dibuktikan lewat barrier). Dicoba end-to-end dengan dua service asli: `scripts/e2e.sh` 146/146 saat ML service hidup (angka forecast + kalimat insight nyata) dan 140/140 saat ML service dimatikan (semua section degrade, analytics lain tetap normal); cache diverifikasi: panggilan kedua tidak menambah request ke ML service.)
 - [x] AI-generated insight — **selesai dalam bentuk rule-based/statistik** (`GET /api/v1/analytics/insights` menghasilkan kalimat per produk seperti "Penjualan naik 32,0% dalam 4 minggu terakhir (1848 unit vs 1400 unit periode sebelumnya)." — persis contoh insight di rencana awal. Perhitungan murni statistik di ML service (bandingkan 14 hari terakhir vs 14 hari sebelumnya, ambang stabil 5%), **belum memakai LLM**; upgrade ke natural language via LLM tetap terbuka sebagai fase terpisah kalau diperlukan.)
-- [x] i18n bahasa (Indonesia/English) lewat `Accept-Language` — **selesai** (paket `backend/internal/i18n` dengan 47 key pesan; seluruh pesan di service layer Go (product, category, inventory, customer, sales order, analytics) dan envelope handler sekarang dirender dari katalog, bukan string literal; ML service punya katalog sendiri di `app/core/i18n.py` untuk kalimat insight dan pesan validasinya, dipilih lewat field `lang` yang diteruskan Go dari Accept-Language. Default `id` supaya klien lama tidak berubah; `Content-Language` dikirim balik. Test: 15 test i18n Go + test pesan dua bahasa per service, 27 test i18n Python; `scripts/e2e.sh` 159/159 termasuk 13 skenario id-vs-en.)
+- [x] i18n bahasa (Indonesia/English) lewat `Accept-Language` — **selesai** (paket `backend/internal/i18n` dengan katalog pesan `key → {id, en}` di `internal/i18n/catalog.go`; seluruh pesan di service layer Go (product, category, inventory, customer, sales order, analytics) dan envelope handler sekarang dirender dari katalog, bukan string literal; ML service punya katalog sendiri di `app/core/i18n.py` untuk kalimat insight dan pesan validasinya, dipilih lewat field `lang` yang diteruskan Go dari Accept-Language. Default `id` supaya klien lama tidak berubah; `Content-Language` dikirim balik. Test: 15 test i18n Go + test pesan dua bahasa per service, 27 test i18n Python; `scripts/e2e.sh` 159/159 termasuk 13 skenario id-vs-en.)
 - [x] Flutter: pemilih bahasa (Indonesia/English) — **kode selesai, menunggu verifikasi emulator oleh Danny**. `flutter_localizations` + `l10n.yaml` + `lib/l10n/app_en.arb`/`app_id.arb` (267 key, English sebagai template dan default app). Halaman **Settings** baru (route `/settings`, dibuka dari ikon di app bar — saat itu hanya di Dashboard, kini di setiap tab — bukan tab ke-6, karena bottom nav sudah penuh 5 tab), pilihan disimpan di `shared_preferences` (`app_language`) dan dibaca sebelum `runApp` supaya frame pertama sudah benar; ganti bahasa langsung berlaku tanpa restart. `AcceptLanguageInterceptor` mengirim bahasa aktif di setiap request Dio, jadi label app dan pesan server selalu sebahasa. Tiga regex bahasa-Inggris di `category_list_provider`, `customer_list_provider`, dan `sales_order_detail_provider` dihapus: backend hanya mengirim `code: "conflict"` tanpa `details` terstruktur, jadi kalimatnya dikutip apa adanya di dalam bingkai yang diterjemahkan; error buatan app sendiri memakai `FailureIssue`/`FieldIssue` bertipe. Test: `flutter analyze` bersih dan 329 test lulus (termasuk 14 test locale provider, 6 widget test Settings, 2 test header `Accept-Language`, dan helper error dijalankan di kedua locale).
 - [x] Auth & RBAC (backend + mobile) — **selesai** (verifikasi di emulator dilakukan Danny).
   - **Backend.** JWT access token 15 menit + refresh token 7 hari. Refresh token disimpan sebagai hash SHA-256 dan dirotasi setiap kali dipakai, di dalam satu transaksi dengan row lock. Ada **reuse detection**: refresh token yang sudah dicabut lalu dipakai lagi mencabut semua sesi user itu, dengan jawaban 401 yang identik dengan refresh gagal biasa.
@@ -99,7 +110,7 @@ Flutter ──Accept-Language: en──> Go API ──"lang":"en"──> ML serv
   - **Daftar role untuk user manager.** `GET /roles` (list) terbuka untuk `roles.view` **atau** `users.create` **atau** `users.update` (middleware `RequireAnyPermission`), supaya form user bisa memuat dropdown role. `GET /roles/:id`, `GET /permissions`, dan semua operasi tulis role tetap `roles.*` saja.
   - **`user_count` per role** di semua response role, dihitung dalam satu `SELECT` (subquery berkorelasi, bukan query per role). Definisinya **termasuk user yang sudah di-soft-delete**, karena `users.role_id` adalah `ON DELETE RESTRICT` dan user terhapus tetap menyimpan `role_id`. Akibatnya `user_count > 0` ⇔ `DELETE /roles/:id` menjawab 409, dan angka di pesan 409 sama dengan `user_count`.
   - **Seed.** Role Super Admin + Staff, akun `admin@example.com` / `admin12345` (atau `SEED_ADMIN_*`) dan `staff@example.com` / `staff12345`. `go run ./cmd/seed --clean-e2e-run=<run>` meng-hard-delete user dan role satu run e2e (dipanggil otomatis di akhir `scripts/e2e.sh`), jadi run e2e tidak lagi meninggalkan role "E2E …".
-  - **Test backend (run terakhir, 2026-10-09).** `go test ./...` dengan `TEST_DATABASE_URL` 831 lulus (115 fungsi test + subtest, tidak ada yang di-skip; tanpa `TEST_DATABASE_URL` 804 lulus dan 15 test SQL di-skip), termasuk race dua Super Admin saling demote yang dibuktikan deterministik dengan lock dan matriks eskalasi 60 kasus. `scripts/e2e.sh` 317/317 dengan ML hidup dan 309/309 dengan ML mati (API di port 8090).
+  - **Test backend (run terakhir, 2026-10-13).** `go test ./...` dengan `TEST_DATABASE_URL` 831 lulus (115 fungsi test + subtest, tidak ada yang di-skip; tanpa `TEST_DATABASE_URL` 804 lulus dan 15 test SQL di-skip), termasuk race dua Super Admin saling demote yang dibuktikan deterministik dengan lock dan matriks eskalasi 60 kasus. `scripts/e2e.sh` 317/317 dengan ML hidup dan 309/309 dengan ML mati (stack `docker compose --profile app`, API di port 8090). Run yang sama: pytest 80 lulus, `flutter test` 702 lulus; total 1.613 test otomatis.
   - **Mobile.** `SecureTokenStore` (Keychain / Android Keystore) di-load di `main()`, dengan `current` tetap sinkron dari cache in-memory. HTTP client melakukan refresh single-flight: banyak 401 serentak hanya menghasilkan satu `/auth/refresh`. 401 yang terlambat tidak me-refresh lagi, dan refresh yang jawabannya hilang tidak di-retry. Ini dicoba ke API asli dengan access token 3 detik: 6 refresh untuk 6 gelombang dan 0 reuse detection.
   - **UI.** Layar Login; `AuthController` + `currentUserProvider`. Sesi tersimpan divalidasi lewat `/auth/me` saat start. Sesi yang diakhiri server (dari request mana pun) mengarah ke `/login` lewat guard go_router, tanpa redirect berulang.
   - **Permission UI.** `ref.hasPermission(...)` **menyembunyikan** aksi yang tidak diizinkan: tambah/hapus/edit produk, kategori, pelanggan; catat pergerakan stok; buat pesanan; konfirmasi/kirim/batalkan pesanan. Settings menampilkan nama + role dan tombol Keluar.
@@ -125,10 +136,14 @@ Flutter ──Accept-Language: en──> Go API ──"lang":"en"──> ML serv
   - **Refresh izin.** `/auth/me` dibaca ulang saat app kembali ke foreground (throttle 60 detik, jam bisa diinjeksi lewat `clockProvider`) dan sekali setelah 403 dari endpoint bisnis (`ForbiddenInterceptor` → `permissionDeniedProvider`, debounce 800 ms; `/auth/*` tidak dihitung). Lewat Dio yang sama, jadi refresh token single-flight tetap berlaku. Jawaban baru memperbarui state auth sehingga tab, section, dan tombol ikut berubah, dan router memindahkan user dari tab yang tidak lagi diizinkan. Offline/5xx: state dipertahankan; 401: alur sesi berakhir yang sudah ada.
   - **Dua bug lama ikut diperbaiki.** (1) Mengetuk tab memicu "Duplicate GlobalKey" (`AnimatedSwitcher` membungkus `StatefulNavigationShell`); fade antartab sekarang di `navigatorContainerBuilder`. (2) Guard route membaca `currentUserProvider`, yang bisa masih berisi user lama saat router diberi tahu perubahan auth; guard sekarang membaca nilai yang sama dengan `authRedirect`.
   - **Test.** 702 lulus (sebelumnya 665): tab & Dashboard & deep link 21, refresh izin 16. Mutation test: matikan filter tab, matikan guard section Dashboard, matikan throttle, matikan guard route tab, kembalikan guard ke `currentUserProvider`, matikan debounce — semuanya membuat test gagal, lalu kode dikembalikan identik (sha256).
-- [x] Polish untuk demo interview — **belum mulai**
+- [x] Polish untuk demo interview — **selesai**
+  - **Mobile.** Dark mode dan 6 pilihan accent color (`shared/theme/app_accent.dart`), skeleton loading (`shared/widgets/skeleton.dart`), motion yang menghormati setting *reduce motion* (`shared/theme/app_motion.dart`), dan test kontras WCAG AA otomatis (`test/shared/theme/status_contrast_test.dart`).
+  - **Materi demo.** README dua bahasa dengan screenshot di `docs/screenshots/`, narasi interview di `docs/PRESENTATION.md`, lisensi MIT, serta Docker dan CI (lihat dua item di bagian atas Status).
 
-## 7. Open Decisions (belum final, diputuskan nanti)
+## 7. Open Decisions
 
-- State management Flutter: Riverpod vs Bloc — belum dipilih.
-- Queue library Go: `asynq` vs Redis Streams manual — belum dipilih.
+Semua keputusan yang dulu terbuka di sini sudah diambil; catatannya dibiarkan sebagai jejak alasan.
+
+- ~~State management Flutter: Riverpod vs Bloc~~ — **sudah final: Riverpod 3 dengan codegen** (`riverpod_annotation` + `riverpod_generator`). Alasannya: boilerplate lebih ringan untuk banyak resource CRUD, dependency injection lewat provider graph, `AsyncValue` untuk state loading/error/data dari REST, dan provider bisa di-test tanpa widget tree lewat `ProviderContainer`. Detail aturannya ada di `mobile/CLAUDE.md` §2.
+- ~~Library antrean job Go~~ — **tidak dibutuhkan saat ini**: forecast dan insight dihitung sinkron di dalam request lalu di-cache di Redis (lihat §4), jadi tidak ada job async yang perlu diantrekan.
 - ~~Format komunikasi Go ↔ ML service: REST JSON vs gRPC~~ — **sudah final: REST JSON, sinkron**, dipanggil on-demand saat dashboard dibuka (bukan queue/cron). Kontrak di `docs/ml-service-contract.md`. Kalau nanti jumlah produk per request naik banyak, opsi berikutnya adalah endpoint batch di ML service (satu request untuk N produk), bukan gRPC.

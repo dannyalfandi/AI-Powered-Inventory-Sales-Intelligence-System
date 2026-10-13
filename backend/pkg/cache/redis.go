@@ -1,4 +1,4 @@
-// Package cache opens the Redis connection used for caching and queues.
+// Package cache opens the Redis connection used for caching.
 package cache
 
 import (

@@ -46,7 +46,7 @@ services:
     image: redis:7-alpine
     container_name: ${COMPOSE_PROJECT_NAME:-inventory-intel}-redis
     restart: unless-stopped
-    # AOF persistence so queued jobs/cache survive restarts; password from .env.
+    # AOF persistence so the cache survives restarts; password from .env.
     command:
       [
         "redis-server",
