@@ -533,10 +533,29 @@ for id in "${RACE[@]}" $OC; do
 done
 
 echo "== Analytics: setup (own category, products and customer for exact numbers)"
-TODAY=$(date +%F)
-field() { grep -o "\"$1\":-\?[0-9]*" <<<"${2:-$body}" | head -1 | cut -d: -f2; }
-# The JSON object of one row, e.g. obj '"product_id":12' -> {...}
+# "Today" is the API's today: it groups sales by calendar day in APP_TIMEZONE,
+# which need not be the runner's zone (a UTC runner is a day behind Jakarta
+# from 17:00 to 24:00 UTC). A summary without dates ends on that day.
+req GET /analytics/summary
+TODAY=$(jstr to)
+if [ "$code" != 200 ] || ! [[ $TODAY =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+  echo "FATAL: can't read the API's current date from GET /analytics/summary -> $code $body"
+  exit 1
+fi
+echo "      the API's today: $TODAY"
+# days_before N -> the date N days before $TODAY (noon avoids DST edges)
+days_before() { date -d "$TODAY 12:00 $1 days ago" +%F; }
+# field KEY [JSON] -> the first integer of KEY. An explicit empty JSON (a row
+# that wasn't found) stays empty instead of falling back to the whole $body.
+field() { grep -o "\"$1\":-\?[0-9]*" <<<"${2-$body}" | head -1 | cut -d: -f2; }
+# The JSON object of one row, e.g. obj '"product_id":12,' -> {...}
 obj() { grep -o "{[^{}]*$1[^{}]*}" <<<"${2:-$body}" | head -1; }
+# pick KEY ID WHAT -> $row = the row of $body whose KEY is ID; when it is
+# missing, says so (the expects that follow then fail on an empty value).
+pick() {
+  row=$(obj "\"$1\":$2,")
+  [ -n "$row" ] || echo "      $3 ($1 $2) is not in the response for $TODAY: $body"
+}
 
 req POST /categories "{\"name\":\"E2E Analytics $RUN\"}";                                          ACAT=$(jid)
 req POST /products "{\"sku\":\"E2E-AN1-$RUN\",\"name\":\"E2E Analytics Kopi\",\"price\":10000,\"category_id\":$ACAT}"; AP1=$(jid)
@@ -571,17 +590,17 @@ req PATCH /sales-orders/$O4/status '{"status":"CANCELLED"}'; check "analytics or
 
 echo "== Analytics: top products (not cached, so exact)"
 req GET "/analytics/top-products?from=$TODAY&to=$TODAY&limit=50"; check "top-products" 200 '"products"'
-row=$(obj "\"product_id\":$AP1")
+pick product_id "$AP1" "e2e product AP1"
 expect "AP1 quantity (3 sold; 5 pending + 2 cancelled ignored)" "$(field quantity_sold "$row")" 3
 expect "AP1 revenue" "$(field revenue "$row")" 30000
-row=$(obj "\"product_id\":$AP2")
+pick product_id "$AP2" "e2e product AP2"
 expect "AP2 quantity (1 + 2 from two sold orders)" "$(field quantity_sold "$row")" 3
 expect "AP2 revenue" "$(field revenue "$row")" 75000
 grep -q "\"sku\":\"E2E-AN1-$RUN\"" <<<"$body" && { pass=$((pass+1)); echo "PASS  top-products carries the item snapshot SKU"; } || { fail=$((fail+1)); echo "FAIL  $body"; }
 
 echo "== Analytics: category breakdown (not cached, so exact)"
 req GET "/analytics/category-breakdown?from=$TODAY&to=$TODAY"; check "category-breakdown" 200 '"categories"'
-row=$(obj "\"category_id\":$ACAT")
+pick category_id "$ACAT" "e2e category"
 expect "our category revenue (only AP1)" "$(field revenue "$row")" 30000
 expect "our category quantity"           "$(field quantity_sold "$row")" 3
 grep -q '"category_id":null' <<<"$body" && { pass=$((pass+1)); echo "PASS  products without a category are grouped separately"; } || { fail=$((fail+1)); echo "FAIL  no null category bucket: $body"; }
@@ -605,7 +624,7 @@ else
 fi
 
 echo "== Analytics: trend shape and other endpoints"
-WEEK_AGO=$(date -d '-6 days' +%F)
+WEEK_AGO=$(days_before 6)
 req GET "/analytics/sales-trend?from=$WEEK_AGO&to=$TODAY&granularity=daily"; check "trend daily" 200 '"granularity":"daily"'
 expect "7 daily points, gaps filled with zeros" "$(grep -o '"period_start"' <<<"$body" | wc -l | tr -d ' ')" 7
 req GET "/analytics/sales-trend?from=$WEEK_AGO&to=$TODAY&granularity=weekly"; check "trend weekly" 200 '"granularity":"weekly"'
@@ -645,7 +664,7 @@ else
   # A range the happy path never uses: a successful report cached earlier
   # (FORECAST_CACHE_TTL) would otherwise be served and hide the outage.
   # Degraded reports are never cached, so this key stays empty.
-  DEGRADED="from=$(date -d '-25 days' +%F)&to=$TODAY"
+  DEGRADED="from=$(days_before 25)&to=$TODAY"
   req GET "/analytics/forecast?$DEGRADED&limit=3"
   check "forecast still answers 200 while the ML service is down" 200 '"forecast_available":false'
   check "each product carries its own error"                      200 '"error":"layanan forecasting sedang tidak tersedia"'
@@ -691,7 +710,7 @@ if curl -s -m 3 -o /dev/null -w '%{http_code}' "${ML_SERVICE_URL:-http://localho
   req GET "/analytics/insights?limit=2"
   check "insight summary in English"        200 '"summary":"Sales '
   LANG_HEADER=id
-  req GET "/analytics/insights?limit=2&from=$(date -d '-20 days' +%F)&to=$TODAY"
+  req GET "/analytics/insights?limit=2&from=$(days_before 20)&to=$TODAY"
   check "insight summary in Indonesian"     200 '"summary":"Penjualan'
   unset LANG_HEADER
 fi
