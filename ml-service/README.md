@@ -63,7 +63,7 @@ app/
   services/trend.py       period comparison + the Indonesian summary
 tests/                    pytest, table-driven like the Go service tests
                           (test_i18n.py covers both languages end to end)
-Dockerfile                multi-stage python:3.12-slim image (not wired into /infra yet)
+Dockerfile                multi-stage python:3.12-slim image (service `ml` in ../infra)
 ```
 
 Dependency direction: `main → services → models/core`. The services know
@@ -188,8 +188,24 @@ curl -X POST http://localhost:8000/insight/trend \
 
 ## Docker
 
-The image is ready but **not** wired into `../infra/docker-compose.yml` yet —
-that happens together with the Go integration.
+`docker compose up` in `../infra` builds this image and runs it as the service
+`ml`, published on the host at `localhost:${ML_PORT}` (default 8000). It has no
+profile, so it starts with Postgres and Redis:
+
+```bash
+cd ../infra
+docker compose up -d ml         # or plain `docker compose up -d` for the whole infra
+docker compose logs -f ml
+docker compose stop ml          # e.g. before running uvicorn on the host (same port)
+```
+
+Inside the compose network the Go API (profile `app`) reaches it at
+`http://ml:8000`; an API run on the host uses its default
+`ML_SERVICE_URL=http://localhost:8000`, which matches as long as `ML_PORT` stays
+8000. The compose healthcheck calls `GET /health` with Python's `urllib` (the
+image has no curl), and the `api` service waits for it to be healthy.
+
+Standalone, without compose:
 
 ```bash
 docker build -t inventory-ml-service .
@@ -197,5 +213,3 @@ docker run --rm -p 8000:8000 -e LOG_LEVEL=debug inventory-ml-service
 ```
 
 Multi-stage (`python:3.12-slim`), runs as a non-root user, and honours `PORT`.
-When it is added to compose, the Go backend reaches it at
-`http://ml-service:8000` and can use `/health` as the healthcheck.

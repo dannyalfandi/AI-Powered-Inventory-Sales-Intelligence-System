@@ -2,6 +2,8 @@
 
 # Inventory & Sales Intelligence Platform
 
+Built by **Danny Alfandi** · GitHub: [github.com/dannyalfandi](https://github.com/dannyalfandi)
+
 > **An inventory system that forecasts demand from historical sales.** It doesn't just record stock. It tells you which products are rising, which are falling, and roughly how many units will sell next week.
 
 A mini-ERP for a wholesale distributor: products, stock, customers and sales orders are managed from a mobile app, and the sales data is turned into an analytics dashboard, demand forecasts and business insights in two languages. Every user logs in and can only do what their role allows; roles and their permissions are managed from inside the app.
@@ -12,15 +14,9 @@ A mini-ERP for a wholesale distributor: products, stock, customers and sales ord
 
 ## Screenshots
 
-<!-- REPLACE with real screenshots. Save the PNGs under docs/screenshots/ with exactly these names.
-     Suggested capture: Pixel_9_Pro_XL emulator, data from `go run ./cmd/seed`, 30-day range. -->
-
 | Dashboard | Forecast & Insight | Order detail |
 |---|---|---|
 | ![Dashboard](docs/screenshots/dashboard.png) | ![Forecast & Insight](docs/screenshots/forecast-insight.png) | ![Sales Order](docs/screenshots/sales-order-detail.png) |
-
-<!-- REPLACE with a real GIF (optional, ≤ 5 MB): stop the ML service → the Forecast section turns "unavailable" while the other sections stay filled. -->
-![Graceful degradation demo](docs/screenshots/ml-degradation.gif)
 
 ---
 
@@ -48,7 +44,7 @@ Architecture decisions and their reasons: [docs/architecture.md](docs/architectu
 | Backend | Go 1.26 (`go.mod`), Gin, GORM, PostgreSQL 16, Redis 7 (go-redis), golang-jwt (HS256), bcrypt |
 | Mobile | Flutter (Dart `^3.13.2`), Riverpod 3 (codegen), go_router, Dio, freezed, fl_chart, flutter_secure_storage, ARB i18n |
 | ML / Data | Python 3.12+, FastAPI, Pydantic v2, pandas |
-| Infra | Docker Compose (Postgres + Redis), bash e2e script |
+| Infra | Docker Compose (Postgres, Redis, ML service; the Go API through profile `app`), GitHub Actions (CI + E2E), bash e2e script |
 
 Why each choice (Go rather than Nest.js, Postgres rather than MySQL, and so on) is in [CLAUDE.md](CLAUDE.md) and [docs/architecture.md §3](docs/architecture.md).
 
@@ -71,18 +67,47 @@ Why each choice (Go rather than Nest.js, Postgres rather than MySQL, and so on) 
 
 ## Quick Start
 
-Requirements: Docker + Compose v2, Go 1.26+, Python 3.12+, Flutter 3.47+. Every step starts from the repo root. All commands below use bash (on Windows: Git Bash); PowerShell equivalents are in each service's README.
+Requirements: Docker + Compose v2 and Flutter 3.47+. Option B also needs Go 1.26+ (and Python 3.12+ if the ML service runs outside Docker). Every step starts from the repo root. All commands below use bash (on Windows: Git Bash); PowerShell equivalents are in each service's README.
 
-**1. Infra — Postgres + Redis** ([infra/README.md](infra/README.md))
+### Option A — the whole backend in Docker ([infra/README.md](infra/README.md))
 
 ```bash
 cd infra
-cp .env.example .env          # change at least POSTGRES_PASSWORD and REDIS_PASSWORD
-docker compose up -d
-docker compose ps             # wait for both services (healthy)
+cp .env.example .env                          # set POSTGRES_PASSWORD, REDIS_PASSWORD and JWT_SECRET (openssl rand -base64 48)
+docker compose --profile app up --build       # postgres + redis + ml + migrate (one-shot) + api; -d --wait for the background
 ```
 
-**2. Backend — migrations + accounts + demo data** ([backend/README.md](backend/README.md))
+New terminal, still in `infra/`:
+
+```bash
+docker compose --profile seed run --rm seed --clean   # remove test/demo leftovers — explicit, never automatic
+docker compose --profile seed run --rm seed           # accounts + roles, 5 categories, 26 products, 10 customers, ~430 orders over 75 days
+curl http://localhost:8080/health                     # {"status":"ok","checks":{"database":"up","redis":"up"}}
+```
+
+Variables in `infra/.env`:
+
+| Variable | Required | Notes |
+|---|---|---|
+| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `REDIS_PASSWORD` | always | compose refuses to start if any of them is empty |
+| `JWT_SECRET` | only for profile `app` | at least 32 characters. Empty or too short → the `api` container exits 1 (the reason is in `docker compose logs api`). Plain `docker compose up` and profile `seed` don't need it |
+| `POSTGRES_PORT`, `REDIS_PORT`, `ML_PORT`, `API_PORT` | no | host ports, default 5432 / 6379 / 8000 / 8080. Change them on a clash, e.g. `API_PORT=8090` |
+| `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD` | no | the Super Admin profile `seed` creates; empty = the demo account below |
+
+Profiles: no profile → `postgres`, `redis`, `ml`. `app` → adds `migrate` (one-shot) and `api`. `seed` → `migrate`, then `seed` (one-shot; seeder flags go after the service name, e.g. `--auth-only`).
+
+### Option B — the Go API on the host, for development
+
+**1. Infra — Postgres + Redis + ML service**
+
+```bash
+cd infra
+cp .env.example .env          # change at least POSTGRES_PASSWORD and REDIS_PASSWORD; JWT_SECRET isn't used on this path
+docker compose up -d          # builds the ML image the first time
+docker compose ps             # wait for all three services (healthy)
+```
+
+**2. Backend — migrations + accounts + demo data + API** ([backend/README.md](backend/README.md))
 
 ```bash
 cd backend
@@ -90,9 +115,11 @@ cp .env.example .env          # match DATABASE_URL / REDIS_* to infra/.env, set 
 go run ./cmd/migrate
 go run ./cmd/seed --clean     # remove test/demo leftovers — explicit, never automatic
 go run ./cmd/seed             # accounts + roles, 5 categories, 26 products, 10 customers, ~430 orders over 75 days
+go run ./cmd/api              # another port: PORT=8090 go run ./cmd/api
+curl http://localhost:8080/health
 ```
 
-**3. ML service** ([ml-service/README.md](ml-service/README.md)) — new terminal
+The ML service from compose answers on `localhost:8000`, the default `ML_SERVICE_URL`. To change the Python code with hot reload, stop its container (`docker compose stop ml`) and run it by hand ([ml-service/README.md](ml-service/README.md)):
 
 ```bash
 cd ml-service
@@ -102,15 +129,7 @@ pip install -r requirements-dev.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-**4. Go API** — new terminal
-
-```bash
-cd backend
-go run ./cmd/api                    # another port: PORT=8090 go run ./cmd/api
-curl http://localhost:8080/health   # {"status":"ok","checks":{"database":"up","redis":"up"}}
-```
-
-**5. Mobile** ([mobile/README.md](mobile/README.md))
+### Mobile ([mobile/README.md](mobile/README.md))
 
 ```bash
 cd mobile
@@ -118,7 +137,7 @@ flutter pub get
 flutter run --dart-define=API_BASE_URL=http://10.0.2.2:8080   # Android emulator
 ```
 
-`10.0.2.2` is the host machine as seen from the Android emulator. For the iOS simulator/desktop, plain `flutter run` is enough (default `http://localhost:8080`); for a physical device, use the host's LAN IP. The app opens on the login screen.
+`10.0.2.2` is the host machine as seen from the Android emulator. For the iOS simulator/desktop, plain `flutter run` is enough (default `http://localhost:8080`); for a physical device, use the host's LAN IP. If the API isn't on 8080 (`API_PORT` or `PORT`), change the port in `API_BASE_URL`. The app opens on the login screen.
 
 > The ML service is optional: without it everything works except two sections (Demand Forecast & Business Insights), which show an "unavailable" state.
 
@@ -170,17 +189,20 @@ This behaviour is locked in by tests: `TestUserService_PrivilegeMatrix` (60 case
 
 ## Testing
 
-| Suite | Command | Result (measured 2026-10-09) |
+| Suite | Command | Result (measured 2026-10-13) |
 |---|---|---|
 | Go | `cd backend && go test ./... -count=1` | **804 passed**, 0 failed; 15 SQL tests skipped without `TEST_DATABASE_URL` |
 | Go + SQL against a real Postgres | `TEST_DATABASE_URL=... go test ./... -count=1` | **831 passed** (115 test functions + table-driven subtests), 0 failed, 0 skipped |
 | Python | `cd ml-service && pytest` | **80 passed** |
 | Flutter | `cd mobile && flutter test` | **702 passed** |
+| **Total automated tests** | Go with the DB + Python + Flutter | **1,613 passed** (831 + 80 + 702) |
 | End-to-end HTTP | `cd backend && bash scripts/e2e.sh` | **317/317** with the ML service up, **309/309** with it down |
 
-`e2e.sh` needs Postgres, the migrations, the seeded accounts and a running API (`API_URL=http://localhost:8090/api/v1` if the API is on another port; `ADMIN_EMAIL` / `ADMIN_PASSWORD` if the admin credentials were changed). It switches to the degradation checks when the ML service doesn't answer, so run it twice (ML up and down) to cover both paths. At the end of a run, the users and roles it created are deleted for good (`go run ./cmd/seed --clean-e2e-run=<run>`); its test products, categories, customers and orders stay behind (soft delete), so run `go run ./cmd/seed --clean && go run ./cmd/seed` again before a demo.
+`e2e.sh` needs Postgres, the migrations, the seeded accounts and a running API (`API_URL=http://localhost:8090/api/v1` if the API is on another port; `ADMIN_EMAIL` / `ADMIN_PASSWORD` if the admin credentials were changed). It switches to the degradation checks when the ML service doesn't answer, so run it twice (ML up and down) to cover both paths. At the end of a run, the users and roles it created are deleted for good (`go run ./cmd/seed --clean-e2e-run=<run>`, which needs Go and a connection to the API's database); its test products, categories, customers and orders stay behind (soft delete), so run the seed with `--clean` and then again before a demo. `E2E_SKIP_CLEANUP=1` skips that step and its 3 checks, giving 314/314 (ML up).
 
-Every number in the table comes from running the suites on 2026-10-09 (e2e: API on port 8090, Postgres + Redis from docker-compose).
+Every number in the table comes from running the suites on 2026-10-13. e2e ran against the `docker compose --profile app` stack with the API on port 8090, after `--profile seed`.
+
+**CI.** [`ci.yml`](.github/workflows/ci.yml) runs on pushes to `master` (every job) and on pull requests (only the jobs whose folder changed): `go vet` + `go test` against a real Postgres (the job fails if any test is skipped), `pytest`, `flutter analyze` + `flutter test`, and a `docker compose config` check for all three modes. [`e2e.yml`](.github/workflows/e2e.yml) runs on pushes to `master` (and on demand): it builds the `--profile app` stack, seeds it, then runs `e2e.sh` with the ML service up. CI skips the cleanup (`E2E_SKIP_CLEANUP=1`; the stack is dropped with `down -v`), so its count is 314.
 
 ## Repo Structure
 
@@ -188,8 +210,9 @@ Every number in the table comes from running the suites on 2026-10-09 (e2e: API 
 backend/      Go API — handler → service → repository, cmd/{api,migrate,seed}, scripts/e2e.sh
 ml-service/   FastAPI — forecasting + trend insight, stateless
 mobile/       Flutter — clean architecture per feature (data / domain / presentation)
-infra/        docker-compose for Postgres + Redis
-docs/         architecture.md, ml-service-contract.md, PRESENTATION.md
+infra/        docker-compose: Postgres + Redis + ML service, profiles app (migrate + Go API) and seed
+docs/         architecture.md, ml-service-contract.md, PRESENTATION.md, screenshots/
+.github/      workflows/ci.yml and workflows/e2e.yml
 ```
 
 The Go API has 48 endpoints (47 under `/api/v1` + `/health`), the ML service 3. The full endpoint → permission table is in [backend/README.md](backend/README.md#endpoints). Each service's layout is in its own README; decisions and project status are in [docs/architecture.md](docs/architecture.md).
@@ -200,9 +223,12 @@ The Go API has 48 endpoints (47 under `/api/v1` + `/health`), the ML service 3. 
 - **Permission changes reach the app with a short delay**: when it returns to the foreground (at most once per 60 seconds) or after it gets a 403, not instantly (the server doesn't push).
 - **No change-own-password endpoint yet**, and expired/revoked `refresh_tokens` rows aren't cleaned up periodically.
 - **One role per user**, deliberately, as a simplification.
-- No CI pipeline yet, and the ML service isn't in docker-compose (it runs manually; its Dockerfile exists).
 - The forecast is a moving average that doesn't capture seasonality; insights are statistical templates, not an LLM; the dashboard cache isn't invalidated by new orders (it can lag up to 5 minutes); forecasting calls the ML service once per product. The data is synthetic.
 
 **`user_count` is not a bug.** The per-role user count from the API counts **every** user that points at the role, including inactive and deleted (soft-deleted) ones. A deleted user keeps its `role_id` as history, and the foreign key `users.role_id` is `ON DELETE RESTRICT`, so the database refuses to delete the role while such a row exists. With this definition, `user_count > 0` means exactly that `DELETE /roles/:id` will answer 409. Details: [backend/README.md](backend/README.md#user_count).
 
 The full discussion is in [docs/PRESENTATION.md](docs/PRESENTATION.md#5-keterbatasan-yang-disadari) (Indonesian).
+
+## License
+
+Released under the MIT License. See the [LICENSE](LICENSE) file. Copyright © 2026 Danny Alfandi.

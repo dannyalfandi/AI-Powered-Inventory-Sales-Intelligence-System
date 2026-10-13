@@ -2,6 +2,8 @@
 
 # Inventory & Sales Intelligence Platform
 
+Dibuat oleh **Danny Alfandi** · GitHub: [github.com/dannyalfandi](https://github.com/dannyalfandi)
+
 > **Sistem inventory yang memprediksi permintaan dari data penjualan historis** — bukan sekadar mencatat stok, tapi memberi tahu produk mana yang sedang naik, mana yang turun, dan berapa yang kemungkinan terjual minggu depan.
 
 Mini-ERP untuk distributor/grosir: produk, stok, pelanggan, dan sales order dikelola lewat aplikasi mobile, lalu data penjualannya diolah menjadi dashboard analytics, demand forecast, dan insight bisnis dalam dua bahasa. Setiap pengguna login dan hanya bisa melakukan apa yang diizinkan role-nya; role dan izinnya diatur dari dalam app.
@@ -12,15 +14,9 @@ Mini-ERP untuk distributor/grosir: produk, stok, pelanggan, dan sales order dike
 
 ## Tampilan
 
-<!-- GANTI dengan screenshot asli. Simpan file PNG di docs/screenshots/ dengan nama persis seperti di bawah.
-     Saran pengambilan: emulator Pixel_9_Pro_XL, data dari `go run ./cmd/seed`, rentang 30 hari. -->
-
 | Dashboard | Prediksi & Insight | Detail Pesanan |
 |---|---|---|
 | ![Dashboard](docs/screenshots/dashboard.png) | ![Forecast & Insight](docs/screenshots/forecast-insight.png) | ![Sales Order](docs/screenshots/sales-order-detail.png) |
-
-<!-- GANTI dengan GIF asli (opsional, ≤ 5 MB): rekam ML service dimatikan → section Prediksi berubah ke state "tidak tersedia" sementara section lain tetap terisi. -->
-![Graceful degradation demo](docs/screenshots/ml-degradation.gif)
 
 ---
 
@@ -48,7 +44,7 @@ Detail keputusan arsitektur dan alasannya: [docs/architecture.md](docs/architect
 | Backend | Go 1.26 (`go.mod`), Gin, GORM, PostgreSQL 16, Redis 7 (go-redis), golang-jwt (HS256), bcrypt |
 | Mobile | Flutter (Dart `^3.13.2`), Riverpod 3 (codegen), go_router, Dio, freezed, fl_chart, flutter_secure_storage, ARB i18n |
 | ML / Data | Python 3.12+, FastAPI, Pydantic v2, pandas |
-| Infra | Docker Compose (Postgres + Redis), bash e2e script |
+| Infra | Docker Compose (Postgres, Redis, ML service; Go API lewat profile `app`), GitHub Actions (CI + E2E), bash e2e script |
 
 Alasan tiap pilihan (kenapa Go bukan Nest.js, Postgres bukan MySQL, dst.) ada di [CLAUDE.md](CLAUDE.md) dan [docs/architecture.md §3](docs/architecture.md).
 
@@ -71,18 +67,47 @@ Alasan tiap pilihan (kenapa Go bukan Nest.js, Postgres bukan MySQL, dst.) ada di
 
 ## Quick Start
 
-Prasyarat: Docker + Compose v2, Go 1.26+, Python 3.12+, Flutter 3.47+. Setiap langkah dimulai dari root repo. Semua perintah di bawah memakai bash (di Windows: Git Bash); padanan PowerShell ada di README tiap service.
+Prasyarat: Docker + Compose v2 dan Flutter 3.47+. Opsi B juga butuh Go 1.26+ (dan Python 3.12+ kalau ML service dijalankan tanpa Docker). Setiap langkah dimulai dari root repo. Semua perintah di bawah memakai bash (di Windows: Git Bash); padanan PowerShell ada di README tiap service.
 
-**1. Infra — Postgres + Redis** ([infra/README.md](infra/README.md))
+### Opsi A — seluruh backend lewat Docker ([infra/README.md](infra/README.md))
 
 ```bash
 cd infra
-cp .env.example .env          # ubah minimal POSTGRES_PASSWORD dan REDIS_PASSWORD
-docker compose up -d
-docker compose ps             # tunggu kedua service (healthy)
+cp .env.example .env                          # isi POSTGRES_PASSWORD, REDIS_PASSWORD, dan JWT_SECRET (openssl rand -base64 48)
+docker compose --profile app up --build       # postgres + redis + ml + migrate (sekali jalan) + api; -d --wait untuk background
 ```
 
-**2. Backend — migrasi + akun + data demo** ([backend/README.md](backend/README.md))
+Terminal baru, masih di `infra/`:
+
+```bash
+docker compose --profile seed run --rm seed --clean   # hapus sisa data test/demo — eksplisit, tidak pernah otomatis
+docker compose --profile seed run --rm seed           # akun + role, 5 kategori, 26 produk, 10 pelanggan, ~430 order selama 75 hari
+curl http://localhost:8080/health                     # {"status":"ok","checks":{"database":"up","redis":"up"}}
+```
+
+Variabel di `infra/.env`:
+
+| Variabel | Wajib | Keterangan |
+|---|---|---|
+| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `REDIS_PASSWORD` | selalu | compose menolak start kalau salah satunya kosong |
+| `JWT_SECRET` | hanya untuk profile `app` | minimal 32 karakter. Kosong atau terlalu pendek → container `api` exit 1 (penyebabnya di `docker compose logs api`). `docker compose up` tanpa profile dan profile `seed` tidak membutuhkannya |
+| `POSTGRES_PORT`, `REDIS_PORT`, `ML_PORT`, `API_PORT` | tidak | port di host, default 5432 / 6379 / 8000 / 8080. Ganti kalau bentrok, mis. `API_PORT=8090` |
+| `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD` | tidak | Super Admin yang dibuat profile `seed`; kosong = akun demo di bawah |
+
+Profile: tanpa profile → `postgres`, `redis`, `ml`. `app` → ditambah `migrate` (one-shot) dan `api`. `seed` → `migrate` lalu `seed` (one-shot; flag seeder ditulis setelah nama service, mis. `--auth-only`).
+
+### Opsi B — Go API di host, untuk pengembangan
+
+**1. Infra — Postgres + Redis + ML service**
+
+```bash
+cd infra
+cp .env.example .env          # ubah minimal POSTGRES_PASSWORD dan REDIS_PASSWORD; JWT_SECRET tidak dipakai di jalur ini
+docker compose up -d          # image ML di-build saat pertama kali
+docker compose ps             # tunggu ketiga service (healthy)
+```
+
+**2. Backend — migrasi + akun + data demo + API** ([backend/README.md](backend/README.md))
 
 ```bash
 cd backend
@@ -90,9 +115,11 @@ cp .env.example .env          # samakan DATABASE_URL / REDIS_* dengan infra/.env
 go run ./cmd/migrate
 go run ./cmd/seed --clean     # hapus sisa data test/demo — eksplisit, tidak pernah otomatis
 go run ./cmd/seed             # akun + role, 5 kategori, 26 produk, 10 pelanggan, ~430 order selama 75 hari
+go run ./cmd/api              # port lain: PORT=8090 go run ./cmd/api
+curl http://localhost:8080/health
 ```
 
-**3. ML service** ([ml-service/README.md](ml-service/README.md)) — terminal baru
+ML service dari compose menjawab di `localhost:8000`, yaitu default `ML_SERVICE_URL`. Untuk mengubah kode Python dengan hot reload, hentikan container-nya (`docker compose stop ml`) lalu jalankan manual ([ml-service/README.md](ml-service/README.md)):
 
 ```bash
 cd ml-service
@@ -102,15 +129,7 @@ pip install -r requirements-dev.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-**4. Go API** — terminal baru
-
-```bash
-cd backend
-go run ./cmd/api                    # port lain: PORT=8090 go run ./cmd/api
-curl http://localhost:8080/health   # {"status":"ok","checks":{"database":"up","redis":"up"}}
-```
-
-**5. Mobile** ([mobile/README.md](mobile/README.md))
+### Mobile ([mobile/README.md](mobile/README.md))
 
 ```bash
 cd mobile
@@ -118,7 +137,7 @@ flutter pub get
 flutter run --dart-define=API_BASE_URL=http://10.0.2.2:8080   # Android emulator
 ```
 
-`10.0.2.2` adalah alamat host dari dalam emulator Android. Untuk iOS simulator/desktop, cukup `flutter run` (default `http://localhost:8080`); untuk device fisik, pakai IP LAN host. App dibuka di layar login.
+`10.0.2.2` adalah alamat host dari dalam emulator Android. Untuk iOS simulator/desktop, cukup `flutter run` (default `http://localhost:8080`); untuk device fisik, pakai IP LAN host. Kalau API tidak di 8080 (`API_PORT` atau `PORT`), sesuaikan port di `API_BASE_URL`. App dibuka di layar login.
 
 > ML service opsional: tanpa dia, semua fitur jalan normal kecuali dua section (Prediksi Permintaan & Insight Bisnis), yang akan menampilkan state "tidak tersedia".
 
@@ -170,17 +189,20 @@ Perilaku ini dikunci oleh test: `TestUserService_PrivilegeMatrix` (60 kasus: Sup
 
 ## Testing
 
-| Suite | Perintah | Hasil (diukur 2026-10-09) |
+| Suite | Perintah | Hasil (diukur 2026-10-13) |
 |---|---|---|
 | Go | `cd backend && go test ./... -count=1` | **804 lulus**, 0 gagal; 15 test SQL di-skip tanpa `TEST_DATABASE_URL` |
 | Go + SQL ke Postgres asli | `TEST_DATABASE_URL=... go test ./... -count=1` | **831 lulus** (115 fungsi test + subtest table-driven), 0 gagal, 0 skip |
 | Python | `cd ml-service && pytest` | **80 lulus** |
 | Flutter | `cd mobile && flutter test` | **702 lulus** |
+| **Total test otomatis** | Go dengan DB + Python + Flutter | **1.613 lulus** (831 + 80 + 702) |
 | End-to-end HTTP | `cd backend && bash scripts/e2e.sh` | **317/317** dengan ML service hidup, **309/309** dengan ML service mati |
 
-`e2e.sh` butuh Postgres, migrasi, akun hasil seed, dan API yang sedang jalan (`API_URL=http://localhost:8090/api/v1` kalau API di port lain; `ADMIN_EMAIL` / `ADMIN_PASSWORD` kalau kredensial admin diganti). Script ini otomatis beralih ke pengecekan degradasi kalau ML service tidak menjawab, jadi jalankan dua kali (ML hidup dan mati) untuk menguji kedua jalur. Di akhir run, pengguna dan role buatannya dihapus permanen (`go run ./cmd/seed --clean-e2e-run=<run>`); produk, kategori, pelanggan, dan order test tetap tertinggal (soft delete), jadi jalankan `go run ./cmd/seed --clean && go run ./cmd/seed` lagi sebelum demo.
+`e2e.sh` butuh Postgres, migrasi, akun hasil seed, dan API yang sedang jalan (`API_URL=http://localhost:8090/api/v1` kalau API di port lain; `ADMIN_EMAIL` / `ADMIN_PASSWORD` kalau kredensial admin diganti). Script ini otomatis beralih ke pengecekan degradasi kalau ML service tidak menjawab, jadi jalankan dua kali (ML hidup dan mati) untuk menguji kedua jalur. Di akhir run, pengguna dan role buatannya dihapus permanen (`go run ./cmd/seed --clean-e2e-run=<run>`, butuh Go dan koneksi ke database API); produk, kategori, pelanggan, dan order test tetap tertinggal (soft delete), jadi jalankan seed `--clean` lalu seed lagi sebelum demo. Dengan `E2E_SKIP_CLEANUP=1` langkah itu dilewati beserta 3 check-nya, jadi hasilnya 314/314 (ML hidup).
 
-Semua angka di tabel diambil dari eksekusi suite pada 2026-10-09 (e2e: API di port 8090, Postgres + Redis dari docker-compose).
+Semua angka di tabel diambil dari eksekusi suite pada 2026-10-13. e2e dijalankan ke stack `docker compose --profile app` dengan API di port 8090, setelah `--profile seed`.
+
+**CI.** [`ci.yml`](.github/workflows/ci.yml) berjalan pada push ke `master` (semua job) dan pada pull request (hanya job yang foldernya berubah): `go vet` + `go test` dengan Postgres asli (job gagal kalau ada test yang di-skip), `pytest`, `flutter analyze` + `flutter test`, dan validasi `docker compose config` untuk ketiga mode. [`e2e.yml`](.github/workflows/e2e.yml) berjalan pada push ke `master` (dan manual): membangun stack `--profile app`, menjalankan seed, lalu `e2e.sh` dengan ML hidup. Di CI cleanup-nya dilewati (`E2E_SKIP_CLEANUP=1`, stack dibuang dengan `down -v`), jadi angkanya 314.
 
 ## Struktur Repo
 
@@ -188,8 +210,9 @@ Semua angka di tabel diambil dari eksekusi suite pada 2026-10-09 (e2e: API di po
 backend/      Go API — handler → service → repository, cmd/{api,migrate,seed}, scripts/e2e.sh
 ml-service/   FastAPI — forecasting + trend insight, stateless
 mobile/       Flutter — clean architecture per fitur (data / domain / presentation)
-infra/        docker-compose untuk Postgres + Redis
-docs/         architecture.md, ml-service-contract.md, PRESENTATION.md
+infra/        docker-compose: Postgres + Redis + ML service, profile app (migrate + Go API) dan seed
+docs/         architecture.md, ml-service-contract.md, PRESENTATION.md, screenshots/
+.github/      workflows/ci.yml dan workflows/e2e.yml
 ```
 
 API Go punya 48 endpoint (47 di `/api/v1` + `/health`), ML service 3. Tabel endpoint → izin lengkap ada di [backend/README.md](backend/README.md#endpoints). Detail layout tiap service ada di README masing-masing; keputusan dan status project di [docs/architecture.md](docs/architecture.md).
@@ -200,9 +223,12 @@ API Go punya 48 endpoint (47 di `/api/v1` + `/health`), ML service 3. Tabel endp
 - **Perubahan izin terlihat di app dengan sedikit jeda**: saat app kembali ke foreground (paling sering sekali per 60 detik) atau setelah menerima 403, bukan seketika (tidak ada push dari server).
 - **Belum ada endpoint ganti password sendiri**, dan baris `refresh_tokens` yang kedaluwarsa/dicabut belum dibersihkan berkala.
 - **Satu role per pengguna**, sengaja, sebagai penyederhanaan.
-- Belum ada pipeline CI, dan ML service belum masuk docker-compose (dijalankan manual; Dockerfile-nya sudah ada).
 - Forecast memakai moving average yang tidak menangkap pola musiman; insight masih template statistik, belum LLM; cache dashboard tidak di-invalidate saat ada order baru (bisa tertinggal sampai 5 menit); forecast memanggil ML service satu kali per produk. Datanya sintetis.
 
 **`user_count` bukan bug.** Angka pengguna per role dari API menghitung **semua** pengguna yang menunjuk role itu, termasuk yang nonaktif dan yang sudah dihapus (soft delete). Pengguna yang dihapus tetap menyimpan `role_id` sebagai histori, dan foreign key `users.role_id` bersifat `ON DELETE RESTRICT`, jadi database menolak menghapus role selama baris seperti itu ada. Dengan definisi ini, `user_count > 0` persis berarti `DELETE /roles/:id` akan dijawab 409. Detail: [backend/README.md](backend/README.md#user_count).
 
 Pembahasan lengkapnya ada di [docs/PRESENTATION.md](docs/PRESENTATION.md#5-keterbatasan-yang-disadari).
+
+## Lisensi
+
+Dirilis di bawah lisensi MIT. Lihat berkas [LICENSE](LICENSE). Copyright © 2026 Danny Alfandi.

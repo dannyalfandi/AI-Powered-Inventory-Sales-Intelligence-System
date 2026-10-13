@@ -1,6 +1,6 @@
 # Narasi Presentasi — Inventory & Sales Intelligence Platform
 
-Panduan bicara untuk interview. Semua angka di sini diukur ulang dari source dan hasil test pada 2026-10-09 (lihat [Sumber angka](#sumber-angka) di bawah). Jangan dibulatkan saat menyampaikan.
+Panduan bicara untuk interview. Semua angka di sini diukur ulang dari source dan hasil test pada 2026-10-13 (lihat [Sumber angka](#sumber-angka) di bawah). Jangan dibulatkan saat menyampaikan.
 
 ---
 
@@ -111,25 +111,25 @@ Moving average memproyeksikan angka datar. Ia tidak menangkap musiman, bahkan ri
 
 Di sisi hak akses: tab dan section Dashboard sudah mengikuti izin, tapi beberapa bagian di dalam layar yang membaca resource lain belum. Picker pelanggan dan produk di form pesanan, dropdown kategori di form produk, serta stok dan riwayat di detail produk akan menampilkan pesan 403 dari server untuk role yang tidak punya izin view resource itu. Datanya tetap aman. Perubahan izin juga baru terlihat saat app kembali ke foreground atau setelah ada 403, bukan seketika, karena server tidak mengirim notifikasi. Belum ada endpoint ganti password sendiri, dan refresh token yang kedaluwarsa belum dibersihkan berkala.
 
-Dari sisi produksi: belum ada pipeline CI (test masih dijalankan manual), ML service belum masuk docker-compose, dan datanya sintetis. Semua ini sudah saya ketahui dan urutkan, bukan hal yang terlewat.
+Dari sisi produksi: seluruh stack (Postgres, Redis, ML service, Go API) sudah bisa dinyalakan dengan `docker compose --profile app up --build`, dan GitHub Actions menjalankan test semua service serta e2e ke stack itu. Yang belum: datanya masih sintetis, dan run e2e di CI melewati langkah cleanup (stack-nya dibuang setelah run), jadi CI menghitung 314 check, bukan 317. Semua ini sudah saya ketahui dan urutkan, bukan hal yang terlewat.
 
 ---
 
 ## Sumber angka
 
-Semua diukur 2026-10-09.
+Semua diukur 2026-10-13. Postgres, Redis, ML service, dan API dari `docker compose --profile app` (API di port 8090), data dari `--profile seed`.
 
 | Angka | Cara mengukur |
 |---|---|
 | 48 endpoint Go (47 di `/api/v1` + `/health`) | route di `backend/internal/router/router.go`; `TestEveryRouteHasAnAccessDecision` mengunci jumlahnya |
 | 3 endpoint ML service | `ml-service/app/main.py` |
 | 32 izin, Staff 12 izin | `backend/internal/auth/permissions.go`, `backend/cmd/seed/accounts.go` |
-| 831 test Go lulus, 0 gagal, 0 skip (115 fungsi test + subtest) | `TEST_DATABASE_URL=… go test ./... -count=1 -json`; tanpa `TEST_DATABASE_URL`: 804 lulus, 15 test SQL di-skip |
+| 831 test Go lulus, 0 gagal, 0 skip (115 fungsi test + subtest) | `TEST_DATABASE_URL=… go test ./... -count=1 -v`, dihitung dari baris `--- PASS/FAIL/SKIP` seperti di CI; tanpa `TEST_DATABASE_URL`: 804 lulus, 15 test SQL di-skip |
 | 80 test Python | `pytest` |
-| 702 test Flutter | `flutter test` (reporter JSON, tanpa emulator) |
+| 702 test Flutter | `flutter test` (tanpa emulator) |
 | 1.613 test otomatis | 831 + 80 + 702 |
-| 317/317 e2e (ML hidup), 309/309 (ML mati), 13 skenario id-vs-en (ML hidup) | `backend/scripts/e2e.sh` ke API di port 8090 |
+| 317/317 e2e (ML hidup), 309/309 (ML mati), 13 skenario id-vs-en (ML hidup) | `backend/scripts/e2e.sh` ke API di port 8090, dengan cleanup; dengan `E2E_SKIP_CLEANUP=1` (seperti di CI) 314/314 |
 | 60 kasus matriks eskalasi | `TestUserService_PrivilegeMatrix` di `backend/internal/service/user_scope_test.go` |
 | 5 order → tepat 3 sukses, confirm 10× → stok berkurang sekali | `backend/scripts/e2e.sh` |
 | 61,9% (Kopi Bubuk Robusta, data seed) | contoh response `/analytics/insights` di `backend/README.md` |
-| 75 hari, 26 produk, 427 order (~430), 380 key ARB | `backend/cmd/seed/` + hitungan di database hasil seed (order milik 10 pelanggan seed saja); `mobile/lib/l10n/app_en.arb` dan `app_id.arb` |
+| 75 hari, 26 produk, 425 order (~430), 380 key ARB | `backend/cmd/seed/` + hitungan di database hasil seed (order milik 10 pelanggan seed saja); `mobile/lib/l10n/app_en.arb` dan `app_id.arb`. Jumlah order bergeser sedikit menurut tanggal seed dijalankan, karena history dihitung mundur dari hari ini |

@@ -391,8 +391,10 @@ says what is loading, which is most of the benefit.
 ## Prerequisites
 
 - Flutter 3.47+ (Dart `^3.13.2`, the SDK constraint in `pubspec.yaml`)
-- Backend running: `../infra` (`docker compose up -d`) and `../backend` (`go run ./cmd/migrate`, then `go run ./cmd/api`)
-- For the two ML-backed dashboard sections (Prediksi Permintaan, Insight Bisnis) also start the Python service: `cd ../ml-service && uvicorn app.main:app --port 8000`. Without it those two sections show their "sedang tidak tersedia" state and everything else works normally.
+- Backend running, either way:
+  - all in Docker: in `../infra`, `docker compose --profile app up --build` (needs `JWT_SECRET` in `infra/.env`), then `docker compose --profile seed run --rm seed` for demo data. The API listens on `API_PORT` (default 8080);
+  - or the API on the host: in `../infra`, `docker compose up -d` (Postgres, Redis and the ML service), then in `../backend` `go run ./cmd/migrate`, `go run ./cmd/seed` and `go run ./cmd/api`.
+- The two ML-backed dashboard sections (Prediksi Permintaan, Insight Bisnis) need the Python service, which both setups above already start (`localhost:8000`). Without it those two sections show their "sedang tidak tersedia" state and everything else works normally.
 
 ## Setup
 
@@ -463,6 +465,8 @@ flutter test                 # all tests
 flutter test test/features/product
 flutter analyze              # lints incl. riverpod_lint
 ```
+
+Measured 2026-10-13: `flutter test` **702 passed**, no emulator needed. CI runs `flutter analyze` and `flutter test` on every push to `master`.
 
 - `test/features/<feature>/domain/usecases/`: every usecase, with a `mocktail` mock repository (table-driven where there are several cases)
 - `test/features/<feature>/presentation/providers/`: list providers (search, pagination, delete incl. category 409), form providers (create, PATCH diff incl. `category_id`), `productInventoryProvider.recordMovement` (updates stock and reloads history + low-stock list)

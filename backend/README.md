@@ -28,7 +28,9 @@ Request flow: `router → handler → service → repository → model`.
 ## Prerequisites
 
 - Go **1.26+** (`go 1.26.0` in `go.mod`)
-- Postgres + Redis running from `../infra` (`docker compose up -d`, see `../infra/README.md`)
+- Postgres + Redis running from `../infra` (`docker compose up -d`, see `../infra/README.md`; it also starts the ML service on `localhost:8000`)
+
+To run the API itself in Docker instead of with `go run`, use `docker compose --profile app up --build` in `../infra` (it runs `migrate` first; `JWT_SECRET` must be set in `infra/.env`) and `docker compose --profile seed run --rm seed` for the demo data. The `api`, `migrate` and `seed` containers share the image built from this folder's `Dockerfile`, and get `DATABASE_URL` / `REDIS_ADDR` from `docker-compose.yml`, not from this `.env`.
 
 ## Setup
 
@@ -643,6 +645,8 @@ go test ./internal/handler -run 'TestRoleHandler|TestUserHandler' -v  # user_cou
 go test ./internal/router -v                                     # every route → its permission; GET /roles access matrix
 ```
 
+Measured 2026-10-13 with `go test ./... -count=1 -v`, counting `--- PASS/FAIL/SKIP` lines as CI does: **804 passed, 15 skipped** (the SQL tests) without `TEST_DATABASE_URL`, and **831 passed, 0 failed, 0 skipped** (115 test functions + subtests) with it.
+
 Smoke test against a real API. It needs Postgres, migrations, the seeded accounts and `go run ./cmd/api`, plus bash and curl (on Windows, use Git Bash):
 
 ```bash
@@ -671,6 +675,8 @@ The script logs in as the Super Admin first and sends that token on every reques
 - concurrency: 5 orders racing for the same stock, one order confirmed 10× in parallel, and 20 parallel creates with unique order numbers
 
 It creates uniquely named data and soft-deletes products and categories at the end. Stock movements, inventory rows, orders and customers with orders stay behind. Its users and roles are hard-deleted at the very end with `go run ./cmd/seed --clean-e2e-run=$RUN` (so it needs Go and this `.env` pointing at the API's database), and the last checks confirm no role or user of the run is left; `E2E_SKIP_CLEANUP=1` skips that step.
+
+Measured 2026-10-13 against the `docker compose --profile app` stack on port 8090: **317/317** with the ML service up, **309/309** with it stopped. With `E2E_SKIP_CLEANUP=1` the 3 cleanup checks don't run, so the ML-up count is 314 (that is what the E2E workflow in CI reports).
 
 The analytics and role SQL have their own tests against a real Postgres, because "only CONFIRMED and SHIPPED count" and "user_count includes soft-deleted users, in one query" live in the queries and a mock can't prove them. They skip unless `TEST_DATABASE_URL` is set, and run inside a transaction that is rolled back, so the database keeps its data:
 
