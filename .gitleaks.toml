@@ -1,0 +1,3 @@
+[allowlist]
+description = "Fake JWT secret constant used only in Go tests"
+regexes = ['''0123456789abcdef0123456789abcdef''']
